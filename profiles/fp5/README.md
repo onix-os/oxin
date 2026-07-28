@@ -28,9 +28,10 @@ sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
 ```
 
 The thin pill at the bottom is a compositor-owned gesture handle. Swipe upward
-from it to show wvkbd. While wvkbd is visible the handle moves to its top edge;
-swipe downward from there to hide it. Touches that begin outside the enlarged
-handle target continue to applications unchanged.
+from it to show wvkbd. While wvkbd is visible the handle moves just above its
+top edge; swipe downward from there to hide it. Its close target stays tightly
+around the pill so it does not cover keyboard buttons. Touches that begin
+outside the handle target continue to applications unchanged.
 
 Swipe inward from the left edge for the previous workspace or from the right
 edge for the next workspace. The nine-workspace ring wraps at either end.

@@ -36,7 +36,7 @@ pub(crate) unsafe extern "C" fn handle_keyboard_gesture(
         if !output.gesture_handle.is_null() {
             let y = output.y + output.h
                 - if show {
-                    server.config.gesture_keyboard_height - 8
+                    server.config.gesture_keyboard_height + 8
                 } else {
                     10
                 };

@@ -23,8 +23,10 @@ touch path. This avoids interpreting application scrolling as compositor
 policy.
 
 When the keyboard is hidden the handle sits at the bottom edge. After a show
-gesture it moves to the configured keyboard top edge, so the close gesture is
-physically possible and the handle remains visible.
+gesture it moves just above the configured keyboard top edge, so the close
+gesture is physically possible without covering keyboard buttons. The visible
+keyboard target is deliberately constrained to 140 by 36 logical pixels around
+the pill; the hidden bottom-edge target remains larger for easy acquisition.
 
 ## Keyboard control
 
@@ -41,9 +43,11 @@ These are wvkbd's documented show and hide controls. The keyboard stays alive
 and connected to the virtual-keyboard protocol while hidden, avoiding protocol
 and startup latency on every gesture.
 
-The height is in logical output pixels and must match the keyboard client's
-configured portrait height. Desktop configurations omit `gesture_keyboard`, so
-they get no handle and no intercepted edge touches.
+The height is in logical output pixels and must match the keyboard surface's
+scaled portrait height. A client configured in buffer pixels needs conversion:
+the FP5 uses `-H 300` at output scale 2.4, so its configured logical height is
+125. Desktop configurations omit `gesture_keyboard`, so they get no handle and
+no intercepted edge touches.
 
 ## FP5 reference profile
 
@@ -53,10 +57,10 @@ The FP5 wrapper now starts:
 wvkbd-mobintl --hidden --no-popup -H 300 -L 200
 ```
 
-Its configuration enables the gesture and declares the matching 300-pixel
-portrait height. This is a reference hardware profile, not device-specific
-compositor behavior; another mobile profile can select a different process and
-height.
+Its configuration enables the gesture and declares the matching 125-logical-
+pixel portrait height (`300 / 2.4`). This is a reference hardware profile, not
+device-specific compositor behavior; another mobile profile can select a
+different process, scale, and height.
 
 Text-input and input-method protocols remain future work. They can eventually
 show the keyboard automatically when a text field gains focus, while this

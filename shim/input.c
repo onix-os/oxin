@@ -353,11 +353,14 @@ static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) 
     wlr_output_layout_get_box(p->output_layout, output, &box);
     double center_x = box.x + box.width / 2.0;
     double handle_y = box.y + box.height
-            - (p->keyboard_visible ? p->keyboard_height : 0);
-    // The visible pill is 120x5, but the touch target is deliberately much
-    // larger. It remains centered on the keyboard's top edge when visible.
-    return lx >= center_x - 100 && lx <= center_x + 100
-            && ly >= handle_y - 45 && ly <= handle_y + 80;
+            - (p->keyboard_visible ? p->keyboard_height + 8 : 10);
+    // Keep the hidden handle easy to acquire at the physical screen edge.
+    // Once the keyboard is visible, constrain capture closely around the pill
+    // just above it so nearby keys remain native wvkbd touch targets.
+    double half_width = p->keyboard_visible ? 70 : 100;
+    double half_height = p->keyboard_visible ? 18 : 45;
+    return lx >= center_x - half_width && lx <= center_x + half_width
+            && ly >= handle_y - half_height && ly <= handle_y + half_height;
 }
 
 static int workspace_gesture_edge(struct oxide_pointer *p,
