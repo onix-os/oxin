@@ -1,6 +1,6 @@
 # Stage 5 — Window Management (the heart of it)
 
-**What it is.** The stage that turns 0xide from "a compositor that can show
+**What it is.** The stage that turns 0xin from "a compositor that can show
 one window" into an actual **tiling window manager**: multiple windows
 sharing the screen automatically, workspaces, a config file, and
 keybindings to drive all of it. This is the largest stage by far, and the
@@ -39,7 +39,7 @@ free workspace, and get **focus-follows-monitor**: new windows open on
 whichever monitor the cursor is currently over.
 
 Per-output monitor **position and scale** are config-driven
-(`monitor = NAME, XxY[, SCALE]` in `0xide.conf`) — an output with no
+(`monitor = NAME, XxY[, SCALE]` in `0xin.conf`) — an output with no
 matching config entry keeps wlroots' default auto-placement. This was kept
 deliberately simple: explicit pixel coordinates per named connector, no
 relative-position keywords, no DPI-based auto-scale heuristic — the config

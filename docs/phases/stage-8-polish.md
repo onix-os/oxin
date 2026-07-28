@@ -25,11 +25,11 @@ layer-shell support arrived well before this stage was "next":
   output exists yet were being silently dropped; the fix tracks them as
   pending and attaches them to the next output that shows up, instead of
   requiring output-then-surface ordering.
-- **Server-side decorations** (`xdg-decoration-unstable-v1`) — 0xide always
+- **Server-side decorations** (`xdg-decoration-unstable-v1`) — 0xin always
   claims decoration mode, so clients skip drawing their own title bar/CSD:
   bare, borderless windows by default.
 - **Screenshots/screen recording** (`wlr-screencopy-unstable-v1` +
-  `xdg-output`) — tools like `grim` and `wf-recorder` capture 0xide's real
+  `xdg-output`) — tools like `grim` and `wf-recorder` capture 0xin's real
   composited output directly. `xdg-output` specifically exists because
   screenshot tools need to learn each output's logical position/size, or
   `grim` fails with a 0×0 capture.
@@ -38,7 +38,7 @@ layer-shell support arrived well before this stage was "next":
   fullscreen window covers its output's full box in a dedicated scene layer
   above the bars but below overlay surfaces, and other windows stay tiled
   beneath it. Per the xdg-shell protocol every state request must be
-  answered with a configure even when denied — 0xide previously wasn't
+  answered with a configure even when denied — 0xin previously wasn't
   listening at all, which was a protocol violation, not just a missing
   feature. Closely related fix from the same work: windows are declared
   **tiled** in their very first configure, carrying their predicted tile

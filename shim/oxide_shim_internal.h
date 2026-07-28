@@ -1,5 +1,5 @@
-#ifndef OXIDE_SHIM_INTERNAL_H
-#define OXIDE_SHIM_INTERNAL_H
+#ifndef OXIN_SHIM_INTERNAL_H
+#define OXIN_SHIM_INTERNAL_H
 
 // Shared across every shim .c file; never seen by bindgen (wrapper.h doesn't
 // include any shim header — see build.rs). wlroots delivers every event
@@ -24,4 +24,4 @@ struct oxide_listener {
 struct oxide_listener *signal_add(struct wl_signal *signal,
         oxide_callback callback, void *userdata);
 
-#endif // OXIDE_SHIM_INTERNAL_H
+#endif // OXIN_SHIM_INTERNAL_H

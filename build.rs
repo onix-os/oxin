@@ -1,4 +1,4 @@
-//! Build script: the FFI pipeline for 0xide.
+//! Build script: the FFI pipeline for 0xin.
 //!
 //! 1. Locate wlroots 0.19 + wayland-server via pkg-config (emits linker flags).
 //! 2. Generate the xdg-shell protocol server header with wayland-scanner —

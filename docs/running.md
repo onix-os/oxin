@@ -3,8 +3,8 @@
 Building a compositor raises an obvious problem: how do you check that a
 change actually works, when the thing you built *is* the environment
 everything else renders inside? This chapter is less "here's the command"
-(the [README](https://github.com/termworks/0xide#readme) covers that) and more
-about the verification habits that came out of building 0xide without a
+(the [README](https://github.com/termworks/0xin#readme) covers that) and more
+about the verification habits that came out of building 0xin without a
 synthetic-input tool available in the dev environment (no `wtype`/`ydotool`)
 — every recipe here exists because "just try it and see" wasn't always
 possible.
@@ -12,7 +12,7 @@ possible.
 ## Nested first, always
 
 The nested Wayland backend — `cargo nested` — is the primary loop for a
-reason: it's the only mode where 0xide runs *inside* something that can
+reason: it's the only mode where 0xin runs *inside* something that can
 already show you its output, with no modesetting, no VT, no real display
 hardware involved. Every stage was built and mostly verified nested before
 it was ever tried on a real TTY.
@@ -21,10 +21,10 @@ Two things about the nested backend are easy to get bitten by:
 
 - **It only receives keys when the host compositor gives its window focus.**
   A "keybinding does nothing" bug is, more often than not, a focus bug in
-  the *host* desktop, not in 0xide.
-- **The host may already own the modifier you want.** `OXIDE_MOD=alt`
+  the *host* desktop, not in 0xin.
+- **The host may already own the modifier you want.** `OXIN_MOD=alt`
   exists because the host compositor grabs Super-chords before a nested
-  0xide window ever sees them.
+  0xin window ever sees them.
 
 ## Verifying without synthetic input
 
@@ -32,7 +32,7 @@ With no way to script a keypress or click into the agent loop, verification
 leans on two things instead:
 
 1. **A real client's own behavior as a signal.** `wayland-info` connecting
-   and listing 0xide's globals (`wl_shm`, `zwp_linux_dmabuf_v1`,
+   and listing 0xin's globals (`wl_shm`, `zwp_linux_dmabuf_v1`,
    `wl_compositor`, `wl_data_device_manager`, ...) proves the Wayland server
    is actually up, independent of anything visual. A real app (`foot`,
    `kitty`) refusing to start with "no seats available" is exactly as
@@ -40,14 +40,14 @@ leans on two things instead:
    Stage 3 was caught.
 2. **Log markers plus a screenshot**, for anything visual:
    ```sh
-   target/debug/0xide >/tmp/0xide.log 2>&1 &
+   target/debug/0xin >/tmp/0xin.log 2>&1 &
    PID=$!; sleep 3
-   grim /tmp/0xide.png     # screenshot the host screen, including 0xide's window
+   grim /tmp/0xin.png     # screenshot the host screen, including 0xin's window
    kill $PID
    ```
    wlroots' debug log (on via `oxide_log_init()`) is very verbose — the
    first few hundred lines are EGL/DMA-BUF format enumeration — so the
-   useful signal is 0xide's own `println!` markers plus lines like
+   useful signal is 0xin's own `println!` markers plus lines like
    `Allocated ... GBM buffer` / `DMA-BUF imported`, read alongside the PNG.
 
 Keyboard *wiring* (as opposed to actual typing) is verified the same way —
@@ -60,13 +60,13 @@ by focusing the nested window on the host and typing.
 The config parser (`src/config.rs`) doesn't need a display to verify at all:
 
 ```sh
-XDG_CONFIG_HOME=/tmp/cfg WLR_BACKENDS=headless target/debug/0xide >log 2>&1 &
-grep -E '0xide: (loaded|no config|modifier|config line)' log
+XDG_CONFIG_HOME=/tmp/cfg WLR_BACKENDS=headless target/debug/0xin >log 2>&1 &
+grep -E '0xin: (loaded|no config|modifier|config line)' log
 ```
 
 An unparseable config line warns on stderr and is skipped — startup never
 fails on a bad config line — so the grep above is also the fastest way to
-confirm a hand-edited `0xide.conf` actually parsed the way you intended.
+confirm a hand-edited `0xin.conf` actually parsed the way you intended.
 
 ## Multi-output, nested
 
@@ -75,7 +75,7 @@ windows — enough to verify per-output tiling, focus-follows-monitor, and
 (later) config-driven monitor position/scale without touching real hardware:
 
 ```sh
-WLR_WL_OUTPUTS=2 OXIDE_MOD=alt target/debug/0xide foot
+WLR_WL_OUTPUTS=2 OXIN_MOD=alt target/debug/0xin foot
 ```
 
 Two `output <name> online @ X,Y WxH — workspace N` log lines confirm both

@@ -7,7 +7,7 @@ without everything having to be a keybinding.
 **Why it matters.** Keybindings cover interactive use; a socket covers
 everything else: a bar showing the active workspace, scripted window
 arrangements, toggling settings without editing the config and restarting.
-It's also the natural place for a `0xidectl`-style command tool.
+It's also the natural place for a `0xinctl`-style command tool.
 
 **Deliverable** (from `KICKOFF.md`): *a shell script lists windows and
 switches workspaces without touching a keybinding.*

@@ -1,13 +1,13 @@
 [package]
-name = "oxide"
+name = "oxin"
 version = "0.1.0"
 edition = "2021"
-description = "0xide — a from-scratch tiling Wayland compositor in Rust, built on wlroots"
+description = "0xin — a from-scratch tiling Wayland compositor in Rust, built on wlroots"
 
-# The crate is `oxide` (Cargo forbids a leading digit in package names), but the
-# binary keeps the brand spelling `0xide`.
+# The crate is `oxin` (Cargo forbids a leading digit in package names), but the
+# binary keeps the brand spelling `0xin`.
 [[bin]]
-name = "0xide"
+name = "0xin"
 path = "src/main.rs"
 
 [dependencies]

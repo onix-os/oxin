@@ -1,6 +1,6 @@
 # Stage 3 — First Window
 
-**What it is.** The stage where 0xide stops being an empty colored rectangle
+**What it is.** The stage where 0xin stops being an empty colored rectangle
 and starts hosting real applications: **xdg-shell**, the protocol real apps
 (terminals, browsers) use to become an app window ("toplevel") rather than a
 bare surface.
@@ -9,7 +9,7 @@ bare surface.
 anything without a real window to apply it to.
 
 **Deliverable** (from `KICKOFF.md`): *map a real client surface. A terminal
-(`foot`) appears in 0xide.*
+(`foot`) appears in 0xin.*
 
 ## How it went
 

@@ -1,4 +1,4 @@
-//! 0xide — a dynamic tiling Wayland compositor on wlroots.
+//! 0xin — a dynamic tiling Wayland compositor on wlroots.
 //!
 //! `main()` brings up the wlroots backend, renderer, scene graph and every
 //! protocol global, then wires their signals to the handlers in the other
@@ -115,7 +115,7 @@ fn main() {
         let cursor = oxide_cursor_setup(output_layout, scene, seat);
 
         // Load user config (modifier, gap, background, keybindings). Falls back
-        // to built-in defaults; `OXIDE_MOD=alt` overrides the modifier for
+        // to built-in defaults; `OXIN_MOD=alt` overrides the modifier for
         // nested dev (a nesting host like Hyprland grabs Super-chords before us).
         let config = Config::load();
         let first_split_vertical = config.first_split_vertical;
@@ -210,7 +210,7 @@ fn main() {
         let socket = CStr::from_ptr(socket_ptr).to_str().unwrap().to_owned();
 
         assert!(wlr::wlr_backend_start(backend), "failed to start backend");
-        eprintln!("0xide: socket ready — WAYLAND_DISPLAY={socket}");
+        eprintln!("0xin: socket ready — WAYLAND_DISPLAY={socket}");
 
         // Clients we spawn should talk to *us*, not the host compositor. (Our
         // own backend already connected to the host before this point.)
@@ -223,12 +223,12 @@ fn main() {
             command.args(args);
             keybindings::reset_signals(&mut command);
             match command.spawn() {
-                Ok(_) => println!("0xide: spawned client `{program}`"),
-                Err(e) => eprintln!("0xide: failed to spawn `{program}`: {e}"),
+                Ok(_) => println!("0xin: spawned client `{program}`"),
+                Err(e) => eprintln!("0xin: failed to spawn `{program}`: {e}"),
             }
         }
 
-        eprintln!("0xide: entering event loop (Ctrl-C to quit)");
+        eprintln!("0xin: entering event loop (Ctrl-C to quit)");
         wlr::wl_display_run(display);
 
         // Disconnect clients cleanly (this fires our per-window destroy
@@ -236,6 +236,6 @@ fn main() {
         // wlroots globals trips internal asserts about global listeners we
         // don't unregister, and the OS reclaims everything on process exit.
         wlr::wl_display_destroy_clients(display);
-        eprintln!("0xide: shut down");
+        eprintln!("0xin: shut down");
     }
 }

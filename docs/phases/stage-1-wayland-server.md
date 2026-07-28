@@ -25,7 +25,7 @@ get backwards and only becomes obvious by checking with a real client.
 
 `wl_display_add_socket_auto` opens the Unix socket (e.g. `wayland-2`) and
 `main()` exports it as `WAYLAND_DISPLAY` before spawning any client, so
-spawned test programs talk to 0xide and not to whatever nested host they're
+spawned test programs talk to 0xin and not to whatever nested host they're
 running under.
 
 **Verified with:** `cargo nested -- wayland-info` — the client connects and

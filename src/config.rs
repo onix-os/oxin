@@ -1,4 +1,4 @@
-//! 0xide config: a tiny, dependency-free parser for `0xide.conf`.
+//! 0xin config: a tiny, dependency-free parser for `0xin.conf`.
 //!
 //! Format is line-based `key = value`, `#` starts a comment. Scalars set the
 //! modifier, gap and background; `bind = MODS, KEY, ACTION[, ARG]` lines define
@@ -128,10 +128,10 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load config from `$OXIDE_CONFIG` (an exact file path, if set — handy
+    /// Load config from `$OXIN_CONFIG` (an exact file path, if set — handy
     /// for testing a config from the repo without touching `~/.config`), else
-    /// `$XDG_CONFIG_HOME/0xide/0xide.conf`, else `~/.config/0xide/0xide.conf`.
-    /// Missing file -> built-in defaults. `OXIDE_MOD=alt` overrides the
+    /// `$XDG_CONFIG_HOME/0xin/0xin.conf`, else `~/.config/0xin/0xin.conf`.
+    /// Missing file -> built-in defaults. `OXIN_MOD=alt` overrides the
     /// modifier (for nested dev under Hyprland, which grabs Super-chords
     /// before us).
     pub fn load() -> Config {
@@ -140,14 +140,14 @@ impl Config {
         let contents = config_path().and_then(|p| fs::read_to_string(&p).ok());
         match &contents {
             Some(text) => {
-                println!("0xide: loaded config");
+                println!("0xin: loaded config");
                 cfg.parse_scalars(text);
             }
-            None => println!("0xide: no config file — using defaults"),
+            None => println!("0xin: no config file — using defaults"),
         }
 
         // Env override wins over the config's modifier line.
-        if let Ok("alt") = env::var("OXIDE_MOD").as_deref() {
+        if let Ok("alt") = env::var("OXIN_MOD").as_deref() {
             cfg.modifier = MOD_ALT;
         }
 
@@ -161,7 +161,7 @@ impl Config {
         }
 
         println!(
-            "0xide: modifier = {}, gap = {}, {} bind(s)",
+            "0xin: modifier = {}, gap = {}, {} bind(s)",
             mod_name(cfg.modifier),
             cfg.gap,
             cfg.binds.len()
@@ -264,7 +264,7 @@ impl Config {
     }
 }
 
-/// The default binds, replicating 0xide's original hardcoded behavior.
+/// The default binds, replicating 0xin's original hardcoded behavior.
 fn default_binds(modifier: u32) -> Vec<Bind> {
     let m = modifier;
     let ms = modifier | MOD_SHIFT;
@@ -510,22 +510,22 @@ fn mod_name(m: u32) -> &'static str {
 }
 
 fn warn(line: usize, msg: &str, raw: &str) {
-    eprintln!("0xide: config line {line}: {msg}: `{raw}`");
+    eprintln!("0xin: config line {line}: {msg}: `{raw}`");
 }
 
 fn config_path() -> Option<PathBuf> {
-    if let Ok(path) = env::var("OXIDE_CONFIG") {
+    if let Ok(path) = env::var("OXIN_CONFIG") {
         if !path.is_empty() {
             return Some(PathBuf::from(path));
         }
     }
     if let Ok(dir) = env::var("XDG_CONFIG_HOME") {
         if !dir.is_empty() {
-            return Some(PathBuf::from(dir).join("0xide/0xide.conf"));
+            return Some(PathBuf::from(dir).join("0xin/0xin.conf"));
         }
     }
     let home = env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".config/0xide/0xide.conf"))
+    Some(PathBuf::from(home).join(".config/0xin/0xin.conf"))
 }
 
 #[cfg(test)]

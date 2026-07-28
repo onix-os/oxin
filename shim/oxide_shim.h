@@ -1,5 +1,5 @@
-#ifndef OXIDE_SHIM_H
-#define OXIDE_SHIM_H
+#ifndef OXIN_SHIM_H
+#define OXIN_SHIM_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -273,4 +273,4 @@ void oxide_cursor_set_grab_callbacks(struct wlr_cursor *cursor,
         oxide_grab_button_callback button_callback,
         oxide_grab_motion_callback motion_callback, void *userdata);
 
-#endif // OXIDE_SHIM_H
+#endif // OXIN_SHIM_H

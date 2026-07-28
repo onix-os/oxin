@@ -1,6 +1,6 @@
 # Design & ideas
 
-0xide is a dynamic tiling window manager for Wayland, written in Rust on
+0xin is a dynamic tiling window manager for Wayland, written in Rust on
 wlroots. This chapter documents its design decisions — how the layout,
 configuration, and workspace model work and why — and the ideas planned
 next. It is updated as decisions are made.
@@ -30,7 +30,7 @@ Three rules, applied throughout `src/config.rs`:
 
 1. **Nothing is fatal.** A line that doesn't parse warns on stderr and is
    skipped. A missing config file means defaults. A config with zero `bind`
-   lines still has every default binding. 0xide always starts.
+   lines still has every default binding. 0xin always starts.
 2. **User config merges, never replaces.** A `bind` line overrides exactly
    that key combination; every unmentioned default stays active. A two-line
    config is a two-line diff, not a fork of the whole keymap.
@@ -63,7 +63,7 @@ resizes) or keyboard nudges. The details are in the
 
 ## Decorations
 
-0xide always claims server-side decoration and draws nothing in its place:
+0xin always claims server-side decoration and draws nothing in its place:
 every window is a bare, borderless rectangle. In a tiler the layout itself
 conveys what title bars and borders would — window position and focus are
 already visible from the arrangement.

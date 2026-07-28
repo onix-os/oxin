@@ -1,8 +1,8 @@
-# 0xide
+# 0xin
 
 **A from-scratch tiling Wayland compositor, written in Rust on top of [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots).**
 
-0xide is a personal, learning-first compositor built directly on wlroots 0.19 rather
+0xin is a personal, learning-first compositor built directly on wlroots 0.19 rather
 than on top of any desktop. It's a **dynamic tiling** compositor — windows are arranged
 automatically to fill the screen instead of floating and overlapping.
 
@@ -27,10 +27,10 @@ automatically to fill the screen instead of floating and overlapping.
 - **Layer-shell** (`wlr-layer-shell-unstable-v1`) — bars, panels and wallpaper (e.g.
   [quickshell](https://quickshell.org)) render in the correct z-order and reserve their
   screen space, so tiled windows never sit underneath them.
-- **Server-side decorations** (`xdg-decoration-unstable-v1`) — 0xide always claims
+- **Server-side decorations** (`xdg-decoration-unstable-v1`) — 0xin always claims
   decoration, so clients don't draw their own title bar/border: bare, borderless windows.
 - **Screenshots/screen recording** (`wlr-screencopy-unstable-v1` + `xdg-output`) — tools
-  like `grim` and `wf-recorder` capture 0xide's real composited output directly.
+  like `grim` and `wf-recorder` capture 0xin's real composited output directly.
 
 ## Docs
 
@@ -38,7 +38,7 @@ The full story — architecture, environment/toolchain, and a phase-by-phase
 build log (Stage 0 through Stage 8, each with its deliverable and how it
 actually went) — lives in an [mdBook](https://rust-lang.github.io/mdBook/)
 under [`docs/`](docs/introduction.md), published at
-**[termworks.github.io/0xide](https://termworks.github.io/0xide/)**.
+**[termworks.github.io/0xin](https://termworks.github.io/0xin/)**.
 Preview it locally with:
 
 ```sh
@@ -59,7 +59,7 @@ The split is deliberate:
   renderer, libinput, the scene graph, protocol plumbing). We bind to it with
   `bindgen` + the shim; we don't rewrite it.
 
-In short: **wlroots = mechanism, 0xide = policy.** See
+In short: **wlroots = mechanism, 0xin = policy.** See
 [`notes/architecture.md`](notes/architecture.md) for the full division of labour.
 
 ## Build
@@ -84,22 +84,22 @@ The build script (`build.rs`) finds wlroots via `pkg-config`, generates the
 
 ### Nested (the fast dev loop)
 
-Inside an existing Wayland session, 0xide opens as a window:
+Inside an existing Wayland session, 0xin opens as a window:
 
 ```sh
-OXIDE_MOD=alt cargo nested -- kitty
+OXIN_MOD=alt cargo nested -- kitty
 ```
 
-`cargo nested` is an alias for `cargo run`. `OXIDE_MOD=alt` makes the modifier key
-**Alt** instead of Super, because the host compositor grabs Super-chords before 0xide
-sees them. The trailing `-- kitty` launches a test client against 0xide's socket.
+`cargo nested` is an alias for `cargo run`. `OXIN_MOD=alt` makes the modifier key
+**Alt** instead of Super, because the host compositor grabs Super-chords before 0xin
+sees them. The trailing `-- kitty` launches a test client against 0xin's socket.
 
 ### On a real display (TTY / DRM-KMS)
 
 From a free virtual terminal (e.g. Ctrl+Alt+F5), logged in:
 
 ```sh
-LIBSEAT_BACKEND=logind ~/Projects/0xide/target/debug/0xide kitty 2>~/0xide-tty.log
+LIBSEAT_BACKEND=logind ~/Projects/0xin/target/debug/0xin kitty 2>~/0xin-tty.log
 ```
 
 `LIBSEAT_BACKEND=logind` lets logind grant the active VT its devices (no `seat` group
@@ -109,13 +109,13 @@ main session. More detail and verification recipes are in
 
 ## Default keybindings
 
-`Mod` is **Super** by default (**Alt** when running nested with `OXIDE_MOD=alt`).
+`Mod` is **Super** by default (**Alt** when running nested with `OXIN_MOD=alt`).
 
 | Keys                | Action                              |
 | ------------------- | ----------------------------------- |
 | `Mod + Return`      | Open the terminal                   |
 | `Mod + Q`           | Close the focused window            |
-| `Mod + Shift + Q`   | Quit 0xide                        |
+| `Mod + Shift + Q`   | Quit 0xin                        |
 | `Mod + H/J/K/L`     | Focus the window left/down/up/right |
 | `Mod + Shift + H/J/K/L` | Move the focused window left/down/up/right |
 | `Mod + F`           | Toggle fullscreen for the focused window |
@@ -128,7 +128,7 @@ main session. More detail and verification recipes are in
 
 ## Configuration
 
-0xide reads `~/.config/0xide/0xide.conf` (or `$XDG_CONFIG_HOME/0xide/0xide.conf`).
+0xin reads `~/.config/0xin/0xin.conf` (or `$XDG_CONFIG_HOME/0xin/0xin.conf`).
 With no config file it uses the built-in defaults above. The format is `key = value`
 with `#` comments, plus `bind` lines. Binds always start from the defaults above;
 each `bind` line in your config overrides just that key combination and leaves every
@@ -154,8 +154,8 @@ bind = MOD SHIFT, 1, movetoworkspace, 1
 monitor = HDMI-A-1, 0x-1080, 1.0
 ```
 
-A line 0xide can't parse is warned about on stderr and skipped — never fatal. See
-[`0xide.conf.example`](0xide.conf.example) for the full annotated example.
+A line 0xin can't parse is warned about on stderr and skipped — never fatal. See
+[`0xin.conf.example`](0xin.conf.example) for the full annotated example.
 
 ## Repository layout
 
@@ -171,6 +171,6 @@ A line 0xide can't parse is warned about on stderr and skipped — never fatal. 
 
 ---
 
-0xide is a personal, learning-first project — built concept-by-concept with every
+0xin is a personal, learning-first project — built concept-by-concept with every
 file and function understood rather than assembled. Its working rules live in
 [`KICKOFF.md`](KICKOFF.md). No license yet!

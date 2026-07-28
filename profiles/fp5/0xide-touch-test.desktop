@@ -1,7 +1,0 @@
-[Desktop Entry]
-Name=0xide Touch Test
-Comment=Temporary standalone Fairphone 5 touch test
-Exec=/home/sn3rt/Projects/0xide-touch/profiles/fp5/run-touch-test.sh
-TryExec=/home/sn3rt/Projects/0xide-touch/profiles/fp5/run-touch-test.sh
-Type=Application
-DesktopNames=0xide;

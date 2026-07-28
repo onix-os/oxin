@@ -82,7 +82,7 @@ pub(crate) unsafe fn set_fullscreen(server: &mut Server, tl: *mut Toplevel, on: 
     if !on && (*tl).floating {
         place_floating(server, tl, (*tl).w, (*tl).h);
     }
-    println!("0xide: fullscreen {}", if on { "on" } else { "off" });
+    println!("0xin: fullscreen {}", if on { "on" } else { "off" });
 }
 
 /// Float or re-tile a window. Floating windows keep their own size (no tiled
@@ -122,7 +122,7 @@ pub(crate) unsafe fn set_floating(server: &mut Server, tl: *mut Toplevel, on: bo
         }
     }
     refresh(server);
-    println!("0xide: floating {}", if on { "on" } else { "off" });
+    println!("0xin: floating {}", if on { "on" } else { "off" });
 }
 
 /// Center a floating window (at `w`×`h`) in the active output's usable area
@@ -236,14 +236,14 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
     if floats_naturally(tl) {
         (*tl).floating = true;
         wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, 0, 0);
-        println!("0xide: new window — floating, initial configure 0x0");
+        println!("0xin: new window — floating, initial configure 0x0");
         return;
     }
     if floats_by_rule(server, tl) {
         (*tl).floating = true;
         let (w, h) = float_default_size(server);
         wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
-        println!("0xide: new window — floating (rule), initial configure {w}x{h}");
+        println!("0xin: new window — floating (rule), initial configure {w}x{h}");
         return;
     }
 
@@ -258,7 +258,7 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
     // use that instead of what we send.
     oxide_xdg_toplevel_set_tiled_all((*tl).xdg_toplevel);
     wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
-    println!("0xide: new window — initial configure {w}x{h}");
+    println!("0xin: new window — initial configure {w}x{h}");
 }
 
 /// A window's surface became mapped: add it to the focused output's workspace,
@@ -290,7 +290,7 @@ unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
     refresh(server);
     focus_index(server, server.workspaces[a].windows.len() - 1);
     println!(
-        "0xide: window mapped — ws {} now {} ({})",
+        "0xin: window mapped — ws {} now {} ({})",
         a + 1,
         server.workspaces[a].windows.len(),
         if (*tl).floating { "floating" } else { "tiled" }

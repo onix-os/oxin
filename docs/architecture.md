@@ -1,9 +1,9 @@
 # Architecture: the two-plane split
 
-0xide is really *two* systems layered on top of each other, with a hard rule
+0xin is really *two* systems layered on top of each other, with a hard rule
 about who owns what — the same discipline the [Introduction](introduction.md)
-described one level up, between 0xide and wlroots, repeats itself inside
-0xide's own source tree.
+described one level up, between 0xin and wlroots, repeats itself inside
+0xin's own source tree.
 
 ## The ownership contract
 
@@ -48,7 +48,7 @@ or the listener list, it goes in the shim; otherwise it stays in Rust.
 
 `build.rs` runs `bindgen` over `wrapper.h` with an **explicit allowlist** —
 `.allowlist_function(...)`, `.allowlist_type(...)` — so Rust only sees the
-slice of the wlroots API 0xide actually calls, rather than the whole (huge,
+slice of the wlroots API 0xin actually calls, rather than the whole (huge,
 partially-unstable) surface. The same `build.rs` also compiles `shim/*.c` via
 the `cc` crate and generates the `xdg-shell` protocol header with
 `wayland-scanner`, since wlroots' own xdg-shell header `#include`s it and

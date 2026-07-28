@@ -6,7 +6,7 @@ real login session via libseat, instead of a window inside someone else's
 compositor.
 
 **Deliverable** (from `KICKOFF.md`): *run on a VT via seatd/libseat;
-multi-output layout and modesetting. 0xide as a real session on
+multi-output layout and modesetting. 0xin as a real session on
 hardware/VM.*
 
 ## How it's gone so far
@@ -14,8 +14,8 @@ hardware/VM.*
 `wlr_backend_autocreate` already picks the DRM/KMS backend automatically
 when there's no `WAYLAND_DISPLAY` to detect — no separate code path was
 needed, just a different environment to run in. On a bare TTY:
-`LIBSEAT_BACKEND=logind ~/Projects/0xide/target/debug/0xide foot
-2>~/0xide-tty.log`, with `LIBSEAT_BACKEND=logind` letting logind hand the
+`LIBSEAT_BACKEND=logind ~/Projects/0xin/target/debug/0xin foot
+2>~/0xin-tty.log`, with `LIBSEAT_BACKEND=logind` letting logind hand the
 active VT its devices without a `seat` group membership.
 
 Two real bugs came out of this that a nested session can't surface at all,

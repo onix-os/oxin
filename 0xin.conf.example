@@ -1,13 +1,13 @@
-# 0xide example config
+# 0xin example config
 #
-# Copy to ~/.config/0xide/0xide.conf and edit. Lines are `key = value`,
-# `#` starts a comment. With no config file, 0xide uses these same defaults.
+# Copy to ~/.config/0xin/0xin.conf and edit. Lines are `key = value`,
+# `#` starts a comment. With no config file, 0xin uses these same defaults.
 # A line it can't parse is warned about on stderr and skipped — never fatal.
 
 # --- general ---------------------------------------------------------------
 
 # Primary modifier, referenced as MOD / $mod in binds below. super | alt | ctrl.
-# (OXIDE_MOD=alt in the environment overrides this — handy when running nested
+# (OXIN_MOD=alt in the environment overrides this — handy when running nested
 # under another compositor that grabs Super-chords.)
 modifier = super
 

@@ -93,7 +93,7 @@ static void handle_keyboard_destroy(void *userdata, void *data) {
     oxide_listener_remove(kb->mod_listener);
     oxide_listener_remove(kb->destroy_listener);
     free(kb);
-    wlr_log(WLR_INFO, "0xide: keyboard removed");
+    wlr_log(WLR_INFO, "0xin: keyboard removed");
 }
 
 static void seat_add_keyboard(struct wlr_seat *seat,
@@ -121,7 +121,7 @@ static void seat_add_keyboard(struct wlr_seat *seat,
     kb->destroy_listener = signal_add(&device->events.destroy, handle_keyboard_destroy, kb);
 
     wlr_seat_set_keyboard(seat, keyboard);
-    wlr_log(WLR_INFO, "0xide: keyboard attached");
+    wlr_log(WLR_INFO, "0xin: keyboard attached");
 }
 
 static void handle_new_virtual_keyboard(void *userdata, void *data) {
@@ -130,7 +130,7 @@ static void handle_new_virtual_keyboard(void *userdata, void *data) {
     // Virtual keys are client input, never compositor keybindings. Passing no
     // key callback makes seat_add_keyboard forward every key to seat focus.
     seat_add_keyboard(seat, &virtual_keyboard->keyboard.base, NULL, NULL);
-    wlr_log(WLR_INFO, "0xide: virtual keyboard attached");
+    wlr_log(WLR_INFO, "0xin: virtual keyboard attached");
 }
 
 void oxide_virtual_keyboard_setup(struct wl_display *display,
@@ -341,7 +341,7 @@ static void handle_touch_down(void *userdata, void *data) {
     struct oxide_pointer *p = userdata;
     struct wlr_touch_down_event *e = data;
     if (touch_point_find(p, e->touch_id) != NULL) {
-        wlr_log(WLR_ERROR, "0xide: duplicate touch ID %d ignored",
+        wlr_log(WLR_ERROR, "0xin: duplicate touch ID %d ignored",
                 e->touch_id);
         return;
     }
@@ -449,7 +449,7 @@ static void handle_touch_device_destroy(void *userdata, void *data) {
                 p->seat->capabilities & ~WL_SEAT_CAPABILITY_TOUCH);
     }
     free(td);
-    wlr_log(WLR_INFO, "0xide: touch removed");
+    wlr_log(WLR_INFO, "0xin: touch removed");
 }
 
 static void pointer_add_touch(struct oxide_pointer *p,
@@ -465,7 +465,7 @@ static void pointer_add_touch(struct oxide_pointer *p,
     p->touch_device_count++;
     wlr_seat_set_capabilities(p->seat,
             p->seat->capabilities | WL_SEAT_CAPABILITY_TOUCH);
-    wlr_log(WLR_INFO, "0xide: touch attached");
+    wlr_log(WLR_INFO, "0xin: touch attached");
 }
 
 struct wlr_cursor *oxide_cursor_setup(struct wlr_output_layout *layout,
@@ -532,7 +532,7 @@ void oxide_handle_new_input(struct wlr_seat *seat, struct wlr_cursor *cursor,
         break;
     case WLR_INPUT_DEVICE_POINTER:
         wlr_cursor_attach_input_device(cursor, device);
-        wlr_log(WLR_INFO, "0xide: pointer attached");
+        wlr_log(WLR_INFO, "0xin: pointer attached");
         break;
     case WLR_INPUT_DEVICE_TOUCH:
         pointer_add_touch(cursor->data, device);

@@ -20,7 +20,7 @@ Three pieces get created once in `main()` and tied together:
 outputs sit in space), and `wlr_scene_attach_output_layout`, which keeps a
 scene-output positioned to match its layout slot automatically. Each new
 output (handled in `handle_new_output`, see [`src/output.rs`
-](https://github.com/termworks/0xide/blob/main/src/output.rs)) gets a
+](https://github.com/termworks/0xin/blob/main/src/output.rs)) gets a
 `wlr_scene_output` tied to a layout slot via
 `wlr_scene_output_layout_add_output`, and a frame listener that calls
 `wlr_scene_output_render` on every frame the output signals it's ready for

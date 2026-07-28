@@ -1,6 +1,6 @@
 # Architecture: Rust / C-shim division of labor (as of Stage 2)
 
-0xide is Rust-first with a thin C shim (`shim/oxide_shim.c`) for the FFI that
+0xin is Rust-first with a thin C shim (`shim/oxide_shim.c`) for the FFI that
 is unsafe or awkward over bindgen. The dividing line, learned in practice:
 
 **Rust (`src/main.rs`) owns the flow and clean pointer-passing:**

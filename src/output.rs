@@ -104,7 +104,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
     oxide_output_schedule_frame(output);
 
     eprintln!(
-        "0xide: output {name} online @ {x},{y} {w}x{h} — workspace {}",
+        "0xin: output {name} online @ {x},{y} {w}x{h} — workspace {}",
         workspace + 1
     );
 }
@@ -128,7 +128,7 @@ unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_v
     server.outputs.remove(pos);
     drop(Box::from_raw(frame_ctx));
     refresh(server);
-    eprintln!("0xide: output removed — {} left", server.outputs.len());
+    eprintln!("0xin: output removed — {} left", server.outputs.len());
 }
 
 /// Called by the shim on every session active change (VT switch away/back).
@@ -139,7 +139,7 @@ unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_v
 pub(crate) unsafe extern "C" fn handle_session_active(userdata: *mut c_void, _data: *mut c_void) {
     let server = &mut *(userdata as *mut Server);
     if !oxide_session_is_active(server.session) {
-        eprintln!("0xide: session inactive (VT switched away)");
+        eprintln!("0xin: session inactive (VT switched away)");
         return;
     }
     // Rebuild every window's scene node. After the outputs are torn down and
@@ -176,7 +176,7 @@ pub(crate) unsafe extern "C" fn handle_session_active(userdata: *mut c_void, _da
         oxide_output_schedule_frame(o.wlr_output);
     }
     eprintln!(
-        "0xide: session active — repainting {} output(s)",
+        "0xin: session active — repainting {} output(s)",
         server.outputs.len()
     );
 }
@@ -195,7 +195,7 @@ unsafe extern "C" fn handle_frame(userdata: *mut c_void, _data: *mut c_void) {
             oxide_scene_rect_set_enabled(bg, true);
             server.outputs[pos].repaint_frames -= 1;
             eprintln!(
-                "0xide: forced repaint (output {}, {} left)",
+                "0xin: forced repaint (output {}, {} left)",
                 pos, server.outputs[pos].repaint_frames
             );
             oxide_scene_output_render(ctx.scene_output);

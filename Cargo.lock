@@ -145,7 +145,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "oxide"
+name = "oxin"
 version = "0.1.0"
 dependencies = [
  "bindgen",

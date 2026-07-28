@@ -1,6 +1,6 @@
 # Why phase gates
 
-0xide's roadmap isn't a backlog or a progress bar — it's a series of stages,
+0xin's roadmap isn't a backlog or a progress bar — it's a series of stages,
 each defined by one concrete **deliverable**: a thing you can point at, run,
 and see working. "A nested window shows a solid color." "A terminal appears." "I
 can type into it." That's a deliberate constraint, not an accident of how

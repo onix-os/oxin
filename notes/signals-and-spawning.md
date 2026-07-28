@@ -8,10 +8,10 @@ explicitly reset between fork and exec. Two things survive exec:
   "SIGCHLD ignored" → the kernel auto-reaps *their* children before they can
   read exit codes. Symptom that found it: quickshell's recording indicator
   (a 1 Hz `pgrep -x wf-recorder` whose QProcess exit code came back 0
-  regardless) showed a permanent red "recording" dot under 0xide only.
+  regardless) showed a permanent red "recording" dot under 0xin only.
 - **The blocked-signal mask.** libwayland's `wl_event_loop_add_signal`
   (signalfd) blocks SIGINT/SIGTERM in our process; clients inherited them
-  blocked, so a plain `kill -TERM` to a 0xide-spawned client sat pending
+  blocked, so a plain `kill -TERM` to a 0xin-spawned client sat pending
   forever (`SigBlk 0x4002` in /proc/PID/status).
 
 Fix: `oxide_reset_child_signals()` in `shim/core.c` — `SIGCHLD → SIG_DFL` +

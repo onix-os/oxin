@@ -1,4 +1,4 @@
-# 0xide — memory index
+# 0xin — memory index
 
 One line per note; open the file for the full fact. Verify before asserting.
 

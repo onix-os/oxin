@@ -1,11 +1,11 @@
 [book]
-title = "0xide"
+title = "0xin"
 description = "A from-scratch tiling Wayland compositor in Rust on wlroots — built and documented one phase at a time."
 authors = ["sn3rt"]
 src = "docs"
 language = "en"
 
 [output.html]
-git-repository-url = "https://github.com/termworks/0xide"
+git-repository-url = "https://github.com/termworks/0xin"
 default-theme = "navy"
 preferred-dark-theme = "navy"

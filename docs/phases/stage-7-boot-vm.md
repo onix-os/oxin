@@ -2,11 +2,11 @@
 
 **What it is.** The "boot a Linux kernel, then straight into our own
 userspace" milestone: a minimal Linux kernel plus initramfs/rootfs that
-boots directly into 0xide on `virtio-gpu`, rather than 0xide being launched
+boots directly into 0xin on `virtio-gpu`, rather than 0xin being launched
 from an already-running Linux install.
 
 **Deliverable** (from `KICKOFF.md`): *minimal Linux + initramfs/rootfs boots
-straight into 0xide on virtio-gpu. "Boot a Linux kernel, then our
+straight into 0xin on virtio-gpu. "Boot a Linux kernel, then our
 userspace."*
 
 ## Status

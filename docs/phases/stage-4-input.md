@@ -17,7 +17,7 @@ routing. I can type into and click the terminal.*
 
 New input devices arrive via the backend's `new_input` signal
 (`handle_new_input` in [`src/input.rs`
-](https://github.com/termworks/0xide/blob/main/src/input.rs)), routed by device
+](https://github.com/termworks/0xin/blob/main/src/input.rs)), routed by device
 type — keyboards get an xkb keymap and are attached to the seat;
 pointers/touch devices are attached to the cursor set up in `main()`
 (`oxide_cursor_setup`), which sits over the output layout and routes motion

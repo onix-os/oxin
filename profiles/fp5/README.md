@@ -1,27 +1,27 @@
 # Fairphone 5 touch test
 
-This profile is intentionally temporary: it starts 0xide directly on DRM/KMS
+This profile is intentionally temporary: it starts 0xin directly on DRM/KMS
 with Foot and a manually visible wvkbd, without a bar, automatic keyboard
 activation, gestures, or autologin. Phosh and Hyprland remain separate sessions.
 
-Build 0xide in `~/Projects/0xide-touch`, then install the chooser entry:
+Build 0xin in `~/Projects/0xin-touch`, then install the chooser entry:
 
 ```sh
 sudo install -m 0644 \
-  ~/Projects/0xide-touch/profiles/fp5/0xide-touch-test.desktop \
-  /usr/share/wayland-sessions/0xide-touch-test.desktop
+  ~/Projects/0xin-touch/profiles/fp5/0xin-touch-test.desktop \
+  /usr/share/wayland-sessions/0xin-touch-test.desktop
 ```
 
-Confirm SSH works before logging out. Select **0xide Touch Test** in Phrog.
+Confirm SSH works before logging out. Select **0xin Touch Test** in Phrog.
 End the test from another machine:
 
 ```sh
-ssh fp5 'pkill -TERM -x 0xide'
+ssh fp5 'pkill -TERM -x 0xin'
 ```
 
-The wrapper exits with 0xide, returning control to greetd. Remove the temporary
+The wrapper exits with 0xin, returning control to greetd. Remove the temporary
 entry when it is no longer needed:
 
 ```sh
-sudo rm /usr/share/wayland-sessions/0xide-touch-test.desktop
+sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
 ```

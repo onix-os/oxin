@@ -15,7 +15,7 @@ was decided, not assumed up front.
 **Deliverable** (from `KICKOFF.md`): *link wlroots from Rust (bindgen vs C
 shim, decided together); open a wlroots backend (nested) and a renderer;
 clear the screen to a solid color; structured logging. A nested window shows
-a solid color — "0xide alive."*
+a solid color — "0xin alive."*
 
 ## How it went
 

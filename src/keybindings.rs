@@ -59,7 +59,7 @@ unsafe fn switch_workspace(server: &mut Server, target: usize) {
     refresh(server);
     let f = server.workspaces[target].focused;
     focus_index(server, f);
-    eprintln!("0xide: output {} -> workspace {}", fo, target + 1);
+    eprintln!("0xin: output {} -> workspace {}", fo, target + 1);
 }
 
 /// Move the focused output's focused window to another workspace.
@@ -89,7 +89,7 @@ unsafe fn move_to_workspace(server: &mut Server, target: usize) {
     refresh(server); // recomputes visibility (target may or may not be displayed)
     let f = server.workspaces[a].focused;
     focus_index(server, f);
-    eprintln!("0xide: moved window to workspace {}", target + 1);
+    eprintln!("0xin: moved window to workspace {}", target + 1);
 }
 
 /// How far one Mod+Shift+hjkl press moves a floating window, in pixels.
@@ -113,7 +113,7 @@ unsafe fn nudge_floating(server: &mut Server, tl: *mut Toplevel, dir: Direction)
     ((*tl).x, (*tl).y) = (x, y);
 }
 
-/// Launch a program as a client of 0xide (inherits our WAYLAND_DISPLAY). Runs
+/// Launch a program as a client of 0xin (inherits our WAYLAND_DISPLAY). Runs
 /// through a shell (like Hyprland's `exec`) so `~`, env vars, `&&`, and quoting
 /// in bind commands work as expected — a plain `execvp` doesn't expand any of
 /// that.
@@ -122,7 +122,7 @@ fn spawn(cmd: &str) {
     command.arg("-c").arg(cmd);
     reset_signals(&mut command);
     if let Err(e) = command.spawn() {
-        eprintln!("0xide: failed to spawn `{cmd}`: {e}");
+        eprintln!("0xin: failed to spawn `{cmd}`: {e}");
     }
 }
 
