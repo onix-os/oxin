@@ -339,6 +339,7 @@ mod tests {
             }],
             outputs: Vec::new(),
             config: Config::default(),
+            keyboard_visible: false,
             grab: GrabMode::None,
             grab_tl: ptr::null_mut(),
             grab_cx: 0.0,

@@ -22,10 +22,8 @@ pub(crate) type GrabButtonCallback =
 /// active (it handled the motion)?
 pub(crate) type GrabMotionCallback = unsafe extern "C" fn(*mut c_void, f64, f64) -> bool;
 
-/// Bottom-handle gesture callback: `show` is true for an upward swipe and
-/// false for a downward swipe.
-pub(crate) type KeyboardGestureCallback = unsafe extern "C" fn(*mut c_void, bool);
-pub(crate) type WorkspaceGestureCallback = unsafe extern "C" fn(*mut c_void, i32);
+/// Named compositor gesture trigger callback.
+pub(crate) type GestureCallback = unsafe extern "C" fn(*mut c_void, u32);
 
 /// Opaque handle to a `oxide_listener` living on the C heap.
 #[repr(C)]
@@ -208,20 +206,15 @@ extern "C" {
         motion_callback: GrabMotionCallback,
         userdata: *mut c_void,
     );
-    pub(crate) fn oxide_cursor_set_keyboard_gesture(
+    pub(crate) fn oxide_cursor_set_gestures(
         cursor: *mut wlr::wlr_cursor,
         layout: *mut wlr::wlr_output_layout,
-        enabled: bool,
+        enabled_mask: u32,
         keyboard_height: i32,
-        callback: KeyboardGestureCallback,
+        callback: GestureCallback,
         userdata: *mut c_void,
     );
-    pub(crate) fn oxide_cursor_set_workspace_gesture(
-        cursor: *mut wlr::wlr_cursor,
-        enabled: bool,
-        callback: WorkspaceGestureCallback,
-        userdata: *mut c_void,
-    );
+    pub(crate) fn oxide_cursor_set_keyboard_visible(cursor: *mut wlr::wlr_cursor, visible: bool);
     pub(crate) fn oxide_xdg_toplevel_surface(
         toplevel: *mut wlr::wlr_xdg_toplevel,
     ) -> *mut c_void;

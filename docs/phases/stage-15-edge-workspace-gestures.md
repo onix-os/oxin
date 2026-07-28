@@ -33,14 +33,21 @@ next from workspace 9 selects workspace 1.
 
 ## Configuration
 
-The feature is generic but opt-in:
+Stage 16 expresses the opt-in behavior as mappings to shared actions:
 
 ```ini
-workspace_edge_swipe = true
+gesture = edge-left-in, workspaceprev
+gesture = edge-right-in, workspacenext
 ```
 
 The FP5 reference profile enables it. Desktop configurations default to
-`false`, keeping the full touchscreen surface available to applications.
+no gesture mappings, keeping the full touchscreen surface available to
+applications. Desktop users can invoke the same actions from keys:
+
+```ini
+bind = MOD, bracketleft, workspaceprev
+bind = MOD, bracketright, workspacenext
+```
 
 Earlier mobile testing demonstrated native application gestures but did not
 include compositor workspace gestures; Stage 12 explicitly deferred that

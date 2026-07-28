@@ -126,6 +126,42 @@ fn spawn(cmd: &str) {
     }
 }
 
+unsafe fn set_keyboard_visible(server: &mut Server, visible: bool) {
+    if server.keyboard_visible == visible {
+        return;
+    }
+    let command = if visible {
+        server.config.virtual_keyboard_show.clone()
+    } else {
+        server.config.virtual_keyboard_hide.clone()
+    };
+    let Some(command) = command else {
+        eprintln!(
+            "0xin: no virtual_keyboard_{} command configured",
+            if visible { "show" } else { "hide" }
+        );
+        return;
+    };
+    spawn(&command);
+    server.keyboard_visible = visible;
+    oxide_cursor_set_keyboard_visible(server.cursor, visible);
+    for output in &server.outputs {
+        if !output.gesture_handle.is_null() {
+            let y = output.y + output.h
+                - if visible {
+                    server.config.virtual_keyboard_height + 8
+                } else {
+                    10
+                };
+            oxide_scene_rect_set_position(
+                output.gesture_handle,
+                output.x + (output.w - 120) / 2,
+                y,
+            );
+        }
+    }
+}
+
 /// Arrange for a spawned client to start with clean process state. The
 /// compositor's ignored SIGCHLD, blocked SIGINT/SIGTERM, and private
 /// `LD_LIBRARY_PATH` would otherwise leak into clients. The FP5 sysroot's
@@ -170,6 +206,12 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
         .map(|b| b.action.clone());
     let Some(action) = action else { return false };
 
+    dispatch_action(server, action);
+    true
+}
+
+/// Execute compositor policy independently of which input produced it.
+pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
     // Window count on the focused output's workspace (0 if no output yet).
     let n = if server.outputs.is_empty() {
         0
@@ -241,6 +283,19 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
         Action::ToggleFloating => {}
         Action::Workspace(ws) => switch_workspace(server, ws),
         Action::MoveToWorkspace(ws) => move_to_workspace(server, ws),
+        Action::WorkspaceNext if !server.outputs.is_empty() => {
+            let current = active_workspace(server);
+            let count = server.workspaces.len() as i32;
+            switch_workspace(server, (current as i32 + 1).rem_euclid(count) as usize);
+        }
+        Action::WorkspacePrevious if !server.outputs.is_empty() => {
+            let current = active_workspace(server);
+            let count = server.workspaces.len() as i32;
+            switch_workspace(server, (current as i32 - 1).rem_euclid(count) as usize);
+        }
+        Action::WorkspaceNext | Action::WorkspacePrevious => {}
+        Action::KeyboardShow => set_keyboard_visible(server, true),
+        Action::KeyboardHide => set_keyboard_visible(server, false),
+        Action::KeyboardToggle => set_keyboard_visible(server, !server.keyboard_visible),
     }
-    true
 }

@@ -26,3 +26,4 @@
 - [Stage 13 — Virtual Keyboard & Mobile Scaling](phases/stage-13-virtual-keyboard-mobile.md)
 - [Stage 14 — Mobile Keyboard Gestures](phases/stage-14-mobile-keyboard-gestures.md)
 - [Stage 15 — Edge Workspace Gestures](phases/stage-15-edge-workspace-gestures.md)
+- [Stage 16 — Unified Input Mappings](phases/stage-16-unified-input-mappings.md)

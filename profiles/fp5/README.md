@@ -37,3 +37,8 @@ Swipe inward from the left edge for the previous workspace or from the right
 edge for the next workspace. The nine-workspace ring wraps at either end.
 Touches must begin within the narrow edge activation strip; horizontal gestures
 started elsewhere remain application input.
+
+These meanings come from the profile's `gesture = TRIGGER, ACTION` mappings,
+not hardcoded phone policy. The same `workspacenext`, `workspaceprev`, and
+virtual-keyboard actions can be assigned to ordinary `bind =` keyboard chords
+on desktops and convertibles.

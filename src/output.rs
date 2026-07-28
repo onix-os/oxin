@@ -53,7 +53,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         oxide_scene_add_output_background(server.tree_bg_fallback, output, x, y, r, g, b);
     // Phone profiles opt into a small compositor-owned handle. Its larger
     // invisible touch target is implemented in the input shim.
-    let gesture_handle = if server.config.gesture_keyboard.is_some() {
+    let gesture_handle = if server.config.has_keyboard_handle() {
         oxide_scene_add_rect(
             server.tree_layer_overlay,
             x + (w - 120) / 2,

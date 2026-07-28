@@ -46,8 +46,7 @@ typedef bool (*oxide_grab_button_callback)(void *userdata,
         bool pressed, double cx, double cy);
 typedef bool (*oxide_grab_motion_callback)(void *userdata, double cx,
         double cy);
-typedef void (*oxide_keyboard_gesture_callback)(void *userdata, bool show);
-typedef void (*oxide_workspace_gesture_callback)(void *userdata, int direction);
+typedef void (*oxide_gesture_callback)(void *userdata, uint32_t trigger);
 
 // --- toolchain / logging ---------------------------------------------------
 const char *oxide_wlroots_version(void);
@@ -278,13 +277,11 @@ void oxide_cursor_set_focus_callback(struct wlr_cursor *cursor,
 void oxide_cursor_set_grab_callbacks(struct wlr_cursor *cursor,
         oxide_grab_button_callback button_callback,
         oxide_grab_motion_callback motion_callback, void *userdata);
-// Enable a bottom-center touch target. An upward swipe requests keyboard show;
-// after that, a downward swipe from the same persistent handle requests hide.
-void oxide_cursor_set_keyboard_gesture(struct wlr_cursor *cursor,
-        struct wlr_output_layout *layout, bool enabled, int keyboard_height,
-        oxide_keyboard_gesture_callback callback, void *userdata);
-void oxide_cursor_set_workspace_gesture(struct wlr_cursor *cursor,
-        bool enabled, oxide_workspace_gesture_callback callback,
-        void *userdata);
+// Enable only the named gesture triggers selected by `enabled_mask` and emit
+// their stable numeric IDs through one callback. Rust maps IDs to policy.
+void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
+        struct wlr_output_layout *layout, uint32_t enabled_mask,
+        int keyboard_height, oxide_gesture_callback callback, void *userdata);
+void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor, bool visible);
 
 #endif // OXIN_SHIM_H

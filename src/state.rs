@@ -61,6 +61,7 @@ pub(crate) struct Server {
     pub(crate) outputs: Vec<Output>,
     /// User configuration: modifier, gap, background, keybindings.
     pub(crate) config: Config,
+    pub(crate) keyboard_visible: bool,
     /// Active pointer grab (Mod+drag on a floating window): what it does,
     /// which window, and the cursor position + window rect when it started —
     /// motion applies deltas against these, not against the previous event.

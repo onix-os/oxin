@@ -171,14 +171,11 @@ struct oxide_pointer {
     struct wl_list touch_points;
     size_t touch_device_count;
     struct wlr_output_layout *output_layout;
-    bool keyboard_gesture_enabled;
+    uint32_t gesture_mask;
     bool keyboard_visible;
     int keyboard_height;
-    oxide_keyboard_gesture_callback keyboard_gesture_callback;
-    void *keyboard_gesture_userdata;
-    bool workspace_gesture_enabled;
-    oxide_workspace_gesture_callback workspace_gesture_callback;
-    void *workspace_gesture_userdata;
+    oxide_gesture_callback gesture_callback;
+    void *gesture_userdata;
 };
 
 struct oxide_touch_point {
@@ -341,7 +338,9 @@ static struct oxide_touch_point *touch_point_find(
 }
 
 static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) {
-    if (!p->keyboard_gesture_enabled || p->output_layout == NULL) {
+    uint32_t trigger = p->keyboard_visible ? 1 : 0;
+    if ((p->gesture_mask & (1u << trigger)) == 0
+            || p->output_layout == NULL) {
         return false;
     }
     struct wlr_output *output =
@@ -365,7 +364,8 @@ static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) 
 
 static int workspace_gesture_edge(struct oxide_pointer *p,
         double lx, double ly) {
-    if (!p->workspace_gesture_enabled || p->output_layout == NULL) {
+    if ((p->gesture_mask & ((1u << 2) | (1u << 3))) == 0
+            || p->output_layout == NULL) {
         return 0;
     }
     struct wlr_output *output =
@@ -375,10 +375,11 @@ static int workspace_gesture_edge(struct oxide_pointer *p,
     }
     struct wlr_box box;
     wlr_output_layout_get_box(p->output_layout, output, &box);
-    if (lx <= box.x + 28) {
+    if (lx <= box.x + 28 && (p->gesture_mask & (1u << 2)) != 0) {
         return -1;
     }
-    if (lx >= box.x + box.width - 28) {
+    if (lx >= box.x + box.width - 28
+            && (p->gesture_mask & (1u << 3)) != 0) {
         return 1;
     }
     return 0;
@@ -469,10 +470,8 @@ static void handle_touch_motion(void *userdata, void *data) {
         bool hide = p->keyboard_visible && dy >= 60;
         if (!point->gesture_fired && (show || hide)) {
             point->gesture_fired = true;
-            p->keyboard_visible = show;
-            if (p->keyboard_gesture_callback != NULL) {
-                p->keyboard_gesture_callback(
-                        p->keyboard_gesture_userdata, show);
+            if (p->gesture_callback != NULL) {
+                p->gesture_callback(p->gesture_userdata, show ? 0 : 1);
             }
         }
         return;
@@ -483,9 +482,9 @@ static void handle_touch_motion(void *userdata, void *data) {
         bool next = point->gesture_edge == 1 && dx <= -70;
         if (!point->gesture_fired && (previous || next)) {
             point->gesture_fired = true;
-            if (p->workspace_gesture_callback != NULL) {
-                p->workspace_gesture_callback(
-                        p->workspace_gesture_userdata, previous ? -1 : 1);
+            if (p->gesture_callback != NULL) {
+                p->gesture_callback(
+                        p->gesture_userdata, previous ? 2 : 3);
             }
         }
         return;
@@ -645,24 +644,21 @@ void oxide_cursor_set_grab_callbacks(struct wlr_cursor *cursor,
     p->grab_userdata = userdata;
 }
 
-void oxide_cursor_set_keyboard_gesture(struct wlr_cursor *cursor,
-        struct wlr_output_layout *layout, bool enabled, int keyboard_height,
-        oxide_keyboard_gesture_callback callback, void *userdata) {
+void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
+        struct wlr_output_layout *layout, uint32_t enabled_mask,
+        int keyboard_height, oxide_gesture_callback callback, void *userdata) {
     struct oxide_pointer *p = cursor->data;
     p->output_layout = layout;
-    p->keyboard_gesture_enabled = enabled;
+    p->gesture_mask = enabled_mask;
     p->keyboard_height = keyboard_height;
-    p->keyboard_gesture_callback = callback;
-    p->keyboard_gesture_userdata = userdata;
+    p->gesture_callback = callback;
+    p->gesture_userdata = userdata;
 }
 
-void oxide_cursor_set_workspace_gesture(struct wlr_cursor *cursor,
-        bool enabled, oxide_workspace_gesture_callback callback,
-        void *userdata) {
+void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor,
+        bool visible) {
     struct oxide_pointer *p = cursor->data;
-    p->workspace_gesture_enabled = enabled;
-    p->workspace_gesture_callback = callback;
-    p->workspace_gesture_userdata = userdata;
+    p->keyboard_visible = visible;
 }
 
 void oxide_handle_new_input(struct wlr_seat *seat, struct wlr_cursor *cursor,

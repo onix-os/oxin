@@ -66,6 +66,11 @@ pub enum Action {
     Workspace(usize),
     /// Move the focused window to a workspace (0-based index).
     MoveToWorkspace(usize),
+    WorkspaceNext,
+    WorkspacePrevious,
+    KeyboardShow,
+    KeyboardHide,
+    KeyboardToggle,
 }
 
 /// One key combination mapped to an action.
@@ -73,6 +78,21 @@ pub enum Action {
 pub struct Bind {
     pub mods: u32,
     pub keysym: u32,
+    pub action: Action,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GestureTrigger {
+    BottomUp = 0,
+    KeyboardTopDown = 1,
+    EdgeLeftIn = 2,
+    EdgeRightIn = 3,
+}
+
+#[derive(Clone)]
+pub struct GestureBind {
+    pub trigger: GestureTrigger,
     pub action: Action,
 }
 
@@ -110,15 +130,12 @@ pub struct Config {
     /// to `float =` rule windows; dialogs and fixed-size windows keep their
     /// natural size instead.
     pub float_size: (i32, i32),
-    /// Process name of an on-screen keyboard controlled by the bottom swipe
-    /// handle. `None` keeps the phone gesture UI disabled.
-    pub gesture_keyboard: Option<String>,
-    /// Logical height of that keyboard; used to keep the gesture handle on
-    /// its top edge while the keyboard is visible.
-    pub gesture_keyboard_height: i32,
-    /// Whether inward swipes from the left/right output edges cycle
-    /// workspaces. Disabled by default for desktop touchscreens.
-    pub workspace_edge_swipe: bool,
+    pub gestures: Vec<GestureBind>,
+    /// Commands implementing the optional virtual-keyboard controller.
+    pub virtual_keyboard_show: Option<String>,
+    pub virtual_keyboard_hide: Option<String>,
+    /// Logical height used to place the visible keyboard's close handle.
+    pub virtual_keyboard_height: i32,
 }
 
 impl Default for Config {
@@ -132,9 +149,10 @@ impl Default for Config {
             monitors: Vec::new(),
             float_rules: Vec::new(),
             float_size: (60, 60),
-            gesture_keyboard: None,
-            gesture_keyboard_height: 300,
-            workspace_edge_swipe: false,
+            gestures: Vec::new(),
+            virtual_keyboard_show: None,
+            virtual_keyboard_hide: None,
+            virtual_keyboard_height: 300,
         }
     }
 }
@@ -170,6 +188,7 @@ impl Config {
         cfg.binds = default_binds(cfg.modifier);
         if let Some(text) = &contents {
             cfg.apply_binds(text);
+            cfg.apply_gestures(text);
         }
 
         println!(
@@ -228,33 +247,23 @@ impl Config {
                         self.float_rules.push(app_id);
                     }
                 }
-                "gesture_keyboard" => {
-                    if val.is_empty() || val.len() > 15 || val.contains(char::is_whitespace) {
-                        warn(
-                            n,
-                            "invalid gesture_keyboard (want a Linux process name, max 15 characters)",
-                            raw,
-                        );
-                    } else {
-                        self.gesture_keyboard = Some(val.to_string());
-                    }
+                "virtual_keyboard_show" => {
+                    self.virtual_keyboard_show = (!val.is_empty()).then(|| val.to_string())
                 }
-                "gesture_keyboard_height" => match val.parse::<i32>() {
+                "virtual_keyboard_hide" => {
+                    self.virtual_keyboard_hide = (!val.is_empty()).then(|| val.to_string())
+                }
+                "virtual_keyboard_height" => match val.parse::<i32>() {
                     Ok(height) if (80..=1000).contains(&height) => {
-                        self.gesture_keyboard_height = height
+                        self.virtual_keyboard_height = height
                     }
                     _ => warn(
                         n,
-                        "invalid gesture_keyboard_height (want 80..1000 logical pixels)",
+                        "invalid virtual_keyboard_height (want 80..1000 logical pixels)",
                         raw,
                     ),
                 },
-                "workspace_edge_swipe" => match val {
-                    "true" | "yes" | "on" | "1" => self.workspace_edge_swipe = true,
-                    "false" | "no" | "off" | "0" => self.workspace_edge_swipe = false,
-                    _ => warn(n, "invalid workspace_edge_swipe (want true or false)", raw),
-                },
-                "bind" => {} // handled in parse_binds
+                "bind" | "gesture" => {} // handled in their second passes
                 _ => warn(n, "unknown setting", raw),
             }
         }
@@ -298,6 +307,43 @@ impl Config {
             mods,
             keysym,
             action,
+        })
+    }
+
+    fn apply_gestures(&mut self, text: &str) {
+        for (n, raw) in lines(text) {
+            let Some((key, val)) = split_kv(raw) else {
+                continue;
+            };
+            if key != "gesture" {
+                continue;
+            }
+            match parse_gesture(val) {
+                Some(binding) => match self
+                    .gestures
+                    .iter_mut()
+                    .find(|existing| existing.trigger == binding.trigger)
+                {
+                    Some(existing) => *existing = binding,
+                    None => self.gestures.push(binding),
+                },
+                None => warn(n, "invalid gesture", raw),
+            }
+        }
+    }
+
+    pub fn gesture_mask(&self) -> u32 {
+        self.gestures
+            .iter()
+            .fold(0, |mask, binding| mask | 1 << binding.trigger as u32)
+    }
+
+    pub fn has_keyboard_handle(&self) -> bool {
+        self.gestures.iter().any(|binding| {
+            matches!(
+                binding.trigger,
+                GestureTrigger::BottomUp | GestureTrigger::KeyboardTopDown
+            )
         })
     }
 }
@@ -505,8 +551,30 @@ fn parse_action(name: &str, arg: Option<&str>) -> Option<Action> {
         "float" | "togglefloating" => Some(Action::ToggleFloating),
         "workspace" => Some(Action::Workspace(workspace_index(arg?)?)),
         "movetoworkspace" => Some(Action::MoveToWorkspace(workspace_index(arg?)?)),
+        "workspacenext" => Some(Action::WorkspaceNext),
+        "workspaceprev" | "workspaceprevious" => Some(Action::WorkspacePrevious),
+        "keyboardshow" => Some(Action::KeyboardShow),
+        "keyboardhide" => Some(Action::KeyboardHide),
+        "keyboardtoggle" => Some(Action::KeyboardToggle),
         _ => None,
     }
+}
+
+fn parse_gesture(val: &str) -> Option<GestureBind> {
+    let mut parts = val.splitn(3, ',');
+    let trigger = match parts.next()?.trim().to_ascii_lowercase().as_str() {
+        "bottom-up" => GestureTrigger::BottomUp,
+        "keyboard-top-down" => GestureTrigger::KeyboardTopDown,
+        "edge-left-in" => GestureTrigger::EdgeLeftIn,
+        "edge-right-in" => GestureTrigger::EdgeRightIn,
+        _ => return None,
+    };
+    let action_name = parts.next()?.trim();
+    let arg = parts.next().map(str::trim);
+    Some(GestureBind {
+        trigger,
+        action: parse_action(action_name, arg)?,
+    })
 }
 
 /// Parse a 1-based workspace number (`1`..`9`) to a 0-based index.
@@ -661,22 +729,63 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_gesture_is_opt_in_and_parses_height() {
+    fn virtual_keyboard_and_gestures_are_opt_in() {
         let mut cfg = Config::default();
-        assert!(cfg.gesture_keyboard.is_none());
+        assert!(cfg.virtual_keyboard_show.is_none());
+        assert!(cfg.gestures.is_empty());
         cfg.parse_scalars(
-            "gesture_keyboard = wvkbd-mobintl\ngesture_keyboard_height = 280\n",
+            "virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl\n\
+             virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl\n\
+             virtual_keyboard_height = 280\n",
         );
-        assert_eq!(cfg.gesture_keyboard.as_deref(), Some("wvkbd-mobintl"));
-        assert_eq!(cfg.gesture_keyboard_height, 280);
+        cfg.apply_gestures(
+            "gesture = bottom-up, keyboardshow\n\
+             gesture = keyboard-top-down, keyboardhide\n",
+        );
+        assert_eq!(
+            cfg.virtual_keyboard_show.as_deref(),
+            Some("pkill -USR2 -x wvkbd-mobintl")
+        );
+        assert_eq!(cfg.virtual_keyboard_height, 280);
+        assert_eq!(cfg.gestures.len(), 2);
+        assert_eq!(cfg.gesture_mask(), 0b11);
+        assert!(cfg.has_keyboard_handle());
     }
 
     #[test]
-    fn workspace_edge_swipe_is_opt_in() {
+    fn gesture_override_and_actions_parse() {
         let mut cfg = Config::default();
-        assert!(!cfg.workspace_edge_swipe);
-        cfg.parse_scalars("workspace_edge_swipe = true\n");
-        assert!(cfg.workspace_edge_swipe);
+        cfg.apply_gestures(
+            "gesture = edge-left-in, workspaceprev\n\
+             gesture = edge-right-in, workspacenext\n\
+             gesture = edge-left-in, keyboardtoggle\n",
+        );
+        assert_eq!(cfg.gestures.len(), 2);
+        assert!(matches!(cfg.gestures[0].action, Action::KeyboardToggle));
+        assert!(matches!(cfg.gestures[1].action, Action::WorkspaceNext));
+        assert_eq!(cfg.gesture_mask(), 0b1100);
+    }
+
+    #[test]
+    fn shared_actions_parse_for_keyboard_binds() {
+        let mut cfg = Config::default();
+        cfg.binds = default_binds(cfg.modifier);
+        cfg.apply_binds(
+            "bind = MOD, bracketleft, workspaceprev\n\
+             bind = MOD, bracketright, workspacenext\n\
+             bind = MOD, K, keyboardtoggle\n",
+        );
+        let action_for = |name| {
+            let keysym = key(name);
+            &cfg.binds
+                .iter()
+                .find(|binding| binding.mods == cfg.modifier && binding.keysym == keysym)
+                .unwrap()
+                .action
+        };
+        assert!(matches!(action_for("bracketleft"), Action::WorkspacePrevious));
+        assert!(matches!(action_for("bracketright"), Action::WorkspaceNext));
+        assert!(matches!(action_for("K"), Action::KeyboardToggle));
     }
 
     #[test]

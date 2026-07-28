@@ -30,24 +30,28 @@ the pill; the hidden bottom-edge target remains larger for easy acquisition.
 
 ## Keyboard control
 
-The generic configuration is opt-in:
+The original Stage 14 configuration was process-specific. Stage 16 replaces it
+with a generic virtual-keyboard controller plus input mappings:
 
 ```ini
-gesture_keyboard = wvkbd-mobintl
-gesture_keyboard_height = 300
+virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl
+virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
+virtual_keyboard_height = 125
+
+gesture = bottom-up, keyboardshow
+gesture = keyboard-top-down, keyboardhide
 ```
 
-`gesture_keyboard` is a Linux process name of at most 15 characters. Upward and
-downward gestures send that process `SIGUSR2` and `SIGUSR1`, respectively.
-These are wvkbd's documented show and hide controls. The keyboard stays alive
-and connected to the virtual-keyboard protocol while hidden, avoiding protocol
-and startup latency on every gesture.
+The configured commands use wvkbd's documented `SIGUSR2` show and `SIGUSR1`
+hide controls. The keyboard stays alive and connected to the virtual-keyboard
+protocol while hidden, avoiding protocol and startup latency on every gesture.
 
 The height is in logical output pixels and must match the keyboard surface's
 scaled portrait height. A client configured in buffer pixels needs conversion:
 the FP5 uses `-H 300` at output scale 2.4, so its configured logical height is
-125. Desktop configurations omit `gesture_keyboard`, so they get no handle and
-no intercepted edge touches.
+125. Desktop configurations omit the gesture mappings, so they get no handle
+and no intercepted edge touches; they can still bind the keyboard actions to
+physical keys.
 
 ## FP5 reference profile
 

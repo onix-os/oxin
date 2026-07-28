@@ -153,11 +153,20 @@ bind = MOD SHIFT, 1, movetoworkspace, 1
 # keep the default auto-placement.
 monitor = HDMI-A-1, 0x-1080, 1.0
 
-# Optional mobile bottom handle. The named process receives SIGUSR2 on an
-# upward swipe and SIGUSR1 on a downward swipe.
-gesture_keyboard = wvkbd-mobintl
-gesture_keyboard_height = 300
-workspace_edge_swipe = true
+# Optional virtual-keyboard controller. Actions can be mapped to keys or touch.
+virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl
+virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
+virtual_keyboard_height = 125
+
+gesture = bottom-up, keyboardshow
+gesture = keyboard-top-down, keyboardhide
+gesture = edge-left-in, workspaceprev
+gesture = edge-right-in, workspacenext
+
+# The same actions are available on non-touch devices.
+bind = MOD, bracketleft, workspaceprev
+bind = MOD, bracketright, workspacenext
+bind = MOD, K, keyboardtoggle
 ```
 
 A line 0xin can't parse is warned about on stderr and skipped — never fatal. See

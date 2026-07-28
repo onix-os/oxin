@@ -1,18 +1,15 @@
 //! Input device hotplug, pointer-driven focus policy, and pointer grabs.
 
-use crate::config::MOD_MASK;
+use crate::config::{GestureTrigger, MOD_MASK};
 use crate::ffi::{
-    oxide_handle_new_input, oxide_scene_rect_set_position, oxide_scene_tree_set_position,
-    oxide_xdg_toplevel_surface,
+    oxide_handle_new_input, oxide_scene_tree_set_position, oxide_xdg_toplevel_surface,
 };
-use crate::keybindings::{handle_keybinding, reset_signals, switch_workspace};
+use crate::keybindings::{dispatch_action, handle_keybinding};
 use crate::state::{GrabMode, Server, Toplevel};
-use crate::tiling::active_workspace;
 use crate::toplevel::clamp_floating;
 use crate::wlr;
 use std::os::raw::c_void;
 use std::ptr;
-use std::process::Command;
 
 // Linux input-event button codes (input-event-codes.h).
 const BTN_LEFT: u32 = 0x110;
@@ -21,57 +18,27 @@ const BTN_RIGHT: u32 = 0x111;
 /// Smallest size a resize drag can shrink a floating window to.
 const MIN_FLOAT_SIZE: i32 = 50;
 
-/// Show/hide the configured keyboard. wvkbd deliberately uses SIGUSR2 for
-/// show and SIGUSR1 for hide, allowing it to stay connected while invisible.
-pub(crate) unsafe extern "C" fn handle_keyboard_gesture(
-    userdata: *mut c_void,
-    show: bool,
-) {
+/// Turn the recognizer's device-level trigger into the same configured Action
+/// keyboard chords use.
+pub(crate) unsafe extern "C" fn handle_gesture(userdata: *mut c_void, raw_trigger: u32) {
     let server = &mut *(userdata as *mut Server);
-    let Some(process) = server.config.gesture_keyboard.as_deref() else {
+    let trigger = match raw_trigger {
+        0 => GestureTrigger::BottomUp,
+        1 => GestureTrigger::KeyboardTopDown,
+        2 => GestureTrigger::EdgeLeftIn,
+        3 => GestureTrigger::EdgeRightIn,
+        _ => return,
+    };
+    let action = server
+        .config
+        .gestures
+        .iter()
+        .find(|binding| binding.trigger == trigger)
+        .map(|binding| binding.action.clone());
+    let Some(action) = action else {
         return;
     };
-    let signal = if show { "-USR2" } else { "-USR1" };
-    for output in &server.outputs {
-        if !output.gesture_handle.is_null() {
-            let y = output.y + output.h
-                - if show {
-                    server.config.gesture_keyboard_height + 8
-                } else {
-                    10
-                };
-            oxide_scene_rect_set_position(
-                output.gesture_handle,
-                output.x + (output.w - 120) / 2,
-                y,
-            );
-        }
-    }
-    let mut command = Command::new("pkill");
-    command.args([signal, "-x", process]);
-    reset_signals(&mut command);
-    match command.spawn() {
-        Ok(_) => eprintln!(
-            "0xin: keyboard gesture — {} `{process}`",
-            if show { "show" } else { "hide" }
-        ),
-        Err(e) => eprintln!("0xin: keyboard gesture failed: {e}"),
-    }
-}
-
-/// Cycle through the workspace ring after an inward side-edge swipe.
-pub(crate) unsafe extern "C" fn handle_workspace_gesture(
-    userdata: *mut c_void,
-    delta: i32,
-) {
-    let server = &mut *(userdata as *mut Server);
-    if server.outputs.is_empty() {
-        return;
-    }
-    let current = active_workspace(server);
-    let count = server.workspaces.len() as i32;
-    let target = (current as i32 + delta).rem_euclid(count) as usize;
-    switch_workspace(server, target);
+    dispatch_action(server, action);
 }
 
 /// Called by the shim when an input device (keyboard, pointer, …) appears.
