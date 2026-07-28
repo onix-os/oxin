@@ -64,7 +64,11 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
 /// in. Shared by `refresh()`, `tiled_position`, and the initial-configure
 /// tile prediction (`toplevel::handle_commit`), so nothing can drift apart.
 pub(crate) unsafe fn tiled_windows(ws: &Workspace) -> Vec<*mut Toplevel> {
-    ws.windows.iter().copied().filter(|&tl| !(*tl).fullscreen && !(*tl).floating).collect()
+    ws.windows
+        .iter()
+        .copied()
+        .filter(|&tl| !(*tl).fullscreen && !(*tl).floating)
+        .collect()
 }
 
 /// `tl`'s index among its workspace's tiled windows right now — its leaf
@@ -87,13 +91,16 @@ pub(crate) unsafe fn tree_untrack(ws: &mut Workspace, tl: *mut Toplevel) {
 /// Call *after* flipping the flag that just made it tiled again.
 pub(crate) unsafe fn tree_track(ws: &mut Workspace, tl: *mut Toplevel) {
     if let Some(p) = tiled_position(ws, tl) {
-        ws.tree = Some(tree_insert_at(ws.tree.take(), p));
+        ws.tree = Some(tree_insert_at(ws.tree.take(), p, ws.first_split_vertical));
     }
 }
 
 /// Which workspace currently holds `tl`, if any.
 pub(crate) unsafe fn workspace_of(server: &Server, tl: *mut Toplevel) -> Option<usize> {
-    server.workspaces.iter().position(|ws| ws.windows.contains(&tl))
+    server
+        .workspaces
+        .iter()
+        .position(|ws| ws.windows.contains(&tl))
 }
 
 /// The rect a new tiled window would get if it mapped onto `ws` right now:
@@ -101,9 +108,16 @@ pub(crate) unsafe fn workspace_of(server: &Server, tl: *mut Toplevel) -> Option<
 /// untouched, so the very first configure a client gets already matches the
 /// size it will actually receive once it maps (Stage 8: avoids a resize jump
 /// on the client's first frame — see `toplevel::handle_commit`).
-pub(crate) fn predict_tile_rect(ws: &Workspace, x: i32, y: i32, w: i32, h: i32, gap: i32) -> (i32, i32, i32, i32) {
+pub(crate) fn predict_tile_rect(
+    ws: &Workspace,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    gap: i32,
+) -> (i32, i32, i32, i32) {
     let n = ws.tree.as_ref().map_or(0, tree_leaf_count);
-    let candidate = tree_insert_at(ws.tree.clone(), n);
+    let candidate = tree_insert_at(ws.tree.clone(), n, ws.first_split_vertical);
     *tree_rects(&candidate, x, y, w, h, gap).last().unwrap()
 }
 
@@ -164,9 +178,15 @@ pub(crate) unsafe fn spatial_neighbor(
         .collect();
 
     if candidates.iter().any(|&(_, overlap, _)| overlap > 0) {
-        candidates.into_iter().max_by_key(|&(_, overlap, gap)| (overlap, -gap)).map(|(i, ..)| i)
+        candidates
+            .into_iter()
+            .max_by_key(|&(_, overlap, gap)| (overlap, -gap))
+            .map(|(i, ..)| i)
     } else {
-        candidates.into_iter().min_by_key(|&(_, _, gap)| gap).map(|(i, ..)| i)
+        candidates
+            .into_iter()
+            .min_by_key(|&(_, _, gap)| gap)
+            .map(|(i, ..)| i)
     }
 }
 
@@ -184,7 +204,8 @@ pub(crate) unsafe fn arrange_layers(server: &mut Server, output_idx: usize) {
     for layer in 0u32..=3 {
         for &ls in &server.layers {
             let l = &*ls;
-            if l.wlr_output != wlr_output || oxide_layer_surface_layer(l.wlr_layer_surface) != layer {
+            if l.wlr_output != wlr_output || oxide_layer_surface_layer(l.wlr_layer_surface) != layer
+            {
                 continue;
             }
             oxide_scene_layer_surface_configure(
@@ -201,7 +222,11 @@ pub(crate) unsafe fn arrange_layers(server: &mut Server, output_idx: usize) {
 /// workspace switches). Falls back to output 0 if the cursor is off all outputs.
 pub(crate) unsafe fn active_output(server: &Server) -> usize {
     let out = oxide_output_at_cursor(server.cursor, server.output_layout);
-    server.outputs.iter().position(|o| o.wlr_output == out).unwrap_or(0)
+    server
+        .outputs
+        .iter()
+        .position(|o| o.wlr_output == out)
+        .unwrap_or(0)
 }
 
 /// The workspace currently displayed on the active (cursor's) output.
@@ -217,7 +242,10 @@ mod tests {
     use std::ptr;
 
     unsafe fn server_from_rects(rects: &[(i32, i32, i32, i32)]) -> Server {
-        let windows = rects.iter().map(|&(x, y, w, h)| toplevel_at(x, y, w, h)).collect();
+        let windows = rects
+            .iter()
+            .map(|&(x, y, w, h)| toplevel_at(x, y, w, h))
+            .collect();
         server_with(windows)
     }
 
@@ -303,7 +331,12 @@ mod tests {
             tree_fullscreen: ptr::null_mut(),
             tree_layer_overlay: ptr::null_mut(),
             layers: Vec::new(),
-            workspaces: vec![Workspace { windows, focused: 0, tree: None }],
+            workspaces: vec![Workspace {
+                windows,
+                focused: 0,
+                tree: None,
+                first_split_vertical: true,
+            }],
             outputs: Vec::new(),
             config: Config::default(),
             grab: GrabMode::None,

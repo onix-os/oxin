@@ -62,7 +62,12 @@ pub(crate) fn spiral_rects(
 #[derive(Clone)]
 pub(crate) enum Node {
     Leaf,
-    Split { vertical: bool, ratio: f32, first: Box<Node>, second: Box<Node> },
+    Split {
+        vertical: bool,
+        ratio: f32,
+        first: Box<Node>,
+        second: Box<Node>,
+    },
 }
 
 /// Build the tree for `n` windows in the same shape `spiral_rects` computes
@@ -75,7 +80,12 @@ pub(crate) fn build_dwindle(n: usize) -> Option<Node> {
         if n <= 1 {
             Node::Leaf
         } else {
-            Node::Split { vertical, ratio: 0.5, first: Box::new(Node::Leaf), second: Box::new(go(n - 1, !vertical)) }
+            Node::Split {
+                vertical,
+                ratio: 0.5,
+                first: Box::new(Node::Leaf),
+                second: Box::new(go(n - 1, !vertical)),
+            }
         }
     }
     (n > 0).then(|| go(n, true))
@@ -85,11 +95,31 @@ pub(crate) fn build_dwindle(n: usize) -> Option<Node> {
 /// in-order as `spiral_rects` — leaf `i` here is window `i` of the same
 /// list. Gap semantics match exactly: one `gap` margin around the outer box,
 /// one `gap` between each split's two children, none inside a leaf.
-pub(crate) fn tree_rects(tree: &Node, x: i32, y: i32, w: i32, h: i32, gap: i32) -> Vec<(i32, i32, i32, i32)> {
-    fn go(node: &Node, x: i32, y: i32, w: i32, h: i32, gap: i32, out: &mut Vec<(i32, i32, i32, i32)>) {
+pub(crate) fn tree_rects(
+    tree: &Node,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    gap: i32,
+) -> Vec<(i32, i32, i32, i32)> {
+    fn go(
+        node: &Node,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        gap: i32,
+        out: &mut Vec<(i32, i32, i32, i32)>,
+    ) {
         match node {
             Node::Leaf => out.push((x, y, w.max(1), h.max(1))),
-            Node::Split { vertical, ratio, first, second } => {
+            Node::Split {
+                vertical,
+                ratio,
+                first,
+                second,
+            } => {
                 if *vertical {
                     let fw = (((w - gap) as f32) * ratio) as i32;
                     let (fw, sw) = (fw.max(1), (w - gap - fw).max(1));
@@ -105,7 +135,15 @@ pub(crate) fn tree_rects(tree: &Node, x: i32, y: i32, w: i32, h: i32, gap: i32) 
         }
     }
     let mut out = Vec::with_capacity(tree_leaf_count(tree));
-    go(tree, x + gap, y + gap, (w - gap * 2).max(1), (h - gap * 2).max(1), gap, &mut out);
+    go(
+        tree,
+        x + gap,
+        y + gap,
+        (w - gap * 2).max(1),
+        (h - gap * 2).max(1),
+        gap,
+        &mut out,
+    );
     out
 }
 
@@ -127,25 +165,43 @@ pub(crate) fn tree_leaf_count(tree: &Node) -> usize {
 /// other `i` is a window rejoining the tiled set (after a float/fullscreen
 /// toggle) at whichever position `Workspace.windows` order puts it among the
 /// other tiled ones.
-pub(crate) fn tree_insert_at(tree: Option<Node>, i: usize) -> Node {
+pub(crate) fn tree_insert_at(tree: Option<Node>, i: usize, first_vertical: bool) -> Node {
     fn go(node: Node, i: usize, axis: bool) -> Node {
         match node {
-            Node::Leaf => {
-                Node::Split { vertical: axis, ratio: 0.5, first: Box::new(Node::Leaf), second: Box::new(Node::Leaf) }
-            }
-            Node::Split { vertical, ratio, first, second } => {
+            Node::Leaf => Node::Split {
+                vertical: axis,
+                ratio: 0.5,
+                first: Box::new(Node::Leaf),
+                second: Box::new(Node::Leaf),
+            },
+            Node::Split {
+                vertical,
+                ratio,
+                first,
+                second,
+            } => {
                 let first_n = tree_leaf_count(&first);
                 if i < first_n {
-                    Node::Split { vertical, ratio, first: Box::new(go(*first, i, !vertical)), second }
+                    Node::Split {
+                        vertical,
+                        ratio,
+                        first: Box::new(go(*first, i, !vertical)),
+                        second,
+                    }
                 } else {
-                    Node::Split { vertical, ratio, first, second: Box::new(go(*second, i - first_n, !vertical)) }
+                    Node::Split {
+                        vertical,
+                        ratio,
+                        first,
+                        second: Box::new(go(*second, i - first_n, !vertical)),
+                    }
                 }
             }
         }
     }
     match tree {
         None => Node::Leaf,
-        Some(t) => go(t, i, true),
+        Some(t) => go(t, i, first_vertical),
     }
 }
 
@@ -156,16 +212,31 @@ pub(crate) fn tree_insert_at(tree: Option<Node>, i: usize) -> Node {
 pub(crate) fn tree_remove(tree: Option<Node>, i: usize) -> Option<Node> {
     match tree? {
         Node::Leaf => None,
-        Node::Split { vertical, ratio, first, second } => {
+        Node::Split {
+            vertical,
+            ratio,
+            first,
+            second,
+        } => {
             let first_n = tree_leaf_count(&first);
             if i < first_n {
                 match tree_remove(Some(*first), i) {
-                    Some(f) => Some(Node::Split { vertical, ratio, first: Box::new(f), second }),
+                    Some(f) => Some(Node::Split {
+                        vertical,
+                        ratio,
+                        first: Box::new(f),
+                        second,
+                    }),
                     None => Some(*second),
                 }
             } else {
                 match tree_remove(Some(*second), i - first_n) {
-                    Some(s) => Some(Node::Split { vertical, ratio, first, second: Box::new(s) }),
+                    Some(s) => Some(Node::Split {
+                        vertical,
+                        ratio,
+                        first,
+                        second: Box::new(s),
+                    }),
                     None => Some(*first),
                 }
             }
@@ -192,10 +263,21 @@ const MAX_RATIO: f32 = 0.9;
 /// on (`first` grows on Right/Down, `second` grows on Left/Up).
 pub(crate) fn tree_resize(tree: &mut Node, i: usize, dir: Direction, delta: f32) {
     fn go(node: &mut Node, i: usize, dir: Direction, delta: f32) -> bool {
-        let Node::Split { vertical, ratio, first, second } = node else { return false };
+        let Node::Split {
+            vertical,
+            ratio,
+            first,
+            second,
+        } = node
+        else {
+            return false;
+        };
         let first_n = tree_leaf_count(first);
-        let found =
-            if i < first_n { go(first, i, dir, delta) } else { go(second, i - first_n, dir, delta) };
+        let found = if i < first_n {
+            go(first, i, dir, delta)
+        } else {
+            go(second, i - first_n, dir, delta)
+        };
         if found {
             return true; // a nearer matching-axis split already handled this
         }
@@ -206,7 +288,11 @@ pub(crate) fn tree_resize(tree: &mut Node, i: usize, dir: Direction, delta: f32)
         if !axis_matches {
             return false; // keep looking further up for the right axis
         }
-        let step = if matches!(dir, Direction::Right | Direction::Down) { delta } else { -delta };
+        let step = if matches!(dir, Direction::Right | Direction::Down) {
+            delta
+        } else {
+            -delta
+        };
         *ratio = (*ratio + step).clamp(MIN_RATIO, MAX_RATIO);
         true // this was the nearest matching-axis split — stop here
     }
@@ -241,7 +327,7 @@ mod tests {
         let mut tree: Option<Node> = None;
         for n in 1..=8 {
             let count_before = tree.as_ref().map_or(0, tree_leaf_count);
-            tree = Some(tree_insert_at(tree, count_before));
+            tree = Some(tree_insert_at(tree, count_before, true));
             let expected = build_dwindle(n).unwrap();
             assert_eq!(
                 tree_rects(tree.as_ref().unwrap(), 0, 0, 1280, 720, 4),
@@ -249,6 +335,15 @@ mod tests {
                 "mismatch at n={n}"
             );
         }
+    }
+
+    #[test]
+    fn horizontal_first_split_stacks_first_two_windows() {
+        let tree = tree_insert_at(Some(Node::Leaf), 1, false);
+        assert_eq!(
+            tree_rects(&tree, 0, 0, 500, 1000, 0),
+            vec![(0, 0, 500, 500), (0, 500, 500, 500)]
+        );
     }
 
     // The whole point of the tree over the old spiral: removing one window
@@ -268,7 +363,9 @@ mod tests {
             }),
         };
         match tree_remove(Some(tree), 0).unwrap() {
-            Node::Split { vertical, ratio, .. } => {
+            Node::Split {
+                vertical, ratio, ..
+            } => {
                 assert!(!vertical);
                 assert_eq!(ratio, 0.7);
             }
@@ -287,8 +384,12 @@ mod tests {
     // grow is always fully undone by the opposite key, on either window.
     #[test]
     fn tree_resize_either_direction_moves_the_shared_edge() {
-        let mut tree =
-            Node::Split { vertical: true, ratio: 0.5, first: Box::new(Node::Leaf), second: Box::new(Node::Leaf) };
+        let mut tree = Node::Split {
+            vertical: true,
+            ratio: 0.5,
+            first: Box::new(Node::Leaf),
+            second: Box::new(Node::Leaf),
+        };
 
         // 0.25 (not the real RESIZE_STEP) because it's exactly representable
         // in binary floating point, so the assertions below can compare
@@ -305,8 +406,12 @@ mod tests {
 
     #[test]
     fn tree_resize_either_direction_moves_the_shared_edge_horizontal() {
-        let mut tree =
-            Node::Split { vertical: false, ratio: 0.5, first: Box::new(Node::Leaf), second: Box::new(Node::Leaf) };
+        let mut tree = Node::Split {
+            vertical: false,
+            ratio: 0.5,
+            first: Box::new(Node::Leaf),
+            second: Box::new(Node::Leaf),
+        };
 
         tree_resize(&mut tree, 0, Direction::Down, 0.25); // top grows: ratio up
         assert_ratio(&tree, 0.75);
@@ -320,8 +425,12 @@ mod tests {
 
     #[test]
     fn tree_resize_clamps_at_bounds() {
-        let mut tree =
-            Node::Split { vertical: true, ratio: 0.5, first: Box::new(Node::Leaf), second: Box::new(Node::Leaf) };
+        let mut tree = Node::Split {
+            vertical: true,
+            ratio: 0.5,
+            first: Box::new(Node::Leaf),
+            second: Box::new(Node::Leaf),
+        };
         for _ in 0..20 {
             tree_resize(&mut tree, 0, Direction::Right, 0.1);
         }

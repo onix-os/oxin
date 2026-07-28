@@ -83,6 +83,7 @@ pub(crate) struct Workspace {
     pub(crate) windows: Vec<*mut Toplevel>,
     pub(crate) focused: usize,
     pub(crate) tree: Option<Node>,
+    pub(crate) first_split_vertical: bool,
 }
 
 /// One connected output (monitor): its box in layout coordinates, the workspace

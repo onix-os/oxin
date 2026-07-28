@@ -93,6 +93,9 @@ pub struct Config {
     pub modifier: u32,
     /// Gap between/around tiled windows, in pixels.
     pub gap: i32,
+    /// Axis of the first dwindle split. Desktop defaults to vertical
+    /// (left/right); portrait profiles can choose horizontal (top/bottom).
+    pub first_split_vertical: bool,
     /// Background color of empty workspace area (r, g, b in 0..1).
     pub background: (f32, f32, f32),
     pub binds: Vec<Bind>,
@@ -114,6 +117,7 @@ impl Default for Config {
         Config {
             modifier: MOD_LOGO,
             gap: 2,
+            first_split_vertical: true,
             background: (0.0, 0.6, 0.6),
             binds: Vec::new(),
             monitors: Vec::new(),
@@ -168,7 +172,9 @@ impl Config {
     /// First pass: scalar settings (everything except `bind`).
     fn parse_scalars(&mut self, text: &str) {
         for (n, raw) in lines(text) {
-            let Some((key, val)) = split_kv(raw) else { continue };
+            let Some((key, val)) = split_kv(raw) else {
+                continue;
+            };
             match key {
                 "modifier" => match parse_mods(val, MOD_LOGO) {
                     Some(m) => self.modifier = m,
@@ -177,6 +183,15 @@ impl Config {
                 "gap" => match val.parse::<i32>() {
                     Ok(g) if g >= 0 => self.gap = g,
                     _ => warn(n, "invalid gap", raw),
+                },
+                "first_split" => match val {
+                    "vertical" => self.first_split_vertical = true,
+                    "horizontal" => self.first_split_vertical = false,
+                    _ => warn(
+                        n,
+                        "invalid first_split (want `vertical` or `horizontal`)",
+                        raw,
+                    ),
                 },
                 "background" => match parse_color(val) {
                     Some(c) => self.background = c,
@@ -213,12 +228,18 @@ impl Config {
     /// if the chord is new.
     fn apply_binds(&mut self, text: &str) {
         for (n, raw) in lines(text) {
-            let Some((key, val)) = split_kv(raw) else { continue };
+            let Some((key, val)) = split_kv(raw) else {
+                continue;
+            };
             if key != "bind" {
                 continue;
             }
             match self.parse_bind(val) {
-                Some(b) => match self.binds.iter_mut().find(|e| e.mods == b.mods && e.keysym == b.keysym) {
+                Some(b) => match self
+                    .binds
+                    .iter_mut()
+                    .find(|e| e.mods == b.mods && e.keysym == b.keysym)
+                {
                     Some(existing) => *existing = b,
                     None => self.binds.push(b),
                 },
@@ -235,7 +256,11 @@ impl Config {
         let action_name = parts.next()?.trim();
         let arg = parts.next().map(|s| s.trim());
         let action = parse_action(action_name, arg)?;
-        Some(Bind { mods, keysym, action })
+        Some(Bind {
+            mods,
+            keysym,
+            action,
+        })
     }
 }
 
@@ -245,29 +270,105 @@ fn default_binds(modifier: u32) -> Vec<Bind> {
     let ms = modifier | MOD_SHIFT;
     let mc = modifier | MOD_CTRL;
     let mut binds = vec![
-        Bind { mods: m, keysym: key("Return"), action: Action::Spawn("kitty".into()) },
-        Bind { mods: m, keysym: key("Q"), action: Action::Close },
-        Bind { mods: ms, keysym: key("Q"), action: Action::Quit },
-        Bind { mods: m, keysym: key("H"), action: Action::MoveFocus(Direction::Left) },
-        Bind { mods: m, keysym: key("J"), action: Action::MoveFocus(Direction::Down) },
-        Bind { mods: m, keysym: key("K"), action: Action::MoveFocus(Direction::Up) },
-        Bind { mods: m, keysym: key("L"), action: Action::MoveFocus(Direction::Right) },
-        Bind { mods: ms, keysym: key("H"), action: Action::MoveWindow(Direction::Left) },
-        Bind { mods: ms, keysym: key("J"), action: Action::MoveWindow(Direction::Down) },
-        Bind { mods: ms, keysym: key("K"), action: Action::MoveWindow(Direction::Up) },
-        Bind { mods: ms, keysym: key("L"), action: Action::MoveWindow(Direction::Right) },
-        Bind { mods: mc, keysym: key("H"), action: Action::ResizeWindow(Direction::Left) },
-        Bind { mods: mc, keysym: key("J"), action: Action::ResizeWindow(Direction::Down) },
-        Bind { mods: mc, keysym: key("K"), action: Action::ResizeWindow(Direction::Up) },
-        Bind { mods: mc, keysym: key("L"), action: Action::ResizeWindow(Direction::Right) },
-        Bind { mods: m, keysym: key("F"), action: Action::Fullscreen },
-        Bind { mods: m, keysym: key("V"), action: Action::ToggleFloating },
+        Bind {
+            mods: m,
+            keysym: key("Return"),
+            action: Action::Spawn("kitty".into()),
+        },
+        Bind {
+            mods: m,
+            keysym: key("Q"),
+            action: Action::Close,
+        },
+        Bind {
+            mods: ms,
+            keysym: key("Q"),
+            action: Action::Quit,
+        },
+        Bind {
+            mods: m,
+            keysym: key("H"),
+            action: Action::MoveFocus(Direction::Left),
+        },
+        Bind {
+            mods: m,
+            keysym: key("J"),
+            action: Action::MoveFocus(Direction::Down),
+        },
+        Bind {
+            mods: m,
+            keysym: key("K"),
+            action: Action::MoveFocus(Direction::Up),
+        },
+        Bind {
+            mods: m,
+            keysym: key("L"),
+            action: Action::MoveFocus(Direction::Right),
+        },
+        Bind {
+            mods: ms,
+            keysym: key("H"),
+            action: Action::MoveWindow(Direction::Left),
+        },
+        Bind {
+            mods: ms,
+            keysym: key("J"),
+            action: Action::MoveWindow(Direction::Down),
+        },
+        Bind {
+            mods: ms,
+            keysym: key("K"),
+            action: Action::MoveWindow(Direction::Up),
+        },
+        Bind {
+            mods: ms,
+            keysym: key("L"),
+            action: Action::MoveWindow(Direction::Right),
+        },
+        Bind {
+            mods: mc,
+            keysym: key("H"),
+            action: Action::ResizeWindow(Direction::Left),
+        },
+        Bind {
+            mods: mc,
+            keysym: key("J"),
+            action: Action::ResizeWindow(Direction::Down),
+        },
+        Bind {
+            mods: mc,
+            keysym: key("K"),
+            action: Action::ResizeWindow(Direction::Up),
+        },
+        Bind {
+            mods: mc,
+            keysym: key("L"),
+            action: Action::ResizeWindow(Direction::Right),
+        },
+        Bind {
+            mods: m,
+            keysym: key("F"),
+            action: Action::Fullscreen,
+        },
+        Bind {
+            mods: m,
+            keysym: key("V"),
+            action: Action::ToggleFloating,
+        },
     ];
     for i in 0..9u32 {
         let name = (b'1' + i as u8) as char;
         let name = name.to_string();
-        binds.push(Bind { mods: m, keysym: key(&name), action: Action::Workspace(i as usize) });
-        binds.push(Bind { mods: ms, keysym: key(&name), action: Action::MoveToWorkspace(i as usize) });
+        binds.push(Bind {
+            mods: m,
+            keysym: key(&name),
+            action: Action::Workspace(i as usize),
+        });
+        binds.push(Bind {
+            mods: ms,
+            keysym: key(&name),
+            action: Action::MoveToWorkspace(i as usize),
+        });
     }
     binds
 }
@@ -440,10 +541,18 @@ mod tests {
         // Overrides Mod+J (a default MoveFocus bind) back to the old
         // cyclic focusnext, without touching any other default bind.
         cfg.apply_binds("bind = MOD, J, focusnext\n");
-        assert_eq!(cfg.binds.len(), before, "override must not grow the bind table");
+        assert_eq!(
+            cfg.binds.len(),
+            before,
+            "override must not grow the bind table"
+        );
 
         let j = key("J");
-        let overridden = cfg.binds.iter().find(|b| b.mods == cfg.modifier && b.keysym == j).unwrap();
+        let overridden = cfg
+            .binds
+            .iter()
+            .find(|b| b.mods == cfg.modifier && b.keysym == j)
+            .unwrap();
         assert!(matches!(overridden.action, Action::FocusNext));
 
         // An untouched chord (workspace 3) still resolves to its default.
@@ -463,7 +572,11 @@ mod tests {
         let before = cfg.binds.len();
 
         cfg.apply_binds("bind = , Print, spawn, grim\n");
-        assert_eq!(cfg.binds.len(), before + 1, "a new chord must be appended, not replace one");
+        assert_eq!(
+            cfg.binds.len(),
+            before + 1,
+            "a new chord must be appended, not replace one"
+        );
     }
 
     #[test]
@@ -473,7 +586,11 @@ mod tests {
 
         // Default: Mod+F toggles fullscreen.
         let f = key("F");
-        let default = cfg.binds.iter().find(|b| b.mods == cfg.modifier && b.keysym == f).unwrap();
+        let default = cfg
+            .binds
+            .iter()
+            .find(|b| b.mods == cfg.modifier && b.keysym == f)
+            .unwrap();
         assert!(matches!(default.action, Action::Fullscreen));
 
         // Both config spellings parse, with no argument required.
@@ -491,6 +608,18 @@ mod tests {
         let mut cfg = Config::default();
         cfg.parse_scalars("float = Zenity\nfloat = pavucontrol\nfloat = zenity\n");
         assert_eq!(cfg.float_rules, vec!["zenity", "pavucontrol"]);
+    }
+
+    #[test]
+    fn first_split_parses_without_changing_desktop_default() {
+        let mut cfg = Config::default();
+        assert!(cfg.first_split_vertical);
+
+        cfg.parse_scalars("first_split = horizontal\n");
+        assert!(!cfg.first_split_vertical);
+
+        cfg.parse_scalars("first_split = vertical\n");
+        assert!(cfg.first_split_vertical);
     }
 
     #[test]
@@ -518,7 +647,11 @@ mod tests {
 
         // Default: Mod+V toggles floating.
         let v = key("V");
-        let default = cfg.binds.iter().find(|b| b.mods == cfg.modifier && b.keysym == v).unwrap();
+        let default = cfg
+            .binds
+            .iter()
+            .find(|b| b.mods == cfg.modifier && b.keysym == v)
+            .unwrap();
         assert!(matches!(default.action, Action::ToggleFloating));
 
         // Both config spellings parse, with no argument required.

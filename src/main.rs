@@ -8,7 +8,12 @@
 
 // The bindgen output is C-shaped; silence Rust's naming lints for that module.
 mod wlr {
-    #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case, dead_code)]
+    #![allow(
+        non_upper_case_globals,
+        non_camel_case_types,
+        non_snake_case,
+        dead_code
+    )]
     include!(concat!(env!("OUT_DIR"), "/wlr_bindings.rs"));
 }
 
@@ -71,6 +76,12 @@ fn main() {
         wlr::wlr_compositor_create(display, 6, renderer);
         wlr::wlr_subcompositor_create(display);
         wlr::wlr_data_device_manager_create(display);
+        // Fractional-scale clients use a viewport to submit integer-sized
+        // buffers for a non-integer logical output scale (2.4 on the FP5).
+        // The scene graph applies viewport source/destination state and sends
+        // each visible surface its preferred fractional scale.
+        wlr::wlr_viewporter_create(display);
+        wlr::wlr_fractional_scale_manager_v1_create(display, 1);
 
         // Create the seat (wl_seat global). We wire input devices into it below.
         let seat = oxide_seat_create(display, c"seat0".as_ptr());
@@ -107,6 +118,7 @@ fn main() {
         // to built-in defaults; `OXIDE_MOD=alt` overrides the modifier for
         // nested dev (a nesting host like Hyprland grabs Super-chords before us).
         let config = Config::load();
+        let first_split_vertical = config.first_split_vertical;
 
         // `server` lives for the whole of main(), which blocks in wl_display_run
         // below, so the pointer we hand the shim stays valid for the run.
@@ -134,6 +146,7 @@ fn main() {
                     windows: Vec::new(),
                     focused: 0,
                     tree: None,
+                    first_split_vertical,
                 })
                 .collect(),
             outputs: Vec::new(),

@@ -22,5 +22,7 @@
 #include <wlr/types/wlr_xdg_decoration_v1.h> // wlr_xdg_decoration_manager_v1_create
 #include <wlr/types/wlr_screencopy_v1.h>   // wlr_screencopy_manager_v1_create
 #include <wlr/types/wlr_xdg_output_v1.h>   // wlr_xdg_output_manager_v1_create
+#include <wlr/types/wlr_viewporter.h>      // wlr_viewporter_create
+#include <wlr/types/wlr_fractional_scale_v1.h> // wlr_fractional_scale_manager_v1_create
 #include <wlr/util/log.h>            // wlr_log_*
 #include <wlr/version.h>             // WLR_VERSION_STR
