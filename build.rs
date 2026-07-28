@@ -87,6 +87,11 @@ fn main() {
         shim.include(path);
     }
     shim.compile("oxide_shim");
+    // `cc` emits the static shim archive here. Repeat xkbcommon after it so
+    // strict `--as-needed` linkers (Alpine/musl) see the library after the
+    // shim's xkb_* references instead of discarding the earlier pkg-config
+    // link flag before those references appear.
+    println!("cargo:rustc-link-lib=xkbcommon");
 
     // 4. Generate Rust bindings. We allowlist exactly the functions Rust calls
     //    directly; bindgen pulls in the types they reference automatically. The

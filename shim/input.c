@@ -146,13 +146,22 @@ struct oxide_pointer {
     // touch-down. Wayland keeps a touch sequence on that original surface,
     // even after the finger moves over another one.
     struct wl_list touch_points;
+    size_t touch_device_count;
 };
 
 struct oxide_touch_point {
     int32_t touch_id;
     double offset_x, offset_y;
     struct wlr_seat_client *client;
+    struct wlr_touch *touch;
     struct wl_list link;
+};
+
+struct oxide_touch_device {
+    struct oxide_pointer *pointer;
+    struct wlr_input_device *device;
+    struct wlr_touch *touch;
+    struct oxide_listener *destroy_listener;
 };
 
 // Find the surface at layout coordinates (and its surface-local coords), via
@@ -282,9 +291,26 @@ static struct oxide_touch_point *touch_point_find(
     return NULL;
 }
 
+static void touch_cancel_client(struct oxide_pointer *p,
+        struct wlr_seat_client *client) {
+    wlr_seat_touch_notify_cancel(p->seat, client);
+    struct oxide_touch_point *point, *tmp;
+    wl_list_for_each_safe(point, tmp, &p->touch_points, link) {
+        if (point->client == client) {
+            wl_list_remove(&point->link);
+            free(point);
+        }
+    }
+}
+
 static void handle_touch_down(void *userdata, void *data) {
     struct oxide_pointer *p = userdata;
     struct wlr_touch_down_event *e = data;
+    if (touch_point_find(p, e->touch_id) != NULL) {
+        wlr_log(WLR_ERROR, "0xide: duplicate touch ID %d ignored",
+                e->touch_id);
+        return;
+    }
     double lx, ly, sx, sy;
     wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
             e->x, e->y, &lx, &ly);
@@ -308,6 +334,7 @@ static void handle_touch_down(void *userdata, void *data) {
     point->offset_x = lx - sx;
     point->offset_y = ly - sy;
     point->client = seat_point->client;
+    point->touch = e->touch;
     wl_list_insert(&p->touch_points, &point->link);
 }
 
@@ -345,23 +372,66 @@ static void handle_touch_cancel(void *userdata, void *data) {
     if (seat_point == NULL) {
         return;
     }
-    struct wlr_seat_client *client = seat_point->client;
-    wlr_seat_touch_notify_cancel(p->seat, client);
-
     // A Wayland cancel ends every point belonging to that seat client.
-    struct oxide_touch_point *point, *tmp;
-    wl_list_for_each_safe(point, tmp, &p->touch_points, link) {
-        if (point->client == client) {
-            wl_list_remove(&point->link);
-            free(point);
-        }
-    }
+    touch_cancel_client(p, seat_point->client);
 }
 
 static void handle_touch_frame(void *userdata, void *data) {
     (void)data;
     struct oxide_pointer *p = userdata;
     wlr_seat_touch_notify_frame(p->seat);
+}
+
+static void handle_touch_device_destroy(void *userdata, void *data) {
+    (void)data;
+    struct oxide_touch_device *td = userdata;
+    struct oxide_pointer *p = td->pointer;
+
+    // Device destruction is allowed without a preceding cancel (notably while
+    // a session is paused). Cancel each affected client once; canceling a
+    // client removes all of its points, including any from another device.
+    while (true) {
+        struct oxide_touch_point *point;
+        struct wlr_seat_client *client = NULL;
+        wl_list_for_each(point, &p->touch_points, link) {
+            if (point->touch == td->touch) {
+                client = point->client;
+                break;
+            }
+        }
+        if (client == NULL) {
+            break;
+        }
+        touch_cancel_client(p, client);
+    }
+
+    wlr_cursor_detach_input_device(p->cursor, td->device);
+    oxide_listener_remove(td->destroy_listener);
+    if (p->touch_device_count > 0) {
+        p->touch_device_count--;
+    }
+    if (p->touch_device_count == 0) {
+        wlr_seat_set_capabilities(p->seat,
+                p->seat->capabilities & ~WL_SEAT_CAPABILITY_TOUCH);
+    }
+    free(td);
+    wlr_log(WLR_INFO, "0xide: touch removed");
+}
+
+static void pointer_add_touch(struct oxide_pointer *p,
+        struct wlr_input_device *device) {
+    struct oxide_touch_device *td = calloc(1, sizeof(*td));
+    td->pointer = p;
+    td->device = device;
+    td->touch = wlr_touch_from_input_device(device);
+    td->destroy_listener = signal_add(&device->events.destroy,
+            handle_touch_device_destroy, td);
+
+    wlr_cursor_attach_input_device(p->cursor, device);
+    p->touch_device_count++;
+    wlr_seat_set_capabilities(p->seat,
+            p->seat->capabilities | WL_SEAT_CAPABILITY_TOUCH);
+    wlr_log(WLR_INFO, "0xide: touch attached");
 }
 
 struct wlr_cursor *oxide_cursor_setup(struct wlr_output_layout *layout,
@@ -431,10 +501,7 @@ void oxide_handle_new_input(struct wlr_seat *seat, struct wlr_cursor *cursor,
         wlr_log(WLR_INFO, "0xide: pointer attached");
         break;
     case WLR_INPUT_DEVICE_TOUCH:
-        wlr_cursor_attach_input_device(cursor, device);
-        wlr_seat_set_capabilities(seat,
-                seat->capabilities | WL_SEAT_CAPABILITY_TOUCH);
-        wlr_log(WLR_INFO, "0xide: touch attached");
+        pointer_add_touch(cursor->data, device);
         break;
     default:
         break;
