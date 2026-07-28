@@ -9,6 +9,7 @@
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_touch.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/util/log.h>
 
@@ -141,20 +142,51 @@ struct oxide_pointer {
     oxide_grab_button_callback grab_button_callback;
     oxide_grab_motion_callback grab_motion_callback;
     void *grab_userdata;
+    // Active touch points keep the layout-to-surface offset established on
+    // touch-down. Wayland keeps a touch sequence on that original surface,
+    // even after the finger moves over another one.
+    struct wl_list touch_points;
 };
 
-// Find the surface under the cursor (and the surface-local coords), via the
-// scene graph. Returns NULL when the cursor is over the bare background.
-static struct wlr_surface *surface_at(struct oxide_pointer *p,
-        double *sx, double *sy) {
+struct oxide_touch_point {
+    int32_t touch_id;
+    double offset_x, offset_y;
+    struct wlr_seat_client *client;
+    struct wl_list link;
+};
+
+// Find the surface at layout coordinates (and its surface-local coords), via
+// the scene graph. Returns NULL over the bare background.
+static struct wlr_surface *surface_at_coords(struct oxide_pointer *p,
+        double lx, double ly, double *sx, double *sy) {
     struct wlr_scene_node *node = wlr_scene_node_at(&p->scene->tree.node,
-            p->cursor->x, p->cursor->y, sx, sy);
+            lx, ly, sx, sy);
     if (node == NULL || node->type != WLR_SCENE_NODE_BUFFER) {
         return NULL;
     }
     struct wlr_scene_surface *scene_surface =
             wlr_scene_surface_try_from_buffer(wlr_scene_buffer_from_node(node));
     return scene_surface ? scene_surface->surface : NULL;
+}
+
+static struct wlr_surface *surface_at(struct oxide_pointer *p,
+        double *sx, double *sy) {
+    return surface_at_coords(p, p->cursor->x, p->cursor->y, sx, sy);
+}
+
+// Keep both Wayland keyboard focus and Rust's focused-window bookkeeping in
+// sync for pointer clicks and touch taps.
+static void focus_surface(struct oxide_pointer *p, struct wlr_surface *surface) {
+    struct wlr_keyboard *kb = wlr_seat_get_keyboard(p->seat);
+    if (surface != NULL && kb != NULL) {
+        wlr_seat_keyboard_notify_enter(p->seat, surface, kb->keycodes,
+                kb->num_keycodes, &kb->modifiers);
+    }
+    struct wlr_surface *root =
+            surface != NULL ? wlr_surface_get_root_surface(surface) : NULL;
+    if (root != NULL && p->focus_callback != NULL) {
+        p->focus_callback(p->focus_userdata, root);
+    }
 }
 
 static void process_motion(struct oxide_pointer *p, uint32_t time) {
@@ -200,19 +232,9 @@ static void handle_cursor_button(void *userdata, void *data) {
         double sx, sy;
         struct wlr_surface *surface = surface_at(p, &sx, &sy);
         struct wlr_keyboard *kb = wlr_seat_get_keyboard(p->seat);
-        if (surface != NULL && kb != NULL) {
-            wlr_seat_keyboard_notify_enter(p->seat, surface, kb->keycodes,
-                    kb->num_keycodes, &kb->modifiers);
-        }
-        // Tell Rust which root surface was clicked (the hit may be a
-        // subsurface), so Workspace.focused follows mouse focus too —
-        // otherwise close/movefocus/movewindow keep acting on the window
-        // that last got focus via the keyboard.
+        focus_surface(p, surface);
         struct wlr_surface *root =
                 surface != NULL ? wlr_surface_get_root_surface(surface) : NULL;
-        if (root != NULL && p->focus_callback != NULL) {
-            p->focus_callback(p->focus_userdata, root);
-        }
         // Offer the press to Rust as a possible grab start (Mod+click on a
         // floating window). A consumed press never reaches the client.
         if (p->grab_button_callback != NULL) {
@@ -247,6 +269,101 @@ static void handle_cursor_frame(void *userdata, void *data) {
     wlr_seat_pointer_notify_frame(p->seat);
 }
 
+// --- touch -----------------------------------------------------------------
+
+static struct oxide_touch_point *touch_point_find(
+        struct oxide_pointer *p, int32_t touch_id) {
+    struct oxide_touch_point *point;
+    wl_list_for_each(point, &p->touch_points, link) {
+        if (point->touch_id == touch_id) {
+            return point;
+        }
+    }
+    return NULL;
+}
+
+static void handle_touch_down(void *userdata, void *data) {
+    struct oxide_pointer *p = userdata;
+    struct wlr_touch_down_event *e = data;
+    double lx, ly, sx, sy;
+    wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
+            e->x, e->y, &lx, &ly);
+    struct wlr_surface *surface =
+            surface_at_coords(p, lx, ly, &sx, &sy);
+    if (surface == NULL) {
+        return;
+    }
+
+    focus_surface(p, surface);
+    wlr_seat_touch_notify_down(p->seat, surface, e->time_msec,
+            e->touch_id, sx, sy);
+    struct wlr_touch_point *seat_point =
+            wlr_seat_touch_get_point(p->seat, e->touch_id);
+    if (seat_point == NULL) {
+        return;
+    }
+
+    struct oxide_touch_point *point = calloc(1, sizeof(*point));
+    point->touch_id = e->touch_id;
+    point->offset_x = lx - sx;
+    point->offset_y = ly - sy;
+    point->client = seat_point->client;
+    wl_list_insert(&p->touch_points, &point->link);
+}
+
+static void handle_touch_motion(void *userdata, void *data) {
+    struct oxide_pointer *p = userdata;
+    struct wlr_touch_motion_event *e = data;
+    struct oxide_touch_point *point = touch_point_find(p, e->touch_id);
+    if (point == NULL) {
+        return;
+    }
+    double lx, ly;
+    wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
+            e->x, e->y, &lx, &ly);
+    wlr_seat_touch_notify_motion(p->seat, e->time_msec, e->touch_id,
+            lx - point->offset_x, ly - point->offset_y);
+}
+
+static void handle_touch_up(void *userdata, void *data) {
+    struct oxide_pointer *p = userdata;
+    struct wlr_touch_up_event *e = data;
+    struct oxide_touch_point *point = touch_point_find(p, e->touch_id);
+    if (point == NULL) {
+        return;
+    }
+    wlr_seat_touch_notify_up(p->seat, e->time_msec, e->touch_id);
+    wl_list_remove(&point->link);
+    free(point);
+}
+
+static void handle_touch_cancel(void *userdata, void *data) {
+    struct oxide_pointer *p = userdata;
+    struct wlr_touch_cancel_event *e = data;
+    struct wlr_touch_point *seat_point =
+            wlr_seat_touch_get_point(p->seat, e->touch_id);
+    if (seat_point == NULL) {
+        return;
+    }
+    struct wlr_seat_client *client = seat_point->client;
+    wlr_seat_touch_notify_cancel(p->seat, client);
+
+    // A Wayland cancel ends every point belonging to that seat client.
+    struct oxide_touch_point *point, *tmp;
+    wl_list_for_each_safe(point, tmp, &p->touch_points, link) {
+        if (point->client == client) {
+            wl_list_remove(&point->link);
+            free(point);
+        }
+    }
+}
+
+static void handle_touch_frame(void *userdata, void *data) {
+    (void)data;
+    struct oxide_pointer *p = userdata;
+    wlr_seat_touch_notify_frame(p->seat);
+}
+
 struct wlr_cursor *oxide_cursor_setup(struct wlr_output_layout *layout,
         struct wlr_scene *scene, struct wlr_seat *seat) {
     struct wlr_cursor *cursor = wlr_cursor_create();
@@ -260,12 +377,18 @@ struct wlr_cursor *oxide_cursor_setup(struct wlr_output_layout *layout,
     p->cursor_mgr = cursor_mgr;
     p->scene = scene;
     p->seat = seat;
+    wl_list_init(&p->touch_points);
 
     signal_add(&cursor->events.motion, handle_cursor_motion, p);
     signal_add(&cursor->events.motion_absolute, handle_cursor_motion_absolute, p);
     signal_add(&cursor->events.button, handle_cursor_button, p);
     signal_add(&cursor->events.axis, handle_cursor_axis, p);
     signal_add(&cursor->events.frame, handle_cursor_frame, p);
+    signal_add(&cursor->events.touch_down, handle_touch_down, p);
+    signal_add(&cursor->events.touch_motion, handle_touch_motion, p);
+    signal_add(&cursor->events.touch_up, handle_touch_up, p);
+    signal_add(&cursor->events.touch_cancel, handle_touch_cancel, p);
+    signal_add(&cursor->events.touch_frame, handle_touch_frame, p);
 
     // Stash our context on the cursor so oxide_cursor_set_focus_callback can
     // find it later (the Rust Server, the callback's userdata, doesn't exist
@@ -306,6 +429,12 @@ void oxide_handle_new_input(struct wlr_seat *seat, struct wlr_cursor *cursor,
     case WLR_INPUT_DEVICE_POINTER:
         wlr_cursor_attach_input_device(cursor, device);
         wlr_log(WLR_INFO, "0xide: pointer attached");
+        break;
+    case WLR_INPUT_DEVICE_TOUCH:
+        wlr_cursor_attach_input_device(cursor, device);
+        wlr_seat_set_capabilities(seat,
+                seat->capabilities | WL_SEAT_CAPABILITY_TOUCH);
+        wlr_log(WLR_INFO, "0xide: touch attached");
         break;
     default:
         break;
