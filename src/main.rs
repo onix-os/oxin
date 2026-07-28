@@ -74,6 +74,9 @@ fn main() {
 
         // Create the seat (wl_seat global). We wire input devices into it below.
         let seat = oxide_seat_create(display, c"seat0".as_ptr());
+        // Manual on-screen keyboards (e.g. wvkbd) create a virtual keyboard
+        // for this seat; the shim forwards all of its keys to seat focus.
+        oxide_virtual_keyboard_setup(display, seat);
 
         // The scene graph holds everything that gets drawn; the output layout
         // arranges outputs in space. Attaching them lets the scene keep each
@@ -158,6 +161,7 @@ fn main() {
         // its new_toplevel signal so each app window enters our scene graph.
         let xdg_shell = wlr::wlr_xdg_shell_create(display, 6);
         oxide_xdg_shell_add_new_toplevel(xdg_shell, handle_new_toplevel, server_ptr);
+        oxide_xdg_shell_setup_popups(xdg_shell);
 
         // xdg-decoration: force server-side mode on every toplevel so clients
         // skip drawing their own CSD title bar. We draw nothing in its place.

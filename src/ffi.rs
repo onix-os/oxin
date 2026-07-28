@@ -33,6 +33,10 @@ extern "C" {
     pub(crate) fn oxide_log_init();
     pub(crate) fn oxide_setup_signals(loop_: *mut wlr::wl_event_loop, display: *mut wlr::wl_display);
     pub(crate) fn oxide_reset_child_signals();
+    pub(crate) fn oxide_virtual_keyboard_setup(
+        display: *mut wlr::wl_display,
+        seat: *mut wlr::wlr_seat,
+    );
     pub(crate) fn oxide_session_change_vt(session: *mut wlr::wlr_session, vt: u32);
     pub(crate) fn oxide_session_add_active(
         session: *mut wlr::wlr_session,
@@ -88,6 +92,7 @@ extern "C" {
         callback: ShimCallback,
         userdata: *mut c_void,
     ) -> *mut ShimListener;
+    pub(crate) fn oxide_xdg_shell_setup_popups(shell: *mut wlr::wlr_xdg_shell);
     pub(crate) fn oxide_scene_add_xdg_toplevel(
         tree: *mut wlr::wlr_scene_tree,
         toplevel: *mut wlr::wlr_xdg_toplevel,

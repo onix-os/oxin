@@ -62,6 +62,11 @@ void oxide_setup_signals(struct wl_event_loop *loop, struct wl_display *display)
 // called from every spawn path's pre_exec.
 void oxide_reset_child_signals(void);
 
+// Publish virtual-keyboard-unstable-v1 and attach each client-created virtual
+// keyboard to `seat`. Virtual keys bypass compositor keybindings.
+void oxide_virtual_keyboard_setup(struct wl_display *display,
+        struct wlr_seat *seat);
+
 // Switch to virtual terminal `vt` (1-based); no-op if `session` is NULL.
 void oxide_session_change_vt(struct wlr_session *session, unsigned vt);
 // Subscribe to session active changes (VT switch away/back). NULL if no session.
@@ -114,6 +119,8 @@ void oxide_output_schedule_frame(struct wlr_output *output);
 // --- xdg-shell (app windows) ----------------------------------------------
 struct oxide_listener *oxide_xdg_shell_add_new_toplevel(
         struct wlr_xdg_shell *shell, oxide_callback callback, void *userdata);
+// Configure XDG popups after their initial commit so they can map.
+void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell);
 // Add a toplevel to the scene graph, under `tree` (the normal/app-window
 // layer). Returns the scene tree node so Rust can position it. (Use
 // oxide_xdg_add_commit for the initial-configure listener.)

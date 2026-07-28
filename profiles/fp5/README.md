@@ -1,8 +1,8 @@
 # Fairphone 5 touch test
 
 This profile is intentionally temporary: it starts 0xide directly on DRM/KMS
-with Weston’s touch visualizer, without a bar, keyboard, gestures, or autologin.
-Phosh and Hyprland remain separate sessions.
+with Foot and a manually visible wvkbd, without a bar, automatic keyboard
+activation, gestures, or autologin. Phosh and Hyprland remain separate sessions.
 
 Build 0xide in `~/Projects/0xide-touch`, then install the chooser entry:
 

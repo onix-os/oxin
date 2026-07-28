@@ -6,11 +6,14 @@
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_touch.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
 #include "oxide_shim_internal.h"
@@ -83,6 +86,9 @@ static void handle_modifiers(void *userdata, void *data) {
 static void handle_keyboard_destroy(void *userdata, void *data) {
     (void)data;
     struct oxide_keyboard *kb = userdata;
+    if (wlr_seat_get_keyboard(kb->seat) == kb->keyboard) {
+        wlr_seat_set_keyboard(kb->seat, NULL);
+    }
     oxide_listener_remove(kb->key_listener);
     oxide_listener_remove(kb->mod_listener);
     oxide_listener_remove(kb->destroy_listener);
@@ -116,6 +122,23 @@ static void seat_add_keyboard(struct wlr_seat *seat,
 
     wlr_seat_set_keyboard(seat, keyboard);
     wlr_log(WLR_INFO, "0xide: keyboard attached");
+}
+
+static void handle_new_virtual_keyboard(void *userdata, void *data) {
+    struct wlr_seat *seat = userdata;
+    struct wlr_virtual_keyboard_v1 *virtual_keyboard = data;
+    // Virtual keys are client input, never compositor keybindings. Passing no
+    // key callback makes seat_add_keyboard forward every key to seat focus.
+    seat_add_keyboard(seat, &virtual_keyboard->keyboard.base, NULL, NULL);
+    wlr_log(WLR_INFO, "0xide: virtual keyboard attached");
+}
+
+void oxide_virtual_keyboard_setup(struct wl_display *display,
+        struct wlr_seat *seat) {
+    struct wlr_virtual_keyboard_manager_v1 *manager =
+            wlr_virtual_keyboard_manager_v1_create(display);
+    signal_add(&manager->events.new_virtual_keyboard,
+            handle_new_virtual_keyboard, seat);
 }
 
 struct oxide_listener *oxide_backend_add_new_input(
@@ -184,15 +207,26 @@ static struct wlr_surface *surface_at(struct oxide_pointer *p,
 }
 
 // Keep both Wayland keyboard focus and Rust's focused-window bookkeeping in
-// sync for pointer clicks and touch taps.
+// sync for pointer clicks and touch taps. Ordinary layer surfaces (notably an
+// on-screen keyboard) must not take focus from the app they are typing into.
 static void focus_surface(struct oxide_pointer *p, struct wlr_surface *surface) {
-    struct wlr_keyboard *kb = wlr_seat_get_keyboard(p->seat);
-    if (surface != NULL && kb != NULL) {
-        wlr_seat_keyboard_notify_enter(p->seat, surface, kb->keycodes,
-                kb->num_keycodes, &kb->modifiers);
-    }
     struct wlr_surface *root =
             surface != NULL ? wlr_surface_get_root_surface(surface) : NULL;
+    struct wlr_layer_surface_v1 *layer = root != NULL
+            ? wlr_layer_surface_v1_try_from_wlr_surface(root) : NULL;
+    bool focusable = root != NULL
+            && (wlr_xdg_toplevel_try_from_wlr_surface(root) != NULL
+                || (layer != NULL && layer->current.keyboard_interactive
+                    != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE));
+    if (!focusable) {
+        return;
+    }
+
+    struct wlr_keyboard *kb = wlr_seat_get_keyboard(p->seat);
+    if (kb != NULL) {
+        wlr_seat_keyboard_notify_enter(p->seat, root, kb->keycodes,
+                kb->num_keycodes, &kb->modifiers);
+    }
     if (root != NULL && p->focus_callback != NULL) {
         p->focus_callback(p->focus_userdata, root);
     }

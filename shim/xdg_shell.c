@@ -1,4 +1,5 @@
 #define WLR_USE_UNSTABLE
+#include <stdlib.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -10,6 +11,54 @@
 struct oxide_listener *oxide_xdg_shell_add_new_toplevel(
         struct wlr_xdg_shell *shell, oxide_callback callback, void *userdata) {
     return signal_add(&shell->events.new_toplevel, callback, userdata);
+}
+
+struct oxide_xdg_popup_configure {
+    struct wlr_xdg_popup *popup;
+    struct wl_listener commit;
+    struct wl_listener destroy;
+};
+
+static void popup_configure_finish(struct oxide_xdg_popup_configure *pending) {
+    wl_list_remove(&pending->commit.link);
+    wl_list_remove(&pending->destroy.link);
+    free(pending);
+}
+
+static void handle_popup_initial_commit(struct wl_listener *listener,
+        void *data) {
+    (void)data;
+    struct oxide_xdg_popup_configure *pending =
+            wl_container_of(listener, pending, commit);
+    if (!pending->popup->base->initial_commit) {
+        return;
+    }
+    wlr_xdg_surface_schedule_configure(pending->popup->base);
+    popup_configure_finish(pending);
+}
+
+static void handle_popup_destroy_before_configure(struct wl_listener *listener,
+        void *data) {
+    (void)data;
+    struct oxide_xdg_popup_configure *pending =
+            wl_container_of(listener, pending, destroy);
+    popup_configure_finish(pending);
+}
+
+static void handle_new_popup(void *userdata, void *data) {
+    (void)userdata;
+    struct wlr_xdg_popup *popup = data;
+    struct oxide_xdg_popup_configure *pending =
+            calloc(1, sizeof(*pending));
+    pending->popup = popup;
+    pending->commit.notify = handle_popup_initial_commit;
+    pending->destroy.notify = handle_popup_destroy_before_configure;
+    wl_signal_add(&popup->base->surface->events.commit, &pending->commit);
+    wl_signal_add(&popup->events.destroy, &pending->destroy);
+}
+
+void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell) {
+    signal_add(&shell->events.new_popup, handle_new_popup, NULL);
 }
 
 struct wlr_scene_tree *oxide_scene_add_xdg_toplevel(struct wlr_scene_tree *tree,
