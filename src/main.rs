@@ -32,7 +32,10 @@ mod toplevel;
 use config::Config;
 use decoration::handle_new_decoration;
 use ffi::*;
-use input::{handle_click_focus, handle_grab_button, handle_grab_motion, handle_new_input};
+use input::{
+    handle_click_focus, handle_grab_button, handle_grab_motion, handle_keyboard_gesture,
+    handle_new_input,
+};
 use layer_shell::handle_new_layer_surface;
 use output::{handle_new_output, handle_session_active};
 use state::{GrabMode, Server, Workspace, WORKSPACE_COUNT};
@@ -167,6 +170,14 @@ fn main() {
         oxide_cursor_set_focus_callback(cursor, handle_click_focus, server_ptr);
         // Mod+drag move/resize of floating windows (pointer grabs).
         oxide_cursor_set_grab_callbacks(cursor, handle_grab_button, handle_grab_motion, server_ptr);
+        oxide_cursor_set_keyboard_gesture(
+            cursor,
+            output_layout,
+            server.config.gesture_keyboard.is_some(),
+            server.config.gesture_keyboard_height,
+            handle_keyboard_gesture,
+            server_ptr,
+        );
         // Repaint outputs when we regain the VT (no-op when nested / no session).
         oxide_session_add_active(session, handle_session_active, server_ptr);
 

@@ -97,6 +97,6 @@ On the current FP5 reference device:
 - Firefox rendered at the correct fractional scale; and
 - Foot and Firefox tiled top/bottom under the phone profile.
 
-The temporary session currently starts Foot and a manually visible
-`wvkbd-mobintl`. Automatic keyboard activation and the permanent phone shell
-remain separate milestones.
+The Stage 13 temporary session started Foot and a manually visible
+`wvkbd-mobintl`. Stage 14 adds explicit show/hide gestures; text-input-driven
+automatic activation and the permanent phone shell remain separate milestones.

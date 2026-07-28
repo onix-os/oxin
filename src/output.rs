@@ -51,6 +51,23 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
     let (r, g, b) = server.config.background;
     let background =
         oxide_scene_add_output_background(server.tree_bg_fallback, output, x, y, r, g, b);
+    // Phone profiles opt into a small compositor-owned handle. Its larger
+    // invisible touch target is implemented in the input shim.
+    let gesture_handle = if server.config.gesture_keyboard.is_some() {
+        oxide_scene_add_rect(
+            server.tree_layer_overlay,
+            x + (w - 120) / 2,
+            y + h - 10,
+            120,
+            5,
+            0.85,
+            0.85,
+            0.88,
+            1.0,
+        )
+    } else {
+        std::ptr::null_mut()
+    };
 
     // Render through the scene on every frame. The frame callback needs to find
     // this output (for repaint_frames), so hand it a heap FrameCtx. Track the
@@ -78,6 +95,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         frame_listener,
         destroy_listener,
         background,
+        gesture_handle,
         frame_ctx,
         repaint_frames: REPAINT_FRAMES,
     });
@@ -124,6 +142,9 @@ unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_v
     oxide_listener_remove(o.frame_listener);
     oxide_listener_remove(o.destroy_listener);
     oxide_scene_rect_destroy(o.background);
+    if !o.gesture_handle.is_null() {
+        oxide_scene_rect_destroy(o.gesture_handle);
+    }
     let frame_ctx = o.frame_ctx;
     server.outputs.remove(pos);
     drop(Box::from_raw(frame_ctx));

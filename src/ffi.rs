@@ -22,6 +22,10 @@ pub(crate) type GrabButtonCallback =
 /// active (it handled the motion)?
 pub(crate) type GrabMotionCallback = unsafe extern "C" fn(*mut c_void, f64, f64) -> bool;
 
+/// Bottom-handle gesture callback: `show` is true for an upward swipe and
+/// false for a downward swipe.
+pub(crate) type KeyboardGestureCallback = unsafe extern "C" fn(*mut c_void, bool);
+
 /// Opaque handle to a `oxide_listener` living on the C heap.
 #[repr(C)]
 pub(crate) struct ShimListener {
@@ -66,8 +70,20 @@ extern "C" {
         g: f32,
         b: f32,
     ) -> *mut c_void; // the background rect (opaque to Rust)
+    pub(crate) fn oxide_scene_add_rect(
+        tree: *mut wlr::wlr_scene_tree,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    ) -> *mut c_void;
     pub(crate) fn oxide_scene_rect_destroy(rect: *mut c_void);
     pub(crate) fn oxide_scene_rect_set_enabled(rect: *mut c_void, enabled: bool);
+    pub(crate) fn oxide_scene_rect_set_position(rect: *mut c_void, x: i32, y: i32);
     pub(crate) fn oxide_output_add_destroy(
         output: *mut wlr::wlr_output,
         callback: ShimCallback,
@@ -189,6 +205,14 @@ extern "C" {
         cursor: *mut wlr::wlr_cursor,
         button_callback: GrabButtonCallback,
         motion_callback: GrabMotionCallback,
+        userdata: *mut c_void,
+    );
+    pub(crate) fn oxide_cursor_set_keyboard_gesture(
+        cursor: *mut wlr::wlr_cursor,
+        layout: *mut wlr::wlr_output_layout,
+        enabled: bool,
+        keyboard_height: i32,
+        callback: KeyboardGestureCallback,
         userdata: *mut c_void,
     );
     pub(crate) fn oxide_xdg_toplevel_surface(

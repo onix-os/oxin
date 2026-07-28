@@ -46,6 +46,7 @@ typedef bool (*oxide_grab_button_callback)(void *userdata,
         bool pressed, double cx, double cy);
 typedef bool (*oxide_grab_motion_callback)(void *userdata, double cx,
         double cy);
+typedef void (*oxide_keyboard_gesture_callback)(void *userdata, bool show);
 
 // --- toolchain / logging ---------------------------------------------------
 const char *oxide_wlroots_version(void);
@@ -101,10 +102,14 @@ struct wlr_scene_tree *oxide_scene_add_layer_tree(struct wlr_scene *scene);
 // destroy it when the output goes away.
 struct wlr_scene_rect *oxide_scene_add_output_background(struct wlr_scene_tree *tree,
         struct wlr_output *output, int x, int y, float r, float g, float b);
+struct wlr_scene_rect *oxide_scene_add_rect(struct wlr_scene_tree *tree,
+        int x, int y, int width, int height, float r, float g, float b,
+        float a);
 // Destroy a background rect created above.
 void oxide_scene_rect_destroy(struct wlr_scene_rect *rect);
 // Enable/disable a background rect (toggle to force a full-output repaint).
 void oxide_scene_rect_set_enabled(struct wlr_scene_rect *rect, bool enabled);
+void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y);
 // Read an output's layout box (position + pixel size) for per-output tiling.
 void oxide_output_layout_get_box(struct wlr_output_layout *layout,
         struct wlr_output *output, int *x, int *y, int *width, int *height);
@@ -272,5 +277,10 @@ void oxide_cursor_set_focus_callback(struct wlr_cursor *cursor,
 void oxide_cursor_set_grab_callbacks(struct wlr_cursor *cursor,
         oxide_grab_button_callback button_callback,
         oxide_grab_motion_callback motion_callback, void *userdata);
+// Enable a bottom-center touch target. An upward swipe requests keyboard show;
+// after that, a downward swipe from the same persistent handle requests hide.
+void oxide_cursor_set_keyboard_gesture(struct wlr_cursor *cursor,
+        struct wlr_output_layout *layout, bool enabled, int keyboard_height,
+        oxide_keyboard_gesture_callback callback, void *userdata);
 
 #endif // OXIN_SHIM_H

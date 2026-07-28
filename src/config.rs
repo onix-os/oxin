@@ -110,6 +110,12 @@ pub struct Config {
     /// to `float =` rule windows; dialogs and fixed-size windows keep their
     /// natural size instead.
     pub float_size: (i32, i32),
+    /// Process name of an on-screen keyboard controlled by the bottom swipe
+    /// handle. `None` keeps the phone gesture UI disabled.
+    pub gesture_keyboard: Option<String>,
+    /// Logical height of that keyboard; used to keep the gesture handle on
+    /// its top edge while the keyboard is visible.
+    pub gesture_keyboard_height: i32,
 }
 
 impl Default for Config {
@@ -123,6 +129,8 @@ impl Default for Config {
             monitors: Vec::new(),
             float_rules: Vec::new(),
             float_size: (60, 60),
+            gesture_keyboard: None,
+            gesture_keyboard_height: 300,
         }
     }
 }
@@ -216,6 +224,27 @@ impl Config {
                         self.float_rules.push(app_id);
                     }
                 }
+                "gesture_keyboard" => {
+                    if val.is_empty() || val.len() > 15 || val.contains(char::is_whitespace) {
+                        warn(
+                            n,
+                            "invalid gesture_keyboard (want a Linux process name, max 15 characters)",
+                            raw,
+                        );
+                    } else {
+                        self.gesture_keyboard = Some(val.to_string());
+                    }
+                }
+                "gesture_keyboard_height" => match val.parse::<i32>() {
+                    Ok(height) if (80..=1000).contains(&height) => {
+                        self.gesture_keyboard_height = height
+                    }
+                    _ => warn(
+                        n,
+                        "invalid gesture_keyboard_height (want 80..1000 logical pixels)",
+                        raw,
+                    ),
+                },
                 "bind" => {} // handled in parse_binds
                 _ => warn(n, "unknown setting", raw),
             }
@@ -620,6 +649,17 @@ mod tests {
 
         cfg.parse_scalars("first_split = vertical\n");
         assert!(cfg.first_split_vertical);
+    }
+
+    #[test]
+    fn keyboard_gesture_is_opt_in_and_parses_height() {
+        let mut cfg = Config::default();
+        assert!(cfg.gesture_keyboard.is_none());
+        cfg.parse_scalars(
+            "gesture_keyboard = wvkbd-mobintl\ngesture_keyboard_height = 280\n",
+        );
+        assert_eq!(cfg.gesture_keyboard.as_deref(), Some("wvkbd-mobintl"));
+        assert_eq!(cfg.gesture_keyboard_height, 280);
     }
 
     #[test]

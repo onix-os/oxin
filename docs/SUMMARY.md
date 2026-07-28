@@ -24,3 +24,4 @@
 - [Stage 11 — Runtime Control](phases/stage-11-runtime-control.md)
 - [Stage 12 — Native Touch & Mobile](phases/stage-12-native-touch-mobile.md)
 - [Stage 13 — Virtual Keyboard & Mobile Scaling](phases/stage-13-virtual-keyboard-mobile.md)
+- [Stage 14 — Mobile Keyboard Gestures](phases/stage-14-mobile-keyboard-gestures.md)

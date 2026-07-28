@@ -152,6 +152,11 @@ bind = MOD SHIFT, 1, movetoworkspace, 1
 # (connector name, as logged: "output <name> online..."). Unlisted outputs
 # keep the default auto-placement.
 monitor = HDMI-A-1, 0x-1080, 1.0
+
+# Optional mobile bottom handle. The named process receives SIGUSR2 on an
+# upward swipe and SIGUSR1 on a downward swipe.
+gesture_keyboard = wvkbd-mobintl
+gesture_keyboard_height = 300
 ```
 
 A line 0xin can't parse is warned about on stderr and skipped — never fatal. See

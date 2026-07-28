@@ -106,6 +106,8 @@ pub(crate) struct Output {
     pub(crate) frame_listener: *mut ShimListener,
     pub(crate) destroy_listener: *mut ShimListener,
     pub(crate) background: *mut c_void,
+    /// Bottom gesture-handle rectangle, or NULL when the profile disables it.
+    pub(crate) gesture_handle: *mut c_void,
     pub(crate) frame_ctx: *mut FrameCtx,
     /// Frames remaining to force a full repaint (after creation/VT resume). A
     /// `frame` event only fires once the output is actually presenting, so doing

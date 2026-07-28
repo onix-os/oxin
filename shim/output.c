@@ -70,6 +70,15 @@ struct wlr_scene_rect *oxide_scene_add_output_background(struct wlr_scene_tree *
     return rect;
 }
 
+struct wlr_scene_rect *oxide_scene_add_rect(struct wlr_scene_tree *tree,
+        int x, int y, int width, int height, float r, float g, float b,
+        float a) {
+    const float color[4] = {r, g, b, a};
+    struct wlr_scene_rect *rect = wlr_scene_rect_create(tree, width, height, color);
+    wlr_scene_node_set_position(&rect->node, x, y);
+    return rect;
+}
+
 // Remove a background rectangle (when its output is destroyed).
 void oxide_scene_rect_destroy(struct wlr_scene_rect *rect) {
     wlr_scene_node_destroy(&rect->node);
@@ -81,6 +90,10 @@ void oxide_scene_rect_destroy(struct wlr_scene_rect *rect) {
 // flipped back to the screen instead of staying black.
 void oxide_scene_rect_set_enabled(struct wlr_scene_rect *rect, bool enabled) {
     wlr_scene_node_set_enabled(&rect->node, enabled);
+}
+
+void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y) {
+    wlr_scene_node_set_position(&rect->node, x, y);
 }
 
 // Which output is under the cursor right now (NULL if none). Lets Rust target

@@ -2,14 +2,17 @@
 
 use crate::config::MOD_MASK;
 use crate::ffi::{
-    oxide_handle_new_input, oxide_scene_tree_set_position, oxide_xdg_toplevel_surface,
+    oxide_handle_new_input, oxide_scene_rect_set_position, oxide_scene_tree_set_position,
+    oxide_xdg_toplevel_surface,
 };
+use crate::keybindings::reset_signals;
 use crate::keybindings::handle_keybinding;
 use crate::state::{GrabMode, Server, Toplevel};
 use crate::toplevel::clamp_floating;
 use crate::wlr;
 use std::os::raw::c_void;
 use std::ptr;
+use std::process::Command;
 
 // Linux input-event button codes (input-event-codes.h).
 const BTN_LEFT: u32 = 0x110;
@@ -17,6 +20,44 @@ const BTN_RIGHT: u32 = 0x111;
 
 /// Smallest size a resize drag can shrink a floating window to.
 const MIN_FLOAT_SIZE: i32 = 50;
+
+/// Show/hide the configured keyboard. wvkbd deliberately uses SIGUSR2 for
+/// show and SIGUSR1 for hide, allowing it to stay connected while invisible.
+pub(crate) unsafe extern "C" fn handle_keyboard_gesture(
+    userdata: *mut c_void,
+    show: bool,
+) {
+    let server = &mut *(userdata as *mut Server);
+    let Some(process) = server.config.gesture_keyboard.as_deref() else {
+        return;
+    };
+    let signal = if show { "-USR2" } else { "-USR1" };
+    for output in &server.outputs {
+        if !output.gesture_handle.is_null() {
+            let y = output.y + output.h
+                - if show {
+                    server.config.gesture_keyboard_height - 8
+                } else {
+                    10
+                };
+            oxide_scene_rect_set_position(
+                output.gesture_handle,
+                output.x + (output.w - 120) / 2,
+                y,
+            );
+        }
+    }
+    let mut command = Command::new("pkill");
+    command.args([signal, "-x", process]);
+    reset_signals(&mut command);
+    match command.spawn() {
+        Ok(_) => eprintln!(
+            "0xin: keyboard gesture — {} `{process}`",
+            if show { "show" } else { "hide" }
+        ),
+        Err(e) => eprintln!("0xin: keyboard gesture failed: {e}"),
+    }
+}
 
 /// Called by the shim when an input device (keyboard, pointer, …) appears.
 pub(crate) unsafe extern "C" fn handle_new_input(userdata: *mut c_void, data: *mut c_void) {

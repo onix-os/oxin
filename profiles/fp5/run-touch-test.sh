@@ -15,5 +15,5 @@ export LD_LIBRARY_PATH="$repo_dir/.sysroot/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRAR
 
 exec "$repo_dir/target/debug/0xin" sh -c '
     foot &
-    exec wvkbd-mobintl --no-popup -H 300 -L 200
+    exec wvkbd-mobintl --hidden --no-popup -H 300 -L 200
 '
