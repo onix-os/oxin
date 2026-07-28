@@ -25,6 +25,7 @@ pub(crate) type GrabMotionCallback = unsafe extern "C" fn(*mut c_void, f64, f64)
 /// Bottom-handle gesture callback: `show` is true for an upward swipe and
 /// false for a downward swipe.
 pub(crate) type KeyboardGestureCallback = unsafe extern "C" fn(*mut c_void, bool);
+pub(crate) type WorkspaceGestureCallback = unsafe extern "C" fn(*mut c_void, i32);
 
 /// Opaque handle to a `oxide_listener` living on the C heap.
 #[repr(C)]
@@ -213,6 +214,12 @@ extern "C" {
         enabled: bool,
         keyboard_height: i32,
         callback: KeyboardGestureCallback,
+        userdata: *mut c_void,
+    );
+    pub(crate) fn oxide_cursor_set_workspace_gesture(
+        cursor: *mut wlr::wlr_cursor,
+        enabled: bool,
+        callback: WorkspaceGestureCallback,
         userdata: *mut c_void,
     );
     pub(crate) fn oxide_xdg_toplevel_surface(

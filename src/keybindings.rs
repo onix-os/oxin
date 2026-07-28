@@ -43,7 +43,7 @@ unsafe fn close_focused(server: &Server) {
 
 /// Display `target` on the focused output. If it's already shown on another
 /// output, swap the two outputs' workspaces (so no workspace is on two monitors).
-unsafe fn switch_workspace(server: &mut Server, target: usize) {
+pub(crate) unsafe fn switch_workspace(server: &mut Server, target: usize) {
     if server.outputs.is_empty() || target >= server.workspaces.len() {
         return;
     }
@@ -126,13 +126,14 @@ fn spawn(cmd: &str) {
     }
 }
 
-/// Arrange for a spawned client to start with clean signal state. The
-/// compositor's ignored SIGCHLD and blocked SIGINT/SIGTERM survive exec and
-/// would leak into every client (breaking child exit codes in Qt apps and
-/// plain `kill`, respectively) — pre_exec runs in the forked child, where the
-/// shim resets both before the exec. Every spawn path must go through this.
+/// Arrange for a spawned client to start with clean process state. The
+/// compositor's ignored SIGCHLD, blocked SIGINT/SIGTERM, and private
+/// `LD_LIBRARY_PATH` would otherwise leak into clients. The FP5 sysroot's
+/// libraries are compositor dependencies and make Firefox crash when they
+/// override its system libraries. Every spawn path must go through this.
 pub(crate) fn reset_signals(command: &mut Command) {
     use std::os::unix::process::CommandExt;
+    command.env_remove("LD_LIBRARY_PATH");
     unsafe {
         command.pre_exec(|| {
             oxide_reset_child_signals();

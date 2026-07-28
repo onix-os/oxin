@@ -116,6 +116,9 @@ pub struct Config {
     /// Logical height of that keyboard; used to keep the gesture handle on
     /// its top edge while the keyboard is visible.
     pub gesture_keyboard_height: i32,
+    /// Whether inward swipes from the left/right output edges cycle
+    /// workspaces. Disabled by default for desktop touchscreens.
+    pub workspace_edge_swipe: bool,
 }
 
 impl Default for Config {
@@ -131,6 +134,7 @@ impl Default for Config {
             float_size: (60, 60),
             gesture_keyboard: None,
             gesture_keyboard_height: 300,
+            workspace_edge_swipe: false,
         }
     }
 }
@@ -244,6 +248,11 @@ impl Config {
                         "invalid gesture_keyboard_height (want 80..1000 logical pixels)",
                         raw,
                     ),
+                },
+                "workspace_edge_swipe" => match val {
+                    "true" | "yes" | "on" | "1" => self.workspace_edge_swipe = true,
+                    "false" | "no" | "off" | "0" => self.workspace_edge_swipe = false,
+                    _ => warn(n, "invalid workspace_edge_swipe (want true or false)", raw),
                 },
                 "bind" => {} // handled in parse_binds
                 _ => warn(n, "unknown setting", raw),
@@ -660,6 +669,14 @@ mod tests {
         );
         assert_eq!(cfg.gesture_keyboard.as_deref(), Some("wvkbd-mobintl"));
         assert_eq!(cfg.gesture_keyboard_height, 280);
+    }
+
+    #[test]
+    fn workspace_edge_swipe_is_opt_in() {
+        let mut cfg = Config::default();
+        assert!(!cfg.workspace_edge_swipe);
+        cfg.parse_scalars("workspace_edge_swipe = true\n");
+        assert!(cfg.workspace_edge_swipe);
     }
 
     #[test]

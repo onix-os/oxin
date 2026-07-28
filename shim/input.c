@@ -176,6 +176,9 @@ struct oxide_pointer {
     int keyboard_height;
     oxide_keyboard_gesture_callback keyboard_gesture_callback;
     void *keyboard_gesture_userdata;
+    bool workspace_gesture_enabled;
+    oxide_workspace_gesture_callback workspace_gesture_callback;
+    void *workspace_gesture_userdata;
 };
 
 struct oxide_touch_point {
@@ -183,8 +186,11 @@ struct oxide_touch_point {
     double offset_x, offset_y;
     struct wlr_seat_client *client;
     struct wlr_touch *touch;
-    bool gesture;
+    // 0 = client touch, 1 = keyboard handle, 2 = workspace edge.
+    int gesture_kind;
     bool gesture_fired;
+    // -1 for the left edge and +1 for the right edge.
+    int gesture_edge;
     double start_lx, start_ly;
     struct wl_list link;
 };
@@ -354,6 +360,27 @@ static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) 
             && ly >= handle_y - 45 && ly <= handle_y + 80;
 }
 
+static int workspace_gesture_edge(struct oxide_pointer *p,
+        double lx, double ly) {
+    if (!p->workspace_gesture_enabled || p->output_layout == NULL) {
+        return 0;
+    }
+    struct wlr_output *output =
+            wlr_output_layout_output_at(p->output_layout, lx, ly);
+    if (output == NULL) {
+        return 0;
+    }
+    struct wlr_box box;
+    wlr_output_layout_get_box(p->output_layout, output, &box);
+    if (lx <= box.x + 28) {
+        return -1;
+    }
+    if (lx >= box.x + box.width - 28) {
+        return 1;
+    }
+    return 0;
+}
+
 static void touch_cancel_client(struct oxide_pointer *p,
         struct wlr_seat_client *client) {
     wlr_seat_touch_notify_cancel(p->seat, client);
@@ -381,7 +408,19 @@ static void handle_touch_down(void *userdata, void *data) {
         struct oxide_touch_point *point = calloc(1, sizeof(*point));
         point->touch_id = e->touch_id;
         point->touch = e->touch;
-        point->gesture = true;
+        point->gesture_kind = 1;
+        point->start_lx = lx;
+        point->start_ly = ly;
+        wl_list_insert(&p->touch_points, &point->link);
+        return;
+    }
+    int gesture_edge = workspace_gesture_edge(p, lx, ly);
+    if (gesture_edge != 0) {
+        struct oxide_touch_point *point = calloc(1, sizeof(*point));
+        point->touch_id = e->touch_id;
+        point->touch = e->touch;
+        point->gesture_kind = 2;
+        point->gesture_edge = gesture_edge;
         point->start_lx = lx;
         point->start_ly = ly;
         wl_list_insert(&p->touch_points, &point->link);
@@ -421,7 +460,7 @@ static void handle_touch_motion(void *userdata, void *data) {
     double lx, ly;
     wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
             e->x, e->y, &lx, &ly);
-    if (point->gesture) {
+    if (point->gesture_kind == 1) {
         double dy = ly - point->start_ly;
         bool show = !p->keyboard_visible && dy <= -60;
         bool hide = p->keyboard_visible && dy >= 60;
@@ -431,6 +470,19 @@ static void handle_touch_motion(void *userdata, void *data) {
             if (p->keyboard_gesture_callback != NULL) {
                 p->keyboard_gesture_callback(
                         p->keyboard_gesture_userdata, show);
+            }
+        }
+        return;
+    }
+    if (point->gesture_kind == 2) {
+        double dx = lx - point->start_lx;
+        bool previous = point->gesture_edge == -1 && dx >= 70;
+        bool next = point->gesture_edge == 1 && dx <= -70;
+        if (!point->gesture_fired && (previous || next)) {
+            point->gesture_fired = true;
+            if (p->workspace_gesture_callback != NULL) {
+                p->workspace_gesture_callback(
+                        p->workspace_gesture_userdata, previous ? -1 : 1);
             }
         }
         return;
@@ -446,7 +498,7 @@ static void handle_touch_up(void *userdata, void *data) {
     if (point == NULL) {
         return;
     }
-    if (!point->gesture) {
+    if (point->gesture_kind == 0) {
         wlr_seat_touch_notify_up(p->seat, e->time_msec, e->touch_id);
     }
     wl_list_remove(&point->link);
@@ -460,7 +512,7 @@ static void handle_touch_cancel(void *userdata, void *data) {
             wlr_seat_touch_get_point(p->seat, e->touch_id);
     if (seat_point == NULL) {
         struct oxide_touch_point *point = touch_point_find(p, e->touch_id);
-        if (point != NULL && point->gesture) {
+        if (point != NULL && point->gesture_kind != 0) {
             wl_list_remove(&point->link);
             free(point);
         }
@@ -488,7 +540,7 @@ static void handle_touch_device_destroy(void *userdata, void *data) {
         struct oxide_touch_point *point;
         struct wlr_seat_client *client = NULL;
         wl_list_for_each(point, &p->touch_points, link) {
-            if (point->touch == td->touch && !point->gesture) {
+            if (point->touch == td->touch && point->gesture_kind == 0) {
                 client = point->client;
                 break;
             }
@@ -500,7 +552,7 @@ static void handle_touch_device_destroy(void *userdata, void *data) {
     }
     struct oxide_touch_point *point, *tmp;
     wl_list_for_each_safe(point, tmp, &p->touch_points, link) {
-        if (point->touch == td->touch && point->gesture) {
+        if (point->touch == td->touch && point->gesture_kind != 0) {
             wl_list_remove(&point->link);
             free(point);
         }
@@ -599,6 +651,15 @@ void oxide_cursor_set_keyboard_gesture(struct wlr_cursor *cursor,
     p->keyboard_height = keyboard_height;
     p->keyboard_gesture_callback = callback;
     p->keyboard_gesture_userdata = userdata;
+}
+
+void oxide_cursor_set_workspace_gesture(struct wlr_cursor *cursor,
+        bool enabled, oxide_workspace_gesture_callback callback,
+        void *userdata) {
+    struct oxide_pointer *p = cursor->data;
+    p->workspace_gesture_enabled = enabled;
+    p->workspace_gesture_callback = callback;
+    p->workspace_gesture_userdata = userdata;
 }
 
 void oxide_handle_new_input(struct wlr_seat *seat, struct wlr_cursor *cursor,

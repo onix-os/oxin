@@ -47,6 +47,7 @@ typedef bool (*oxide_grab_button_callback)(void *userdata,
 typedef bool (*oxide_grab_motion_callback)(void *userdata, double cx,
         double cy);
 typedef void (*oxide_keyboard_gesture_callback)(void *userdata, bool show);
+typedef void (*oxide_workspace_gesture_callback)(void *userdata, int direction);
 
 // --- toolchain / logging ---------------------------------------------------
 const char *oxide_wlroots_version(void);
@@ -282,5 +283,8 @@ void oxide_cursor_set_grab_callbacks(struct wlr_cursor *cursor,
 void oxide_cursor_set_keyboard_gesture(struct wlr_cursor *cursor,
         struct wlr_output_layout *layout, bool enabled, int keyboard_height,
         oxide_keyboard_gesture_callback callback, void *userdata);
+void oxide_cursor_set_workspace_gesture(struct wlr_cursor *cursor,
+        bool enabled, oxide_workspace_gesture_callback callback,
+        void *userdata);
 
 #endif // OXIN_SHIM_H

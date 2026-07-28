@@ -61,3 +61,12 @@ height.
 Text-input and input-method protocols remain future work. They can eventually
 show the keyboard automatically when a text field gains focus, while this
 explicit gesture remains useful as a user override and recovery path.
+
+## Client library isolation
+
+The FP5 wrapper uses a private sysroot in `LD_LIBRARY_PATH` so the compositor
+can load its pinned wlroots build. Spawned clients must not inherit that path:
+doing so made Firefox ESR load incompatible compositor-side libraries and
+crash before mapping a window. All 0xin spawn paths now remove
+`LD_LIBRARY_PATH` from the child environment while the already-running
+compositor retains its loaded libraries.

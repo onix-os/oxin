@@ -16,8 +16,12 @@ explicitly reset between fork and exec. Two things survive exec:
 
 Fix: `oxide_reset_child_signals()` in `shim/core.c` — `SIGCHLD → SIG_DFL` +
 `sigprocmask(SIG_SETMASK, empty)` — called via `Command::pre_exec` from
-**every** Rust spawn path (`main.rs` client arg, `keybindings::spawn`; the
-helper is `keybindings::reset_signals`). Any new spawn path must go through
+The same helper removes `LD_LIBRARY_PATH` from children. A standalone profile
+may need a private sysroot to load 0xin itself, but allowing that path to
+override application libraries made Firefox ESR crash during startup.
+
+**Every** Rust spawn path (`main.rs` client arg, `keybindings::spawn`; the
+helper is `keybindings::reset_signals`) must go through
 it too.
 
 Diagnosis recipe: `grep -E 'SigIgn|SigBlk' /proc/<client-pid>/status` —

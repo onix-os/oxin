@@ -31,3 +31,8 @@ The thin pill at the bottom is a compositor-owned gesture handle. Swipe upward
 from it to show wvkbd. While wvkbd is visible the handle moves to its top edge;
 swipe downward from there to hide it. Touches that begin outside the enlarged
 handle target continue to applications unchanged.
+
+Swipe inward from the left edge for the previous workspace or from the right
+edge for the next workspace. The nine-workspace ring wraps at either end.
+Touches must begin within the narrow edge activation strip; horizontal gestures
+started elsewhere remain application input.

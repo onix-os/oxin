@@ -5,9 +5,9 @@ use crate::ffi::{
     oxide_handle_new_input, oxide_scene_rect_set_position, oxide_scene_tree_set_position,
     oxide_xdg_toplevel_surface,
 };
-use crate::keybindings::reset_signals;
-use crate::keybindings::handle_keybinding;
+use crate::keybindings::{handle_keybinding, reset_signals, switch_workspace};
 use crate::state::{GrabMode, Server, Toplevel};
+use crate::tiling::active_workspace;
 use crate::toplevel::clamp_floating;
 use crate::wlr;
 use std::os::raw::c_void;
@@ -57,6 +57,21 @@ pub(crate) unsafe extern "C" fn handle_keyboard_gesture(
         ),
         Err(e) => eprintln!("0xin: keyboard gesture failed: {e}"),
     }
+}
+
+/// Cycle through the workspace ring after an inward side-edge swipe.
+pub(crate) unsafe extern "C" fn handle_workspace_gesture(
+    userdata: *mut c_void,
+    delta: i32,
+) {
+    let server = &mut *(userdata as *mut Server);
+    if server.outputs.is_empty() {
+        return;
+    }
+    let current = active_workspace(server);
+    let count = server.workspaces.len() as i32;
+    let target = (current as i32 + delta).rem_euclid(count) as usize;
+    switch_workspace(server, target);
 }
 
 /// Called by the shim when an input device (keyboard, pointer, …) appears.

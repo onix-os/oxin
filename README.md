@@ -157,6 +157,7 @@ monitor = HDMI-A-1, 0x-1080, 1.0
 # upward swipe and SIGUSR1 on a downward swipe.
 gesture_keyboard = wvkbd-mobintl
 gesture_keyboard_height = 300
+workspace_edge_swipe = true
 ```
 
 A line 0xin can't parse is warned about on stderr and skipped — never fatal. See

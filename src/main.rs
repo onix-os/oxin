@@ -34,7 +34,7 @@ use decoration::handle_new_decoration;
 use ffi::*;
 use input::{
     handle_click_focus, handle_grab_button, handle_grab_motion, handle_keyboard_gesture,
-    handle_new_input,
+    handle_new_input, handle_workspace_gesture,
 };
 use layer_shell::handle_new_layer_surface;
 use output::{handle_new_output, handle_session_active};
@@ -176,6 +176,12 @@ fn main() {
             server.config.gesture_keyboard.is_some(),
             server.config.gesture_keyboard_height,
             handle_keyboard_gesture,
+            server_ptr,
+        );
+        oxide_cursor_set_workspace_gesture(
+            cursor,
+            server.config.workspace_edge_swipe,
+            handle_workspace_gesture,
             server_ptr,
         );
         // Repaint outputs when we regain the VT (no-op when nested / no session).
