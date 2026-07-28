@@ -22,3 +22,5 @@
 - [Stage 9 — Floating Windows](phases/stage-9-floating.md)
 - [Stage 10 — Split-Tree Layout](phases/stage-10-split-tree.md)
 - [Stage 11 — Runtime Control](phases/stage-11-runtime-control.md)
+- [Stage 12 — Native Touch & Mobile](phases/stage-12-native-touch-mobile.md)
+- [Stage 13 — Virtual Keyboard & Mobile Scaling](phases/stage-13-virtual-keyboard-mobile.md)
