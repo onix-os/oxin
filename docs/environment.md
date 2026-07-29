@@ -59,7 +59,7 @@ Two run modes, both via cargo aliases in `.cargo/config.toml`:
   usually grabs Super-chords before a nested client sees them) and launches a
   test client against 0xin's own socket.
 - **Real TTY (DRM/KMS)** — from a free virtual terminal, logged in:
-  `LIBSEAT_BACKEND=logind ~/Projects/0xin/target/debug/0xin kitty
+  `LIBSEAT_BACKEND=logind ~/proj/0xin/target/debug/0xin kitty
   2>~/0xin-tty.log`. `wlr_backend_autocreate` detects there's no
   `WAYLAND_DISPLAY` and picks the DRM/KMS backend instead — this is 0xin as
   a real session, not a nested toy. `LIBSEAT_BACKEND=logind` lets logind hand

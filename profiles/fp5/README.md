@@ -1,21 +1,53 @@
 # Fairphone 5 touch test
 
 This profile is intentionally temporary: it starts 0xin directly on DRM/KMS
-with Foot and a gesture-controlled wvkbd, without a bar, text-input-driven
-automatic keyboard activation, or autologin. Phosh and Hyprland remain separate
-sessions.
+with Patin and a gesture-controlled wvkbd, without text-input-driven automatic
+keyboard activation or autologin. Phosh and Hyprland remain separate sessions.
 
 The wrapper now starts only 0xin. Session clients are declared in the profile's
-`config/0xin/0xin.conf` with repeated `exec_once` lines: Patin, Foot, and
-wvkbd. Each is launched once per compositor process after `WAYLAND_DISPLAY` is
-ready. Edit those lines to change the shell/session composition without
-rewriting the session wrapper.
+`config/0xin/0xin.conf` with repeated `exec_once` lines: Patin and wvkbd. Each
+is launched once per compositor process after `WAYLAND_DISPLAY` is ready. Edit
+those lines to change the shell/session composition without rewriting the
+session wrapper.
 
-Build 0xin in `~/Projects/0xin`, then install the chooser entry:
+## Wallpaper
+
+0xin renders wallpapers internally; the FP5 does not need swaybg, Hyprpaper,
+or another layer-shell wallpaper process. Add a persistent image to
+`config/0xin/0xin.conf`:
+
+```ini
+wallpaper = ~/Pictures/wallpaper.jpg
+```
+
+PNG and JPEG images use cover scaling. From a terminal inside the running 0xin
+session, change or clear it immediately:
+
+```sh
+install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
+0xinctl wallpaper ~/Pictures/another.png
+0xinctl wallpaper clear
+```
+
+The live command does not rewrite the configuration. The configured image
+returns after the next login unless its `wallpaper =` line is changed too.
+
+## Camera storage
+
+GNOME Snapshot follows the XDG Pictures directory and creates its `Camera`
+subdirectory there. The FP5 test account uses:
+
+```sh
+xdg-user-dirs-update --set PICTURES "$HOME/pics"
+```
+
+New captures therefore go to `~/pics/Camera` instead of `~/Pictures/Camera`.
+
+Build 0xin in `~/proj/0xin`, then install the chooser entry:
 
 ```sh
 sudo install -m 0644 \
-  ~/Projects/0xin/profiles/fp5/0xin-touch-test.desktop \
+  ~/proj/0xin/profiles/fp5/0xin-touch-test.desktop \
   /usr/share/wayland-sessions/0xin-touch-test.desktop
 ```
 

@@ -4,13 +4,12 @@
 session clients after the compositor's Wayland socket is ready.
 
 **Gate:** *The FP5 session wrapper launches only 0xin. The profile config
-starts Patin, Foot, and wvkbd declaratively and in declaration order.*
+starts Patin and wvkbd declaratively and in declaration order.*
 
 ## Configuration
 
 ```ini
 exec_once = ~/.local/bin/patin
-exec_once = foot
 exec_once = wvkbd-mobintl --hidden --no-popup -H 300 -L 200
 ```
 

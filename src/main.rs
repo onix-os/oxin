@@ -18,6 +18,7 @@ mod wlr {
 }
 
 mod config;
+mod control;
 mod decoration;
 mod ffi;
 mod input;
@@ -28,6 +29,7 @@ mod output;
 mod state;
 mod tiling;
 mod toplevel;
+mod wallpaper;
 
 use config::Config;
 use decoration::handle_new_decoration;
@@ -153,6 +155,8 @@ fn main() {
                 .collect(),
             outputs: Vec::new(),
             config,
+            control_listener: None,
+            control_path: None,
             keyboard_visible: false,
             grab: GrabMode::None,
             grab_tl: std::ptr::null_mut(),
@@ -227,6 +231,10 @@ fn main() {
         // own backend already connected to the host before this point.)
         env::set_var("WAYLAND_DISPLAY", &socket);
 
+        if let Err(error) = control::setup(&mut server, event_loop, server_ptr) {
+            eprintln!("0xin: control socket disabled: {error}");
+        }
+
         // Declarative session startup. Commands run separately through the
         // same shell/client-environment path as configured key and gesture
         // actions, in the order they appear in 0xin.conf.
@@ -255,6 +263,7 @@ fn main() {
         // wlroots globals trips internal asserts about global listeners we
         // don't unregister, and the OS reclaims everything on process exit.
         wlr::wl_display_destroy_clients(display);
+        control::cleanup(&server);
         eprintln!("0xin: shut down");
     }
 }

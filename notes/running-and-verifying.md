@@ -67,7 +67,7 @@
 ## Real hardware (TTY / DRM-KMS) — works as of 2026-06-20
 - `wlr_backend_autocreate` picks the DRM/KMS backend on a bare TTY (no WAYLAND_DISPLAY).
 - Recipe: log into a free VT, then
-  `LIBSEAT_BACKEND=logind ~/Projects/0xin/target/debug/0xin foot 2>~/0xin-tty.log`
+  `LIBSEAT_BACKEND=logind ~/proj/0xin/target/debug/0xin foot 2>~/0xin-tty.log`
   - `LIBSEAT_BACKEND=logind` because user isn't in the `seat` group (logind grants the
     active VT its devices). Two GPUs here: Intel `card1` (panel), discrete `card0`;
     prepend `WLR_DRM_DEVICES=/dev/dri/card1` if it picks the wrong one.

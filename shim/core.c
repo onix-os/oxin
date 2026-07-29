@@ -43,6 +43,36 @@ void oxide_setup_signals(struct wl_event_loop *loop, struct wl_display *display)
     signal(SIGCHLD, SIG_IGN);
 }
 
+struct oxide_fd_source {
+    oxide_callback callback;
+    void *userdata;
+};
+
+static int handle_readable_fd(int fd, uint32_t mask, void *data) {
+    (void)fd;
+    if ((mask & WL_EVENT_READABLE) == 0) {
+        return 0;
+    }
+    struct oxide_fd_source *source = data;
+    source->callback(source->userdata, NULL);
+    return 0;
+}
+
+void *oxide_event_loop_add_readable(struct wl_event_loop *loop, int fd,
+        oxide_callback callback, void *userdata) {
+    struct oxide_fd_source *source = calloc(1, sizeof(*source));
+    source->callback = callback;
+    source->userdata = userdata;
+    // The display event loop owns the wl_event_source. The tiny callback
+    // context intentionally lives until compositor exit with the loop.
+    if (wl_event_loop_add_fd(loop, fd, WL_EVENT_READABLE,
+                handle_readable_fd, source) == NULL) {
+        free(source);
+        return NULL;
+    }
+    return source;
+}
+
 // Undo the compositor's signal state in a freshly forked child, before exec.
 // Two things leak into clients otherwise, because they survive exec:
 //  - SIG_IGN dispositions (unlike handlers, which exec resets): our ignored

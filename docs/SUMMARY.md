@@ -30,3 +30,4 @@
 - [Stage 17 — Top-edge Shell Gestures](phases/stage-17-top-edge-brightness.md)
 - [Stage 18 — Multi-finger Window Gestures](phases/stage-18-multifinger-window-gestures.md)
 - [Stage 19 — Declarative Session Startup](phases/stage-19-declarative-session-startup.md)
+- [Stage 20 — Internal Wallpaper Control](phases/stage-20-internal-wallpaper.md)

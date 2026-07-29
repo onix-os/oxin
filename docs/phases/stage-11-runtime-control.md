@@ -14,6 +14,7 @@ switches workspaces without touching a keybinding.*
 
 ## Status
 
-**Not started.** Design is open — protocol shape (plain text vs JSON), what
-state to expose, and whether config reload belongs here too will be decided
-when the stage begins.
+**Partially implemented.** Stage 20 introduces the first plain-text Unix
+control socket and bundled `0xinctl` client for live wallpaper replacement.
+The original deliverable—querying windows and switching workspaces—remains
+open, as do broader state subscriptions and config reload.

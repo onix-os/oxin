@@ -35,6 +35,12 @@ pub(crate) struct ShimListener {
 extern "C" {
     pub(crate) fn oxide_log_init();
     pub(crate) fn oxide_setup_signals(loop_: *mut wlr::wl_event_loop, display: *mut wlr::wl_display);
+    pub(crate) fn oxide_event_loop_add_readable(
+        loop_: *mut wlr::wl_event_loop,
+        fd: i32,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut c_void;
     pub(crate) fn oxide_reset_child_signals();
     pub(crate) fn oxide_virtual_keyboard_setup(
         display: *mut wlr::wl_display,
@@ -83,6 +89,18 @@ extern "C" {
     pub(crate) fn oxide_scene_rect_destroy(rect: *mut c_void);
     pub(crate) fn oxide_scene_rect_set_enabled(rect: *mut c_void, enabled: bool);
     pub(crate) fn oxide_scene_rect_set_position(rect: *mut c_void, x: i32, y: i32);
+    pub(crate) fn oxide_scene_add_wallpaper(
+        tree: *mut wlr::wlr_scene_tree,
+        x: i32,
+        y: i32,
+        buffer_width: i32,
+        buffer_height: i32,
+        dest_width: i32,
+        dest_height: i32,
+        pixels: *const u8,
+        stride: usize,
+    ) -> *mut c_void;
+    pub(crate) fn oxide_scene_wallpaper_destroy(wallpaper: *mut c_void);
     pub(crate) fn oxide_output_add_destroy(
         output: *mut wlr::wlr_output,
         callback: ShimCallback,

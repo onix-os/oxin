@@ -99,7 +99,7 @@ sees them. The trailing `-- kitty` launches a test client against 0xin's socket.
 From a free virtual terminal (e.g. Ctrl+Alt+F5), logged in:
 
 ```sh
-LIBSEAT_BACKEND=logind ~/Projects/0xin/target/debug/0xin kitty 2>~/0xin-tty.log
+LIBSEAT_BACKEND=logind ~/proj/0xin/target/debug/0xin kitty 2>~/0xin-tty.log
 ```
 
 `LIBSEAT_BACKEND=logind` lets logind grant the active VT its devices (no `seat` group
@@ -139,10 +139,10 @@ has working workspace switches, close/quit, etc:
 modifier   = super
 gap        = 10
 background = 0.0 0.6 0.6
+wallpaper = ~/Pictures/wallpaper.jpg
 
 # Commands are repeatable and launch once per compositor start.
 exec_once = patin
-exec_once = foot
 
 bind = MOD, Return, spawn, kitty
 bind = MOD, Q, close
@@ -195,12 +195,27 @@ bind = , XF86AudioLowerVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ -5%
 A line 0xin can't parse is warned about on stderr and skipped — never fatal. See
 [`0xin.conf.example`](0xin.conf.example) for the full annotated example.
 
+PNG and JPEG wallpapers are decoded by 0xin itself and cover-scaled per output;
+no external wallpaper program is required. Change or clear the running
+wallpaper without restarting:
+
+```sh
+0xinctl wallpaper ~/Pictures/another.png
+0xinctl wallpaper clear
+```
+
+Runtime changes last until 0xin exits. Set `wallpaper =` in the config to make
+the selection persistent across sessions.
+
 ## Repository layout
 
 | Path                      | What it is                                                |
 | ------------------------- | --------------------------------------------------------- |
 | `src/main.rs`             | Compositor orchestrator + all policy (layout, workspaces, input, keybindings) |
 | `src/config.rs`           | Dependency-free config-file parser                        |
+| `src/wallpaper.rs`        | Internal PNG/JPEG decoder + wlroots wallpaper buffers      |
+| `src/control.rs`          | Local runtime-control socket                               |
+| `src/bin/0xinctl.rs`      | Runtime control command                                    |
 | `shim/oxide_shim.{c,h}` | Thin C shim: wlroots listener glue + struct access        |
 | `build.rs`, `wrapper.h`   | The FFI pipeline (pkg-config, wayland-scanner, cc, bindgen) |
 | `notes/`                  | Architecture, toolchain, and run/verify notes (working reference) |

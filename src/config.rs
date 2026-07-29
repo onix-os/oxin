@@ -132,6 +132,8 @@ pub struct Config {
     pub first_split_vertical: bool,
     /// Background color of empty workspace area (r, g, b in 0..1).
     pub background: (f32, f32, f32),
+    /// Optional PNG/JPEG wallpaper path. The solid color remains the fallback.
+    pub wallpaper: Option<String>,
     pub binds: Vec<Bind>,
     /// Shell commands launched once, in declaration order, after the Wayland
     /// socket is ready on each compositor start.
@@ -165,6 +167,7 @@ impl Default for Config {
             gap: 2,
             first_split_vertical: true,
             background: (0.0, 0.6, 0.6),
+            wallpaper: None,
             binds: Vec::new(),
             exec_once: Vec::new(),
             monitors: Vec::new(),
@@ -250,6 +253,9 @@ impl Config {
                     Some(c) => self.background = c,
                     None => warn(n, "invalid background (want `r g b`)", raw),
                 },
+                "wallpaper" => {
+                    self.wallpaper = (!val.is_empty()).then(|| val.to_string())
+                }
                 "monitor" => match parse_monitor(val) {
                     Some(m) => match self.monitors.iter_mut().find(|e| e.name == m.name) {
                         Some(existing) => *existing = m,
@@ -829,6 +835,17 @@ mod tests {
         assert_eq!(
             cfg.exec_once,
             vec!["shell-toolkit", "terminal", "virtual-keyboard --hidden"]
+        );
+    }
+
+    #[test]
+    fn wallpaper_path_is_optional_profile_policy() {
+        let mut cfg = Config::default();
+        assert!(cfg.wallpaper.is_none());
+        cfg.parse_scalars("wallpaper = ~/Pictures/background.jpg\n");
+        assert_eq!(
+            cfg.wallpaper.as_deref(),
+            Some("~/Pictures/background.jpg")
         );
     }
 

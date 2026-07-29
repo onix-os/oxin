@@ -2,6 +2,7 @@
 #define OXIN_SHIM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 // Opaque to Rust; full definitions live in the wlroots headers / shim .c.
@@ -58,6 +59,9 @@ uint32_t oxide_keysym_from_name(const char *name);
 
 // Terminate the display loop on SIGINT/SIGTERM (graceful shutdown).
 void oxide_setup_signals(struct wl_event_loop *loop, struct wl_display *display);
+// Call `callback(userdata, NULL)` whenever fd becomes readable.
+void *oxide_event_loop_add_readable(struct wl_event_loop *loop, int fd,
+        oxide_callback callback, void *userdata);
 // Reset the compositor's signal state (ignored SIGCHLD, blocked INT/TERM) in
 // a forked child before exec, so clients start with clean signals. Must be
 // called from every spawn path's pre_exec.
@@ -110,6 +114,12 @@ void oxide_scene_rect_destroy(struct wlr_scene_rect *rect);
 // Enable/disable a background rect (toggle to force a full-output repaint).
 void oxide_scene_rect_set_enabled(struct wlr_scene_rect *rect, bool enabled);
 void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y);
+// Copy an RGBA8888 pixel image into an owned wlroots buffer and add it to the
+// scene. The buffer may be a different size from its logical destination.
+void *oxide_scene_add_wallpaper(struct wlr_scene_tree *tree, int x, int y,
+        int buffer_width, int buffer_height, int dest_width, int dest_height,
+        const uint8_t *pixels, size_t stride);
+void oxide_scene_wallpaper_destroy(void *wallpaper);
 // Read an output's layout box (position + pixel size) for per-output tiling.
 void oxide_output_layout_get_box(struct wlr_output_layout *layout,
         struct wlr_output *output, int *x, int *y, int *width, int *height);

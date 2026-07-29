@@ -1,6 +1,10 @@
 #define WLR_USE_UNSTABLE
+#include <drm_fourcc.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <wlr/backend.h>
+#include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -94,6 +98,82 @@ void oxide_scene_rect_set_enabled(struct wlr_scene_rect *rect, bool enabled) {
 
 void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y) {
     wlr_scene_node_set_position(&rect->node, x, y);
+}
+
+struct oxide_pixel_buffer {
+    struct wlr_buffer base;
+    uint8_t *pixels;
+    size_t stride;
+};
+
+static void pixel_buffer_destroy(struct wlr_buffer *base) {
+    struct oxide_pixel_buffer *buffer =
+            wl_container_of(base, buffer, base);
+    wlr_buffer_finish(base);
+    free(buffer->pixels);
+    free(buffer);
+}
+
+static bool pixel_buffer_begin_data_ptr_access(struct wlr_buffer *base,
+        uint32_t flags, void **data, uint32_t *format, size_t *stride) {
+    (void)flags;
+    struct oxide_pixel_buffer *buffer =
+            wl_container_of(base, buffer, base);
+    *data = buffer->pixels;
+    *format = DRM_FORMAT_ABGR8888;
+    *stride = buffer->stride;
+    return true;
+}
+
+static void pixel_buffer_end_data_ptr_access(struct wlr_buffer *base) {
+    (void)base;
+}
+
+static const struct wlr_buffer_impl pixel_buffer_impl = {
+    .destroy = pixel_buffer_destroy,
+    .begin_data_ptr_access = pixel_buffer_begin_data_ptr_access,
+    .end_data_ptr_access = pixel_buffer_end_data_ptr_access,
+};
+
+void *oxide_scene_add_wallpaper(struct wlr_scene_tree *tree, int x, int y,
+        int buffer_width, int buffer_height, int dest_width, int dest_height,
+        const uint8_t *pixels, size_t stride) {
+    if (buffer_width <= 0 || buffer_height <= 0 || dest_width <= 0
+            || dest_height <= 0 || pixels == NULL
+            || stride < (size_t)buffer_width * 4) {
+        return NULL;
+    }
+    struct oxide_pixel_buffer *buffer = calloc(1, sizeof(*buffer));
+    buffer->stride = stride;
+    size_t size = stride * (size_t)buffer_height;
+    buffer->pixels = malloc(size);
+    if (buffer->pixels == NULL) {
+        free(buffer);
+        return NULL;
+    }
+    memcpy(buffer->pixels, pixels, size);
+    wlr_buffer_init(&buffer->base, &pixel_buffer_impl,
+            buffer_width, buffer_height);
+
+    struct wlr_scene_buffer *scene_buffer =
+            wlr_scene_buffer_create(tree, &buffer->base);
+    // The scene took its own lock. Drop the producer reference so destroying
+    // the node releases the final lock and frees our copied pixels.
+    wlr_buffer_drop(&buffer->base);
+    if (scene_buffer == NULL) {
+        return NULL;
+    }
+    wlr_scene_buffer_set_dest_size(scene_buffer, dest_width, dest_height);
+    wlr_scene_buffer_set_filter_mode(scene_buffer, WLR_SCALE_FILTER_BILINEAR);
+    wlr_scene_node_set_position(&scene_buffer->node, x, y);
+    return scene_buffer;
+}
+
+void oxide_scene_wallpaper_destroy(void *wallpaper) {
+    if (wallpaper != NULL) {
+        struct wlr_scene_buffer *scene_buffer = wallpaper;
+        wlr_scene_node_destroy(&scene_buffer->node);
+    }
 }
 
 // Which output is under the cursor right now (NULL if none). Lets Rust target

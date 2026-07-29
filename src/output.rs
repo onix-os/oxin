@@ -3,6 +3,7 @@
 use crate::ffi::*;
 use crate::state::*;
 use crate::tiling::{arrange_layers, refresh};
+use crate::wallpaper;
 use crate::wlr;
 use std::ffi::CStr;
 use std::os::raw::c_void;
@@ -51,6 +52,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
     let (r, g, b) = server.config.background;
     let background =
         oxide_scene_add_output_background(server.tree_bg_fallback, output, x, y, r, g, b);
+    let wallpaper = wallpaper::create_for_output(server, x, y, w, h);
     // Phone profiles opt into a small compositor-owned handle. Its larger
     // invisible touch target is implemented in the input shim.
     let gesture_handle = if server.config.has_keyboard_handle() {
@@ -95,6 +97,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         frame_listener,
         destroy_listener,
         background,
+        wallpaper,
         gesture_handle,
         frame_ctx,
         repaint_frames: REPAINT_FRAMES,
@@ -142,6 +145,9 @@ unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_v
     oxide_listener_remove(o.frame_listener);
     oxide_listener_remove(o.destroy_listener);
     oxide_scene_rect_destroy(o.background);
+    if !o.wallpaper.is_null() {
+        oxide_scene_wallpaper_destroy(o.wallpaper);
+    }
     if !o.gesture_handle.is_null() {
         oxide_scene_rect_destroy(o.gesture_handle);
     }

@@ -5,6 +5,8 @@ use crate::ffi::ShimListener;
 use crate::layout::Node;
 use crate::wlr;
 use std::os::raw::c_void;
+use std::os::unix::net::UnixListener;
+use std::path::PathBuf;
 
 /// Number of virtual workspaces.
 pub(crate) const WORKSPACE_COUNT: usize = 9;
@@ -61,6 +63,9 @@ pub(crate) struct Server {
     pub(crate) outputs: Vec<Output>,
     /// User configuration: modifier, gap, background, keybindings.
     pub(crate) config: Config,
+    /// Nonblocking local IPC endpoint used by 0xinctl.
+    pub(crate) control_listener: Option<UnixListener>,
+    pub(crate) control_path: Option<PathBuf>,
     pub(crate) keyboard_visible: bool,
     /// Active pointer grab (Mod+drag on a floating window): what it does,
     /// which window, and the cursor position + window rect when it started —
@@ -107,6 +112,8 @@ pub(crate) struct Output {
     pub(crate) frame_listener: *mut ShimListener,
     pub(crate) destroy_listener: *mut ShimListener,
     pub(crate) background: *mut c_void,
+    /// Image scene-buffer above the solid fallback, or NULL.
+    pub(crate) wallpaper: *mut c_void,
     /// Bottom gesture-handle rectangle, or NULL when the profile disables it.
     pub(crate) gesture_handle: *mut c_void,
     pub(crate) frame_ctx: *mut FrameCtx,

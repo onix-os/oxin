@@ -14,7 +14,7 @@ hardware/VM.*
 `wlr_backend_autocreate` already picks the DRM/KMS backend automatically
 when there's no `WAYLAND_DISPLAY` to detect — no separate code path was
 needed, just a different environment to run in. On a bare TTY:
-`LIBSEAT_BACKEND=logind ~/Projects/0xin/target/debug/0xin foot
+`LIBSEAT_BACKEND=logind ~/proj/0xin/target/debug/0xin foot
 2>~/0xin-tty.log`, with `LIBSEAT_BACKEND=logind` letting logind hand the
 active VT its devices without a `seat` group membership.
 

@@ -17,12 +17,16 @@ gap = 10
 # Background color of empty space, as `r g b` floats in 0..1.
 background = 0.0 0.6 0.6
 
+# Optional PNG/JPEG wallpaper, cover-scaled independently on every output.
+# The background color remains visible when loading fails or transparency is
+# present. Runtime changes use `0xinctl wallpaper PATH`.
+# wallpaper = ~/Pictures/wallpaper.jpg
+
 # --- session startup ---------------------------------------------------------
 #
 # Repeated commands run once per 0xin process start, in declaration order,
 # after WAYLAND_DISPLAY is ready. They run independently through a shell.
 # exec_once = patin
-# exec_once = foot
 
 # --- monitors ----------------------------------------------------------------
 #

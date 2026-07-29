@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=0xin Touch Test
 Comment=Temporary standalone Fairphone 5 touch test
-Exec=/home/sn3rt/Projects/0xin/profiles/fp5/run-touch-test.sh
-TryExec=/home/sn3rt/Projects/0xin/profiles/fp5/run-touch-test.sh
+Exec=/home/sn3rt/proj/0xin/profiles/fp5/run-touch-test.sh
+TryExec=/home/sn3rt/proj/0xin/profiles/fp5/run-touch-test.sh
 Type=Application
 DesktopNames=0xin;

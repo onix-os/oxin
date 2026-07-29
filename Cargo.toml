@@ -10,7 +10,12 @@ description = "0xin — a from-scratch tiling Wayland compositor in Rust, built 
 name = "0xin"
 path = "src/main.rs"
 
+[[bin]]
+name = "0xinctl"
+path = "src/bin/0xinctl.rs"
+
 [dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
 [build-dependencies]
 bindgen = "0.71"
