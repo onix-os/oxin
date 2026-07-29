@@ -34,9 +34,11 @@ The FP5 wrapper then exits and greetd/Phrog regains control. This is the
 supported interactive equivalent of terminating 0xin from an SSH recovery
 shell.
 
-The included FP5 menu is a small fuzzel dmenu script with logout and cancel
-choices. It replaces the earlier Hyprland-specific `hypr-phone-menu`, whose
-logout action depended on `hyprctl dispatch exit`.
+The included FP5 menu is a small fuzzel dmenu script with logout, reboot,
+shutdown, and cancel choices. Reboot and shutdown call `systemctl` so logind
+and the system policy layer remain responsible for authorization. The script
+replaces the earlier Hyprland-specific `hypr-phone-menu`, whose logout action
+depended on `hyprctl dispatch exit`.
 
 ## Locking boundary
 

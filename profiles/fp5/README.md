@@ -76,8 +76,11 @@ sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
 ## Power button and logout
 
 Holding the power button for two seconds opens the profile's fuzzel session
-menu. Choosing **Log out to Phrog** calls `0xinctl quit`, which terminates the
-Wayland display cleanly and lets the session wrapper return to greetd.
+menu. It offers **Log out to Phrog**, **Reboot**, **Shut down**, and
+**Cancel**. Logout calls `0xinctl quit`, which terminates the Wayland display
+cleanly and lets the session wrapper return to greetd. Reboot and shutdown use
+systemd-logind through `systemctl`, so authorization follows the active local
+session.
 
 Install the profile helper and current control client:
 

@@ -1,12 +1,18 @@
 #!/bin/sh
 
 choice=$(
-    printf '%s\n' "Log out to Phrog" "Cancel" |
+    printf '%s\n' "Log out to Phrog" "Reboot" "Shut down" "Cancel" |
         fuzzel --dmenu --prompt "Session: "
 )
 
 case "$choice" in
     "Log out to Phrog")
         "$HOME/.local/bin/0xinctl" quit
+        ;;
+    "Reboot")
+        systemctl reboot
+        ;;
+    "Shut down")
+        systemctl poweroff
         ;;
 esac
