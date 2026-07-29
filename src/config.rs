@@ -88,6 +88,8 @@ pub enum GestureTrigger {
     BottomDown = 1,
     EdgeLeftIn = 2,
     EdgeRightIn = 3,
+    TopRight = 4,
+    TopLeft = 5,
 }
 
 #[derive(Clone)]
@@ -567,6 +569,8 @@ fn parse_gesture(val: &str) -> Option<GestureBind> {
         "bottom-down" => GestureTrigger::BottomDown,
         "edge-left-in" => GestureTrigger::EdgeLeftIn,
         "edge-right-in" => GestureTrigger::EdgeRightIn,
+        "top-right" => GestureTrigger::TopRight,
+        "top-left" => GestureTrigger::TopLeft,
         _ => return None,
     };
     let action_name = parts.next()?.trim();
@@ -793,6 +797,26 @@ mod tests {
         assert!(matches!(cfg.gestures[0].action, Action::KeyboardToggle));
         assert!(matches!(cfg.gestures[1].action, Action::WorkspaceNext));
         assert_eq!(cfg.gesture_mask(), 0b1100);
+    }
+
+    #[test]
+    fn top_edge_gestures_parse_as_independent_triggers() {
+        let mut cfg = Config::default();
+        cfg.apply_gestures(
+            "gesture = top-right, spawn, brightnessctl set +5%\n\
+             gesture = top-left, spawn, brightnessctl set 5%-\n",
+        );
+
+        assert_eq!(cfg.gestures.len(), 2);
+        assert_eq!(cfg.gesture_mask(), 0b11_0000);
+        assert!(matches!(
+            &cfg.gestures[0].action,
+            Action::Spawn(command) if command == "brightnessctl set +5%"
+        ));
+        assert!(matches!(
+            &cfg.gestures[1].action,
+            Action::Spawn(command) if command == "brightnessctl set 5%-"
+        ));
     }
 
     #[test]

@@ -162,6 +162,8 @@ gesture = bottom-up, keyboardshow
 gesture = bottom-down, keyboardhide
 gesture = edge-left-in, workspaceprev
 gesture = edge-right-in, workspacenext
+gesture = top-right, spawn, brightnessctl set +5%
+gesture = top-left, spawn, brightnessctl set 5%-
 
 # The same actions are available on non-touch devices.
 bind = MOD, bracketleft, workspaceprev

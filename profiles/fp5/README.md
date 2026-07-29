@@ -39,6 +39,12 @@ Touches must begin within the narrow edge activation strip; horizontal gestures
 started elsewhere remain application input. When wvkbd is visible, these strips
 stop at its top edge so the keyboard's left- and right-edge keys remain usable.
 
+Swipe horizontally in the thin top-edge strip to adjust display brightness:
+left-to-right increases it by 5%, and right-to-left decreases it by 5%. The
+profile implements these directions as `top-right` and `top-left` mappings
+that spawn `brightnessctl`; the recognizer itself contains no FP5 backlight
+path or brightness policy.
+
 These meanings come from the profile's `gesture = TRIGGER, ACTION` mappings,
 not hardcoded phone policy. The same `workspacenext`, `workspaceprev`, and
 virtual-keyboard actions can be assigned to ordinary `bind =` keyboard chords

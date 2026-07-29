@@ -183,7 +183,8 @@ struct oxide_touch_point {
     double offset_x, offset_y;
     struct wlr_seat_client *client;
     struct wlr_touch *touch;
-    // 0 = client touch, 1 = keyboard handle, 2 = workspace edge.
+    // 0 = client touch, 1 = keyboard handle, 2 = workspace edge,
+    // 3 = horizontal top-edge gesture.
     int gesture_kind;
     bool gesture_fired;
     bool gesture_candidate;
@@ -388,6 +389,21 @@ static int workspace_gesture_edge(struct oxide_pointer *p,
     return 0;
 }
 
+static bool top_gesture_hit(struct oxide_pointer *p, double lx, double ly) {
+    if ((p->gesture_mask & ((1u << 4) | (1u << 5))) == 0
+            || p->output_layout == NULL) {
+        return false;
+    }
+    struct wlr_output *output =
+            wlr_output_layout_output_at(p->output_layout, lx, ly);
+    if (output == NULL) {
+        return false;
+    }
+    struct wlr_box box;
+    wlr_output_layout_get_box(p->output_layout, output, &box);
+    return ly <= box.y + 28;
+}
+
 static void touch_cancel_client(struct oxide_pointer *p,
         struct wlr_seat_client *client) {
     wlr_seat_touch_notify_cancel(p->seat, client);
@@ -416,6 +432,16 @@ static void handle_touch_down(void *userdata, void *data) {
         point->touch_id = e->touch_id;
         point->touch = e->touch;
         point->gesture_kind = 1;
+        point->start_lx = lx;
+        point->start_ly = ly;
+        wl_list_insert(&p->touch_points, &point->link);
+        return;
+    }
+    if (top_gesture_hit(p, lx, ly)) {
+        struct oxide_touch_point *point = calloc(1, sizeof(*point));
+        point->touch_id = e->touch_id;
+        point->touch = e->touch;
+        point->gesture_kind = 3;
         point->start_lx = lx;
         point->start_ly = ly;
         wl_list_insert(&p->touch_points, &point->link);
@@ -515,6 +541,18 @@ static void handle_touch_motion(void *userdata, void *data) {
             if (p->gesture_callback != NULL) {
                 p->gesture_callback(
                         p->gesture_userdata, previous ? 2 : 3);
+            }
+        }
+        return;
+    }
+    if (point->gesture_kind == 3) {
+        double dx = lx - point->start_lx;
+        bool right = dx >= 70 && (p->gesture_mask & (1u << 4)) != 0;
+        bool left = dx <= -70 && (p->gesture_mask & (1u << 5)) != 0;
+        if (!point->gesture_fired && (right || left)) {
+            point->gesture_fired = true;
+            if (p->gesture_callback != NULL) {
+                p->gesture_callback(p->gesture_userdata, right ? 4 : 5);
             }
         }
         return;
