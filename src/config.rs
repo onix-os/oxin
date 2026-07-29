@@ -90,6 +90,8 @@ pub enum GestureTrigger {
     EdgeRightIn = 3,
     TopRight = 4,
     TopLeft = 5,
+    TopDown = 6,
+    ToTop = 7,
 }
 
 #[derive(Clone)]
@@ -571,6 +573,8 @@ fn parse_gesture(val: &str) -> Option<GestureBind> {
         "edge-right-in" => GestureTrigger::EdgeRightIn,
         "top-right" => GestureTrigger::TopRight,
         "top-left" => GestureTrigger::TopLeft,
+        "top-down" => GestureTrigger::TopDown,
+        "to-top" => GestureTrigger::ToTop,
         _ => return None,
     };
     let action_name = parts.next()?.trim();
@@ -694,8 +698,8 @@ mod tests {
         let mut cfg = Config::default();
         cfg.binds = default_binds(cfg.modifier);
         cfg.apply_binds(
-            "bind = , XF86AudioRaiseVolume, spawn, fuzzel\n\
-             bind = , XF86AudioLowerVolume, keyboardtoggle\n",
+            "bind = , XF86AudioRaiseVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ +5%\n\
+             bind = , XF86AudioLowerVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ -5%\n",
         );
 
         let raise = key("XF86AudioRaiseVolume");
@@ -713,9 +717,14 @@ mod tests {
 
         assert!(matches!(
             &raise_bind.action,
-            Action::Spawn(command) if command == "fuzzel"
+            Action::Spawn(command)
+                if command == "pactl set-sink-volume @DEFAULT_SINK@ +5%"
         ));
-        assert!(matches!(lower_bind.action, Action::KeyboardToggle));
+        assert!(matches!(
+            &lower_bind.action,
+            Action::Spawn(command)
+                if command == "pactl set-sink-volume @DEFAULT_SINK@ -5%"
+        ));
     }
 
     #[test]
@@ -804,11 +813,13 @@ mod tests {
         let mut cfg = Config::default();
         cfg.apply_gestures(
             "gesture = top-right, spawn, brightnessctl set +5%\n\
-             gesture = top-left, spawn, brightnessctl set 5%-\n",
+             gesture = top-left, spawn, brightnessctl set 5%-\n\
+             gesture = top-down, spawn, pgrep -x fuzzel || fuzzel\n\
+             gesture = to-top, spawn, pkill -x fuzzel\n",
         );
 
-        assert_eq!(cfg.gestures.len(), 2);
-        assert_eq!(cfg.gesture_mask(), 0b11_0000);
+        assert_eq!(cfg.gestures.len(), 4);
+        assert_eq!(cfg.gesture_mask(), 0b1111_0000);
         assert!(matches!(
             &cfg.gestures[0].action,
             Action::Spawn(command) if command == "brightnessctl set +5%"
@@ -816,6 +827,14 @@ mod tests {
         assert!(matches!(
             &cfg.gestures[1].action,
             Action::Spawn(command) if command == "brightnessctl set 5%-"
+        ));
+        assert!(matches!(
+            &cfg.gestures[2].action,
+            Action::Spawn(command) if command == "pgrep -x fuzzel || fuzzel"
+        ));
+        assert!(matches!(
+            &cfg.gestures[3].action,
+            Action::Spawn(command) if command == "pkill -x fuzzel"
         ));
     }
 

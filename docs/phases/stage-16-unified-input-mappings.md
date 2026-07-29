@@ -80,12 +80,11 @@ corresponding action a logged no-op. A convertible or desktop setup may bind
 `keyboardtoggle` to a key; the FP5 maps explicit show/hide gestures.
 
 Hardware buttons use the same keybinding path when libinput/xkb exposes a
-standard keysym. For example, the FP5 profile starts an application menu with
-volume up and toggles the virtual keyboard with volume down:
+standard keysym. For example, the FP5 profile controls its default audio sink:
 
 ```ini
-bind = , XF86AudioRaiseVolume, spawn, fuzzel
-bind = , XF86AudioLowerVolume, keyboardtoggle
+bind = , XF86AudioRaiseVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ +5%
+bind = , XF86AudioLowerVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ -5%
 ```
 
 There are deliberately no raw `/dev/input/event*` paths or Linux key codes in

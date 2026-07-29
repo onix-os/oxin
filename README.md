@@ -164,6 +164,8 @@ gesture = edge-left-in, workspaceprev
 gesture = edge-right-in, workspacenext
 gesture = top-right, spawn, brightnessctl set +5%
 gesture = top-left, spawn, brightnessctl set 5%-
+gesture = top-down, spawn, pgrep -x fuzzel >/dev/null || fuzzel
+gesture = to-top, spawn, pkill -x fuzzel
 
 # The same actions are available on non-touch devices.
 bind = MOD, bracketleft, workspaceprev
@@ -171,8 +173,8 @@ bind = MOD, bracketright, workspacenext
 bind = MOD, K, keyboardtoggle
 
 # Modifier-free media buttons are ordinary input mappings too.
-bind = , XF86AudioRaiseVolume, spawn, fuzzel
-bind = , XF86AudioLowerVolume, keyboardtoggle
+bind = , XF86AudioRaiseVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ +5%
+bind = , XF86AudioLowerVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ -5%
 ```
 
 A line 0xin can't parse is warned about on stderr and skipped — never fatal. See

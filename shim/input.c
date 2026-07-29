@@ -188,6 +188,7 @@ struct oxide_touch_point {
     int gesture_kind;
     bool gesture_fired;
     bool gesture_candidate;
+    bool to_top_candidate;
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
     double start_lx, start_ly;
@@ -390,7 +391,7 @@ static int workspace_gesture_edge(struct oxide_pointer *p,
 }
 
 static bool top_gesture_hit(struct oxide_pointer *p, double lx, double ly) {
-    if ((p->gesture_mask & ((1u << 4) | (1u << 5))) == 0
+    if ((p->gesture_mask & ((1u << 4) | (1u << 5) | (1u << 6))) == 0
             || p->output_layout == NULL) {
         return false;
     }
@@ -482,6 +483,15 @@ static void handle_touch_down(void *userdata, void *data) {
     point->touch = e->touch;
     point->start_lx = lx;
     point->start_ly = ly;
+    if ((p->gesture_mask & (1u << 7)) != 0 && p->output_layout != NULL) {
+        struct wlr_output *output =
+                wlr_output_layout_output_at(p->output_layout, lx, ly);
+        if (output != NULL) {
+            struct wlr_box box;
+            wlr_output_layout_get_box(p->output_layout, output, &box);
+            point->to_top_candidate = ly >= box.y + 70;
+        }
+    }
     if (p->keyboard_visible && (p->gesture_mask & (1u << 1)) != 0) {
         struct wlr_output *output =
                 wlr_output_layout_output_at(p->output_layout, lx, ly);
@@ -522,6 +532,22 @@ static void handle_touch_motion(void *userdata, void *data) {
             }
         }
     }
+    if (point->to_top_candidate) {
+        struct wlr_output *output =
+                wlr_output_layout_output_at(p->output_layout, lx, ly);
+        if (output != NULL) {
+            struct wlr_box box;
+            wlr_output_layout_get_box(p->output_layout, output, &box);
+            if (point->start_ly - ly >= 70 && ly <= box.y + 28) {
+                struct wlr_seat_client *client = point->client;
+                touch_cancel_client(p, client);
+                if (p->gesture_callback != NULL) {
+                    p->gesture_callback(p->gesture_userdata, 7);
+                }
+                return;
+            }
+        }
+    }
     if (point->gesture_kind == 1) {
         double dy = ly - point->start_ly;
         if (!point->gesture_fired && dy <= -60) {
@@ -547,12 +573,15 @@ static void handle_touch_motion(void *userdata, void *data) {
     }
     if (point->gesture_kind == 3) {
         double dx = lx - point->start_lx;
+        double dy = ly - point->start_ly;
         bool right = dx >= 70 && (p->gesture_mask & (1u << 4)) != 0;
         bool left = dx <= -70 && (p->gesture_mask & (1u << 5)) != 0;
-        if (!point->gesture_fired && (right || left)) {
+        bool down = dy >= 70 && (p->gesture_mask & (1u << 6)) != 0;
+        if (!point->gesture_fired && (right || left || down)) {
             point->gesture_fired = true;
             if (p->gesture_callback != NULL) {
-                p->gesture_callback(p->gesture_userdata, right ? 4 : 5);
+                p->gesture_callback(p->gesture_userdata,
+                        right ? 4 : left ? 5 : 6);
             }
         }
         return;

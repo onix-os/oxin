@@ -45,20 +45,23 @@ profile implements these directions as `top-right` and `top-left` mappings
 that spawn `brightnessctl`; the recognizer itself contains no FP5 backlight
 path or brightness policy.
 
+Swipe downward from the top edge to open the temporary Fuzzel application
+menu. An upward swipe that travels at least 70 logical pixels and reaches the
+top edge closes it. These are the `top-down` and `to-top` triggers; the profile
+maps them to a duplicate-safe Fuzzel launch and a targeted Fuzzel termination.
+
 These meanings come from the profile's `gesture = TRIGGER, ACTION` mappings,
 not hardcoded phone policy. The same `workspacenext`, `workspaceprev`, and
 virtual-keyboard actions can be assigned to ordinary `bind =` keyboard chords
 on desktops and convertibles.
 
-The first SXMO-inspired hardware-button mappings are:
+The hardware-button mappings are:
 
-- **Volume up:** open the Fuzzel application menu.
-- **Volume down:** toggle wvkbd.
+- **Volume up:** increase the default audio sink by 5%.
+- **Volume down:** decrease the default audio sink by 5%.
 
 The profile binds the standard xkb names `XF86AudioRaiseVolume` and
 `XF86AudioLowerVolume`; it does not depend on FP5 input-device paths or raw
 event codes. Other Wayland devices whose buttons expose those standard key
-symbols can use the same mappings. These are currently single-press actions.
-Multi-press and hold recognition will belong to a later, generic input-trigger
-layer, where volume up can select context, main, and window menus supplied by
-the shell toolkit.
+symbols can use the same mappings after selecting an appropriate audio-control
+command. These are currently single-press actions.
