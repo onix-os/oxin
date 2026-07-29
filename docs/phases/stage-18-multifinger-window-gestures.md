@@ -18,8 +18,8 @@ gesture = two-right, movewindow, r
 
 gesture = three-up, close
 gesture = three-down, close
-gesture = three-left, movetoworkspacenext
-gesture = three-right, movetoworkspaceprev
+gesture = three-left, movetoworkspaceprev
+gesture = three-right, movetoworkspacenext
 ```
 
 The `movewindow` and `close` actions are the same actions available to keyboard
@@ -27,9 +27,9 @@ bindings. `movetoworkspacenext` and `movetoworkspaceprev` extend that shared
 action vocabulary with relative, wrapping workspace targets. Moving a window
 does not switch the displayed workspace.
 
-The FP5 maps a leftward three-finger swipe to the next workspace and a
-rightward swipe to the previous workspace, matching the direction in which the
-current content visually leaves.
+The FP5 maps a leftward three-finger swipe to the previous workspace and a
+rightward swipe to the next workspace, so the window follows the physical
+direction of the fingers.
 
 ## Touch arbitration
 

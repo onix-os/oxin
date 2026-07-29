@@ -5,10 +5,10 @@ in a thin top-edge strip, plus an upward swipe that reaches that strip. They
 enter the same configurable action dispatcher as keyboard chords and the
 existing bottom and side-edge gestures.
 
-**Gate:** *On the FP5 reference profile, a top-edge swipe from left to right
-increases display brightness by 5%, while a swipe from right to left decreases
-it by 5%. A downward swipe opens Fuzzel and an upward swipe to the top closes
-it. Profiles without these mappings reserve no top-edge touch area.*
+**Gate:** *On the FP5 reference profile, a horizontal edge-to-edge top swipe
+spans approximately the full brightness range, while shorter swipes adjust it
+proportionally. A downward swipe opens Fuzzel and an upward swipe to the top
+closes it. Profiles without these mappings reserve no top-edge touch area.*
 
 ## Configuration
 
@@ -30,10 +30,14 @@ or map the gestures to unrelated shell-toolkit actions.
 ## Recognition and application input
 
 A configured top gesture must start within 28 logical pixels of an output's
-top edge and travel at least 70 logical pixels horizontally in its configured
-direction. A downward top-edge swipe uses the same start strip and threshold.
-The top gesture is tested before the side-edge workspace strips, giving the
-small top corners unambiguous top-edge behavior.
+top edge. Horizontal direction locks after 30 logical pixels of deliberate
+movement. The recognizer then dispatches one configured directional action for
+every 5% of output width crossed, up to 20 times. With the FP5 profile's 5%
+relative brightness commands this makes a full-width swipe cover 100%, while
+retaining device-specific brightness policy in configuration. A downward
+top-edge swipe uses the same start strip and a 70-logical-pixel threshold. The
+top gesture is tested before the side-edge workspace strips, giving the small
+top corners unambiguous top-edge behavior.
 
 The recognizer owns a top-edge sequence from touch-down because a compositor
 cannot retract an isolated Wayland touch from one client without cancelling
@@ -48,8 +52,8 @@ cancels the client touch sequence and dispatches the configured close command.
 
 ## Verification
 
-- Configuration parser tests cover both trigger names, independent bits in
-  the enabled-trigger mask, and commands containing percentage syntax.
+- Configuration parser tests cover both horizontal trigger names, independent
+  bits in the enabled-trigger mask, and commands containing percentage syntax.
 - `cargo test` exercises the mapping path.
 - The FP5 profile is built natively and tested against its standard backlight
   device through `brightnessctl`.

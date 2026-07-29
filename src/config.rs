@@ -886,8 +886,8 @@ mod tests {
              gesture = two-right, movewindow, r\n\
              gesture = three-up, close\n\
              gesture = three-down, close\n\
-             gesture = three-left, movetoworkspacenext\n\
-             gesture = three-right, movetoworkspaceprev\n",
+             gesture = three-left, movetoworkspaceprev\n\
+             gesture = three-right, movetoworkspacenext\n",
         );
 
         assert_eq!(cfg.gestures.len(), 8);
@@ -899,11 +899,11 @@ mod tests {
         assert!(matches!(cfg.gestures[4].action, Action::Close));
         assert!(matches!(
             cfg.gestures[6].action,
-            Action::MoveToWorkspaceNext
+            Action::MoveToWorkspacePrevious
         ));
         assert!(matches!(
             cfg.gestures[7].action,
-            Action::MoveToWorkspacePrevious
+            Action::MoveToWorkspaceNext
         ));
     }
 

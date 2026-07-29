@@ -40,9 +40,10 @@ started elsewhere remain application input. When wvkbd is visible, these strips
 stop at its top edge so the keyboard's left- and right-edge keys remain usable.
 
 Swipe horizontally in the thin top-edge strip to adjust display brightness:
-left-to-right increases it by 5%, and right-to-left decreases it by 5%. The
-profile implements these directions as `top-right` and `top-left` mappings
-that spawn `brightnessctl`; the recognizer itself contains no FP5 backlight
+left-to-right increases it, and right-to-left decreases it. Every 5% of output
+width crossed dispatches the profile's 5% `brightnessctl` step, so an
+edge-to-edge swipe spans approximately the full 0–100% range and shorter
+swipes adjust proportionally. The recognizer itself contains no FP5 backlight
 path or brightness policy.
 
 Swipe downward from the top edge to open the temporary Fuzzel application
@@ -55,8 +56,8 @@ Window management is available directly on the central application surface:
 - Swipe with two fingers in any direction to swap the focused tiled window
   with its spatial neighbor in that direction.
 - Swipe up or down with three fingers to close the focused window.
-- Swipe left with three fingers to send the focused window to the next
-  workspace; swipe right to send it to the previous workspace. The workspace
+- Swipe left with three fingers to send the focused window to the previous
+  workspace; swipe right to send it to the next workspace. The workspace
   ring wraps at either end, and the display stays on its current workspace.
 
 The first finger initially remains application input. When the second finger

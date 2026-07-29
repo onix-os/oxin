@@ -175,8 +175,8 @@ gesture = two-left, movewindow, l
 gesture = two-right, movewindow, r
 gesture = three-up, close
 gesture = three-down, close
-gesture = three-left, movetoworkspacenext
-gesture = three-right, movetoworkspaceprev
+gesture = three-left, movetoworkspaceprev
+gesture = three-right, movetoworkspacenext
 
 # The same actions are available on non-touch devices.
 bind = MOD, bracketleft, workspaceprev

@@ -200,6 +200,7 @@ struct oxide_touch_point {
     bool gesture_fired;
     bool gesture_candidate;
     bool to_top_candidate;
+    int gesture_steps;
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
     double start_lx, start_ly;
@@ -733,14 +734,41 @@ static void handle_touch_motion(void *userdata, void *data) {
     if (point->gesture_kind == 3) {
         double dx = lx - point->start_lx;
         double dy = ly - point->start_ly;
-        bool right = dx >= 70 && (p->gesture_mask & (1u << 4)) != 0;
-        bool left = dx <= -70 && (p->gesture_mask & (1u << 5)) != 0;
+        // Lock horizontal direction after a small deliberate movement. Each
+        // 5% of output width crossed emits one configured brightness step;
+        // the FP5 maps a step to 5%, making an edge-to-edge swipe span 100%.
+        if (point->gesture_edge == 0 && fabs(dx) >= 30
+                && fabs(dx) > fabs(dy)) {
+            point->gesture_edge = dx > 0 ? 1 : -1;
+        }
+        if (point->gesture_edge != 0) {
+            struct wlr_output *output =
+                    wlr_output_layout_output_at(p->output_layout, lx, ly);
+            if (output != NULL) {
+                struct wlr_box box;
+                wlr_output_layout_get_box(p->output_layout, output, &box);
+                double travel = point->gesture_edge * dx;
+                int steps = box.width > 0
+                        ? (int)(travel * 20.0 / box.width) : 0;
+                if (steps > 20) {
+                    steps = 20;
+                }
+                uint32_t trigger = point->gesture_edge > 0 ? 4 : 5;
+                while (steps > point->gesture_steps
+                        && (p->gesture_mask & (1u << trigger)) != 0) {
+                    point->gesture_steps++;
+                    if (p->gesture_callback != NULL) {
+                        p->gesture_callback(p->gesture_userdata, trigger);
+                    }
+                }
+            }
+            return;
+        }
         bool down = dy >= 70 && (p->gesture_mask & (1u << 6)) != 0;
-        if (!point->gesture_fired && (right || left || down)) {
+        if (!point->gesture_fired && down) {
             point->gesture_fired = true;
             if (p->gesture_callback != NULL) {
-                p->gesture_callback(p->gesture_userdata,
-                        right ? 4 : left ? 5 : 6);
+                p->gesture_callback(p->gesture_userdata, 6);
             }
         }
         return;
