@@ -59,7 +59,11 @@ pub(crate) unsafe extern "C" fn handle_new_layer_surface(userdata: *mut c_void, 
 /// fires. The initial commit's configure is what lets the client map.
 unsafe fn rearrange_layer_output(l: &LayerSurface) {
     let server = &mut *l.server;
-    if let Some(idx) = server.outputs.iter().position(|o| o.wlr_output == l.wlr_output) {
+    if let Some(idx) = server
+        .outputs
+        .iter()
+        .position(|o| o.wlr_output == l.wlr_output)
+    {
         arrange_layers(server, idx);
     }
     refresh(server);
@@ -89,7 +93,11 @@ unsafe extern "C" fn handle_layer_destroy(userdata: *mut c_void, _data: *mut c_v
     let server = &mut *(*l).server;
     let wlr_output = (*l).wlr_output;
     server.layers.retain(|&x| x != l);
-    if let Some(idx) = server.outputs.iter().position(|o| o.wlr_output == wlr_output) {
+    if let Some(idx) = server
+        .outputs
+        .iter()
+        .position(|o| o.wlr_output == wlr_output)
+    {
         arrange_layers(server, idx);
     }
     refresh(server);

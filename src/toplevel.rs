@@ -3,7 +3,10 @@
 use crate::ffi::*;
 use crate::keybindings::focus_index;
 use crate::state::*;
-use crate::tiling::{active_output, active_workspace, predict_tile_rect, refresh, tree_track, tree_untrack, workspace_of};
+use crate::tiling::{
+    active_output, active_workspace, predict_tile_rect, refresh, tree_track, tree_untrack,
+    workspace_of,
+};
 use crate::wlr;
 use std::ffi::CStr;
 use std::os::raw::c_void;
@@ -104,7 +107,11 @@ pub(crate) unsafe fn set_floating(server: &mut Server, tl: *mut Toplevel, on: bo
     }
     (*tl).floating = on;
     if !(*tl).fullscreen {
-        let tree = if on { server.tree_floating } else { server.tree_normal };
+        let tree = if on {
+            server.tree_floating
+        } else {
+            server.tree_normal
+        };
         oxide_scene_tree_reparent((*tl).scene_tree, tree);
     }
     if on {
@@ -185,7 +192,9 @@ unsafe fn floats_by_rule(server: &Server, tl: *mut Toplevel) -> bool {
     if app_id.is_null() {
         return false;
     }
-    let app_id = CStr::from_ptr(app_id).to_string_lossy().to_ascii_lowercase();
+    let app_id = CStr::from_ptr(app_id)
+        .to_string_lossy()
+        .to_ascii_lowercase();
     server.config.float_rules.contains(&app_id)
 }
 
@@ -222,10 +231,14 @@ unsafe extern "C" fn handle_request_fullscreen(userdata: *mut c_void, _data: *mu
 /// frame the client ever draws already fits.
 unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
     let tl = userdata as *mut Toplevel;
+    let server = &*(*tl).server;
+    // Surface buffers do not necessarily exist when the scene tree is first
+    // created. Reapply on every commit so new buffers and subsurfaces inherit
+    // the configured application opacity.
+    oxide_scene_tree_set_opacity((*tl).scene_tree, server.config.window_opacity);
     if !oxide_xdg_initial_commit((*tl).xdg_toplevel) {
         return;
     }
-    let server = &*(*tl).server;
 
     // Floating windows get the opposite treatment: no tiled states, and
     // either a 0,0 configure ("pick your own size" — dialogs and fixed-size
@@ -266,6 +279,9 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
 unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
     let tl = userdata as *mut Toplevel;
     let server = &mut *(*tl).server;
+    // Mapping is a final backstop after the client has attached its initial
+    // buffer. Commits keep this updated for later buffer/subsurface changes.
+    oxide_scene_tree_set_opacity((*tl).scene_tree, server.config.window_opacity);
     if server.outputs.is_empty() {
         return; // no monitor to place it on yet
     }

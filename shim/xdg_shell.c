@@ -161,6 +161,18 @@ void oxide_scene_tree_set_enabled(struct wlr_scene_tree *tree, bool enabled) {
     wlr_scene_node_set_enabled(&tree->node, enabled);
 }
 
+static void set_buffer_opacity(struct wlr_scene_buffer *buffer,
+        int sx, int sy, void *userdata) {
+    (void)sx;
+    (void)sy;
+    float opacity = *(float *)userdata;
+    wlr_scene_buffer_set_opacity(buffer, opacity);
+}
+
+void oxide_scene_tree_set_opacity(struct wlr_scene_tree *tree, float opacity) {
+    wlr_scene_node_for_each_buffer(&tree->node, set_buffer_opacity, &opacity);
+}
+
 // The toplevel's root wlr_surface — what scene hit-testing resolves clicks to
 // (via wlr_surface_get_root_surface), so Rust can match a clicked surface
 // back to the Toplevel it tracks.

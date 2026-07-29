@@ -22,6 +22,10 @@ background = 0.0 0.6 0.6
 # present. Runtime changes use `0xinctl wallpaper PATH`.
 # wallpaper = ~/Pictures/wallpaper.jpg
 
+# Application-window opacity, from invisible (0.0) to fully opaque (1.0).
+# Layer-shell UI such as panels and virtual keyboards is not affected.
+window_opacity = 1.0
+
 # --- session startup ---------------------------------------------------------
 #
 # Repeated commands run once per 0xin process start, in declaration order,

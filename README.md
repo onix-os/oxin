@@ -140,6 +140,7 @@ modifier   = super
 gap        = 10
 background = 0.0 0.6 0.6
 wallpaper = ~/Pictures/wallpaper.jpg
+window_opacity = 1.0
 
 # Commands are repeatable and launch once per compositor start.
 exec_once = patin
@@ -206,6 +207,12 @@ wallpaper without restarting:
 
 Runtime changes last until 0xin exits. Set `wallpaper =` in the config to make
 the selection persistent across sessions.
+
+Application windows can reveal that background with `window_opacity`, where
+`1.0` is fully opaque (the default) and `0.0` is fully transparent. The value
+applies to XDG application toplevels on any supported Wayland device;
+layer-shell surfaces such as panels, Patin, and virtual keyboards are left
+fully opaque.
 
 ## Repository layout
 

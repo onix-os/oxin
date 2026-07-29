@@ -34,7 +34,10 @@ pub(crate) struct ShimListener {
 // Functions implemented in shim/oxide_shim.c.
 extern "C" {
     pub(crate) fn oxide_log_init();
-    pub(crate) fn oxide_setup_signals(loop_: *mut wlr::wl_event_loop, display: *mut wlr::wl_display);
+    pub(crate) fn oxide_setup_signals(
+        loop_: *mut wlr::wl_event_loop,
+        display: *mut wlr::wl_display,
+    );
     pub(crate) fn oxide_event_loop_add_readable(
         loop_: *mut wlr::wl_event_loop,
         fd: i32,
@@ -65,7 +68,9 @@ extern "C" {
     ) -> *mut ShimListener;
     pub(crate) fn oxide_output_enable(output: *mut wlr::wlr_output, scale: f32);
     pub(crate) fn oxide_output_name(output: *mut wlr::wlr_output) -> *const c_char;
-    pub(crate) fn oxide_scene_add_layer_tree(scene: *mut wlr::wlr_scene) -> *mut wlr::wlr_scene_tree;
+    pub(crate) fn oxide_scene_add_layer_tree(
+        scene: *mut wlr::wlr_scene,
+    ) -> *mut wlr::wlr_scene_tree;
     pub(crate) fn oxide_scene_add_output_background(
         tree: *mut wlr::wlr_scene_tree,
         output: *mut wlr::wlr_output,
@@ -182,6 +187,7 @@ extern "C" {
     );
     pub(crate) fn oxide_scene_tree_set_position(tree: *mut wlr::wlr_scene_tree, x: i32, y: i32);
     pub(crate) fn oxide_scene_tree_set_enabled(tree: *mut wlr::wlr_scene_tree, enabled: bool);
+    pub(crate) fn oxide_scene_tree_set_opacity(tree: *mut wlr::wlr_scene_tree, opacity: f32);
     pub(crate) fn oxide_scene_tree_destroy(tree: *mut wlr::wlr_scene_tree);
     pub(crate) fn oxide_focus_toplevel(
         seat: *mut wlr::wlr_seat,
@@ -234,9 +240,7 @@ extern "C" {
     );
     pub(crate) fn oxide_cursor_set_keyboard_visible(cursor: *mut wlr::wlr_cursor, visible: bool);
     pub(crate) fn oxide_cursor_set_keyboard_height(cursor: *mut wlr::wlr_cursor, height: i32);
-    pub(crate) fn oxide_xdg_toplevel_surface(
-        toplevel: *mut wlr::wlr_xdg_toplevel,
-    ) -> *mut c_void;
+    pub(crate) fn oxide_xdg_toplevel_surface(toplevel: *mut wlr::wlr_xdg_toplevel) -> *mut c_void;
 
     // Layer-shell (bars, panels, wallpaper). Layer surfaces and the scene
     // helper wrapping them stay opaque `*mut c_void` in Rust, same as the

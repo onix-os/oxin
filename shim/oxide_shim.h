@@ -189,6 +189,8 @@ bool oxide_xdg_toplevel_requested_fullscreen(struct wlr_xdg_toplevel *toplevel);
 // read an output's pixel size. (All touch wlroots struct internals.)
 void oxide_scene_tree_set_position(struct wlr_scene_tree *tree, int x, int y);
 void oxide_scene_tree_set_enabled(struct wlr_scene_tree *tree, bool enabled);
+// Apply one opacity value to every buffer currently under a toplevel tree.
+void oxide_scene_tree_set_opacity(struct wlr_scene_tree *tree, float opacity);
 // Move a window's scene tree between layer trees (normal <-> fullscreen).
 void oxide_scene_tree_reparent(struct wlr_scene_tree *tree,
         struct wlr_scene_tree *new_parent);

@@ -134,6 +134,8 @@ pub struct Config {
     pub background: (f32, f32, f32),
     /// Optional PNG/JPEG wallpaper path. The solid color remains the fallback.
     pub wallpaper: Option<String>,
+    /// Opacity applied to application toplevel buffers (1.0 = fully opaque).
+    pub window_opacity: f32,
     pub binds: Vec<Bind>,
     /// Shell commands launched once, in declaration order, after the Wayland
     /// socket is ready on each compositor start.
@@ -168,6 +170,7 @@ impl Default for Config {
             first_split_vertical: true,
             background: (0.0, 0.6, 0.6),
             wallpaper: None,
+            window_opacity: 1.0,
             binds: Vec::new(),
             exec_once: Vec::new(),
             monitors: Vec::new(),
@@ -253,9 +256,15 @@ impl Config {
                     Some(c) => self.background = c,
                     None => warn(n, "invalid background (want `r g b`)", raw),
                 },
-                "wallpaper" => {
-                    self.wallpaper = (!val.is_empty()).then(|| val.to_string())
-                }
+                "wallpaper" => self.wallpaper = (!val.is_empty()).then(|| val.to_string()),
+                "window_opacity" => match val.parse::<f32>() {
+                    Ok(opacity) if (0.0..=1.0).contains(&opacity) => self.window_opacity = opacity,
+                    _ => warn(
+                        n,
+                        "invalid window_opacity (want a number from 0.0 to 1.0)",
+                        raw,
+                    ),
+                },
                 "monitor" => match parse_monitor(val) {
                     Some(m) => match self.monitors.iter_mut().find(|e| e.name == m.name) {
                         Some(existing) => *existing = m,
@@ -597,9 +606,7 @@ fn parse_action(name: &str, arg: Option<&str>) -> Option<Action> {
         "workspace" => Some(Action::Workspace(workspace_index(arg?)?)),
         "movetoworkspace" => Some(Action::MoveToWorkspace(workspace_index(arg?)?)),
         "movetoworkspacenext" => Some(Action::MoveToWorkspaceNext),
-        "movetoworkspaceprev" | "movetoworkspaceprevious" => {
-            Some(Action::MoveToWorkspacePrevious)
-        }
+        "movetoworkspaceprev" | "movetoworkspaceprevious" => Some(Action::MoveToWorkspacePrevious),
         "workspacenext" => Some(Action::WorkspaceNext),
         "workspaceprev" | "workspaceprevious" => Some(Action::WorkspacePrevious),
         "keyboardshow" => Some(Action::KeyboardShow),
@@ -843,10 +850,19 @@ mod tests {
         let mut cfg = Config::default();
         assert!(cfg.wallpaper.is_none());
         cfg.parse_scalars("wallpaper = ~/Pictures/background.jpg\n");
-        assert_eq!(
-            cfg.wallpaper.as_deref(),
-            Some("~/Pictures/background.jpg")
-        );
+        assert_eq!(cfg.wallpaper.as_deref(), Some("~/Pictures/background.jpg"));
+    }
+
+    #[test]
+    fn window_opacity_is_opaque_by_default_and_bounded() {
+        let mut cfg = Config::default();
+        assert_eq!(cfg.window_opacity, 1.0);
+
+        cfg.parse_scalars("window_opacity = 0.8\n");
+        assert_eq!(cfg.window_opacity, 0.8);
+
+        cfg.parse_scalars("window_opacity = 1.1\nwindow_opacity = nope\n");
+        assert_eq!(cfg.window_opacity, 0.8);
     }
 
     #[test]
@@ -967,7 +983,10 @@ mod tests {
                 .unwrap()
                 .action
         };
-        assert!(matches!(action_for("bracketleft"), Action::WorkspacePrevious));
+        assert!(matches!(
+            action_for("bracketleft"),
+            Action::WorkspacePrevious
+        ));
         assert!(matches!(action_for("bracketright"), Action::WorkspaceNext));
         assert!(matches!(action_for("K"), Action::KeyboardToggle));
     }

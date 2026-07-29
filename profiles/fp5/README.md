@@ -32,6 +32,14 @@ install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
 The live command does not rewrite the configuration. The configured image
 returns after the next login unless its `wallpaper =` line is changed too.
 
+## Window opacity
+
+The FP5 profile sets `window_opacity = 0.8`, so application windows reveal
+some of the wallpaper. This is general 0xin configuration rather than
+phone-specific behavior: other profiles can use any value from `0.0`
+(invisible) to `1.0` (fully opaque, the default). Layer-shell UI such as Patin
+and wvkbd remains fully opaque.
+
 ## Camera storage
 
 GNOME Snapshot follows the XDG Pictures directory and creates its `Camera`

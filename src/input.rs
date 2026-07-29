@@ -57,7 +57,13 @@ pub(crate) unsafe extern "C" fn handle_gesture(userdata: *mut c_void, raw_trigge
 pub(crate) unsafe extern "C" fn handle_new_input(userdata: *mut c_void, data: *mut c_void) {
     let server = &mut *(userdata as *mut Server);
     let device = data as *mut wlr::wlr_input_device;
-    oxide_handle_new_input(server.seat, server.cursor, device, handle_keybinding, userdata);
+    oxide_handle_new_input(
+        server.seat,
+        server.cursor,
+        device,
+        handle_keybinding,
+        userdata,
+    );
 }
 
 /// Called by the shim on every click with the clicked root wlr_surface. The
@@ -68,7 +74,10 @@ pub(crate) unsafe extern "C" fn handle_new_input(userdata: *mut c_void, data: *m
 pub(crate) unsafe extern "C" fn handle_click_focus(userdata: *mut c_void, data: *mut c_void) {
     let server = &mut *(userdata as *mut Server);
     for ws in server.workspaces.iter_mut() {
-        let hit = ws.windows.iter().position(|&tl| oxide_xdg_toplevel_surface((*tl).xdg_toplevel) == data);
+        let hit = ws
+            .windows
+            .iter()
+            .position(|&tl| oxide_xdg_toplevel_surface((*tl).xdg_toplevel) == data);
         if let Some(idx) = hit {
             ws.focused = idx;
             return;

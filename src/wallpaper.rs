@@ -17,8 +17,8 @@ fn expand_home(path: &str) -> PathBuf {
 }
 
 fn decode_cover(path: &Path, width: u32, height: u32) -> Result<Vec<u8>, String> {
-    let image = image::open(path)
-        .map_err(|error| format!("cannot decode {}: {error}", path.display()))?;
+    let image =
+        image::open(path).map_err(|error| format!("cannot decode {}: {error}", path.display()))?;
     Ok(image
         // Triangle gives a good wallpaper downscale without stalling the
         // compositor event loop for seconds like Lanczos can in debug/mobile
@@ -80,14 +80,7 @@ pub(crate) unsafe fn set(server: &mut Server, requested: Option<&str>) -> Result
 
     for (index, pixels) in decoded.iter().enumerate() {
         let output = &server.outputs[index];
-        let new_node = create_node(
-            server,
-            output.x,
-            output.y,
-            output.w,
-            output.h,
-            pixels,
-        )?;
+        let new_node = create_node(server, output.x, output.y, output.w, output.h, pixels)?;
         let output = &mut server.outputs[index];
         if !output.wallpaper.is_null() {
             oxide_scene_wallpaper_destroy(output.wallpaper);

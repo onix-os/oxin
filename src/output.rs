@@ -19,8 +19,15 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
     // A `monitor = NAME, XxY[, SCALE]` config entry for this connector name
     // (e.g. "HDMI-A-1") gives it an explicit position/scale; otherwise it
     // keeps the default auto-placement/scale below.
-    let name = CStr::from_ptr(oxide_output_name(output)).to_string_lossy().into_owned();
-    let monitor_cfg = server.config.monitors.iter().find(|m| m.name == name).cloned();
+    let name = CStr::from_ptr(oxide_output_name(output))
+        .to_string_lossy()
+        .into_owned();
+    let monitor_cfg = server
+        .config
+        .monitors
+        .iter()
+        .find(|m| m.name == name)
+        .cloned();
     let scale = monitor_cfg.as_ref().map_or(1.0, |m| m.scale);
 
     oxide_output_enable(output, scale);
@@ -215,7 +222,11 @@ pub(crate) unsafe extern "C" fn handle_session_active(userdata: *mut c_void, _da
 unsafe extern "C" fn handle_frame(userdata: *mut c_void, _data: *mut c_void) {
     let ctx = &*(userdata as *mut FrameCtx);
     let server = &mut *ctx.server;
-    if let Some(pos) = server.outputs.iter().position(|o| o.wlr_output == ctx.wlr_output) {
+    if let Some(pos) = server
+        .outputs
+        .iter()
+        .position(|o| o.wlr_output == ctx.wlr_output)
+    {
         if server.outputs[pos].repaint_frames > 0 {
             let bg = server.outputs[pos].background;
             oxide_scene_rect_set_enabled(bg, false);

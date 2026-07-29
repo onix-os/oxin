@@ -2,9 +2,12 @@
 
 use crate::config::{Action, Direction, MOD_ALT, MOD_CTRL, MOD_MASK};
 use crate::ffi::*;
-use crate::state::*;
 use crate::layout::tree_resize;
-use crate::tiling::{active_output, active_workspace, refresh, spatial_neighbor, tiled_position, tree_track, tree_untrack};
+use crate::state::*;
+use crate::tiling::{
+    active_output, active_workspace, refresh, spatial_neighbor, tiled_position, tree_track,
+    tree_untrack,
+};
 use crate::toplevel::{clamp_floating, set_floating, set_fullscreen};
 use crate::wlr;
 use std::os::raw::c_void;
