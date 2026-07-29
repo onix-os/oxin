@@ -37,10 +37,16 @@ with a generic virtual-keyboard controller plus input mappings:
 virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl
 virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
 virtual_keyboard_height = 125
+gesture_handle = hidden
 
 gesture = bottom-up, keyboardshow
 gesture = bottom-down, keyboardhide
 ```
+
+`gesture_handle` accepts `visible` (the default) or `hidden`. Hiding it removes
+only the rendered pill; the configured bottom gesture target remains active.
+The FP5 profile now hides the pill after its gesture layout has become familiar,
+while another touch profile can retain the discoverability hint.
 
 The configured commands use wvkbd's documented `SIGUSR2` show and `SIGUSR1`
 hide controls. The keyboard stays alive and connected to the virtual-keyboard

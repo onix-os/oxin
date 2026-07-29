@@ -157,6 +157,8 @@ monitor = HDMI-A-1, 0x-1080, 1.0
 virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl
 virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
 virtual_keyboard_height = 125
+# visible (default) or hidden; this changes only the visual pill.
+gesture_handle = hidden
 
 gesture = bottom-up, keyboardshow
 gesture = bottom-down, keyboardhide

@@ -140,6 +140,9 @@ pub struct Config {
     pub virtual_keyboard_hide: Option<String>,
     /// Logical height used to place the visible keyboard's close handle.
     pub virtual_keyboard_height: i32,
+    /// Whether bottom keyboard gestures get a visible compositor-owned pill.
+    /// The touch target remains active when this visual hint is disabled.
+    pub gesture_handle_visible: bool,
 }
 
 impl Default for Config {
@@ -157,6 +160,7 @@ impl Default for Config {
             virtual_keyboard_show: None,
             virtual_keyboard_hide: None,
             virtual_keyboard_height: 300,
+            gesture_handle_visible: true,
         }
     }
 }
@@ -267,6 +271,15 @@ impl Config {
                         raw,
                     ),
                 },
+                "gesture_handle" => match val {
+                    "visible" => self.gesture_handle_visible = true,
+                    "hidden" => self.gesture_handle_visible = false,
+                    _ => warn(
+                        n,
+                        "invalid gesture_handle (want `visible` or `hidden`)",
+                        raw,
+                    ),
+                },
                 "bind" | "gesture" => {} // handled in their second passes
                 _ => warn(n, "unknown setting", raw),
             }
@@ -343,12 +356,13 @@ impl Config {
     }
 
     pub fn has_keyboard_handle(&self) -> bool {
-        self.gestures.iter().any(|binding| {
-            matches!(
-                binding.trigger,
-                GestureTrigger::BottomUp | GestureTrigger::BottomDown
-            )
-        })
+        self.gesture_handle_visible
+            && self.gestures.iter().any(|binding| {
+                matches!(
+                    binding.trigger,
+                    GestureTrigger::BottomUp | GestureTrigger::BottomDown
+                )
+            })
     }
 }
 
@@ -778,7 +792,8 @@ mod tests {
         cfg.parse_scalars(
             "virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl\n\
              virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl\n\
-             virtual_keyboard_height = 280\n",
+             virtual_keyboard_height = 280\n\
+             gesture_handle = hidden\n",
         );
         cfg.apply_gestures(
             "gesture = bottom-up, keyboardshow\n\
@@ -791,7 +806,8 @@ mod tests {
         assert_eq!(cfg.virtual_keyboard_height, 280);
         assert_eq!(cfg.gestures.len(), 2);
         assert_eq!(cfg.gesture_mask(), 0b11);
-        assert!(cfg.has_keyboard_handle());
+        assert!(!cfg.gesture_handle_visible);
+        assert!(!cfg.has_keyboard_handle());
     }
 
     #[test]

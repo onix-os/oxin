@@ -72,12 +72,17 @@ name:
 virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl
 virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
 virtual_keyboard_height = 125
+gesture_handle = hidden
 ```
 
 The show/hide/toggle actions run those commands and update compositor keyboard
 visibility, recognizer state, and handle position. Missing commands make the
 corresponding action a logged no-op. A convertible or desktop setup may bind
 `keyboardtoggle` to a key; the FP5 maps explicit show/hide gestures.
+
+The optional `gesture_handle = hidden` setting suppresses the rendered
+bottom-center pill without disabling its recognizer. `visible` is the default
+for profiles that want a discoverability hint.
 
 Hardware buttons use the same keybinding path when libinput/xkb exposes a
 standard keysym. For example, the FP5 profile controls its default audio sink:

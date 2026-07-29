@@ -49,6 +49,12 @@ float_size = 60% x 60%
 # Floating windows always move with MOD + left-drag and resize with
 # MOD + right-drag (not configurable; MOD is the primary modifier above).
 
+# --- touch gesture appearance -----------------------------------------------
+#
+# Bottom keyboard gestures may render a small discoverability pill. Hiding it
+# changes only the visual hint; configured gesture targets remain active.
+# gesture_handle = hidden
+
 # --- keybindings -----------------------------------------------------------
 #
 # bind = MODS, KEY, ACTION[, ARG]

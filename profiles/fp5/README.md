@@ -27,11 +27,11 @@ entry when it is no longer needed:
 sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
 ```
 
-The thin pill at the bottom is a compositor-owned gesture handle. Swipe upward
-from it to show wvkbd. To hide wvkbd, make a deliberate downward swipe on the
-keyboard that reaches the bottom edge. Ordinary taps reach wvkbd first and
-remain keys; only the completed swipe is claimed by 0xin, matching SXMO's
-bottom-edge gesture style.
+Swipe upward from the bottom-center gesture area to show wvkbd. The FP5 profile
+sets `gesture_handle = hidden`, so this target has no visible pill. To hide
+wvkbd, make a deliberate downward swipe on the keyboard that reaches the
+bottom edge. Ordinary taps reach wvkbd first and remain keys; only the completed
+swipe is claimed by 0xin, matching SXMO's bottom-edge gesture style.
 
 Swipe inward from the left edge for the previous workspace or from the right
 edge for the next workspace. The nine-workspace ring wraps at either end.
