@@ -1,25 +1,24 @@
 # Stage 23 — Secure Session Lock
 
 **What it is.** 0xin implements `ext-session-lock-v1`, allowing an external
-authentication client such as swaylock to lock the session without trusting a
-normal application or layer-shell overlay as a security boundary.
+authentication client such as `patin-lock` to lock the session without trusting
+a normal application or layer-shell overlay as a security boundary.
 
-**Gate:** *Swaylock acquires the lock, its surface covers every output and
-receives exclusive input, and killing it leaves an opaque fail-closed screen.*
+**Gate:** *Patin acquires the lock, its surface covers every output, its touch
+keyboard authenticates through PAM, and killing it leaves an opaque fail-closed
+screen.*
 
 ## FP5 policy
 
 ```ini
-# Enable only when a physical keyboard is available:
-# bind = , XF86PowerOff, spawn, pgrep -x swaylock >/dev/null || swaylock
+bind = , XF86PowerOff, spawn, pgrep -x patin-lock >/dev/null || patin-lock
 hold = , XF86PowerOff, 2000, spawn, ~/.local/bin/0xin-session-menu
 ```
 
 The protocol and short/hold mapping are general 0xin capabilities. The FP5
-profile intentionally leaves swaylock's short binding commented out because
-swaylock has no touch keyboard. With a physical keyboard available, enabling
-the bind makes release before two seconds launch swaylock while holding through
-the threshold opens the session menu instead.
+profile uses Patin as a replaceable external client, not a compositor component.
+Releasing before two seconds launches the lock; holding through the threshold
+opens the session menu instead. `pgrep` makes repeat presses idempotent.
 
 ## Security model
 
@@ -53,6 +52,25 @@ password databases or implement PAM itself.
 The existing wvkbd is an ordinary layer-shell client. Keeping it below the
 session-lock tree is necessary: allowing arbitrary shell surfaces above a lock
 would let another client cover or imitate the authentication UI. A phone-ready
-locker therefore needs an integrated touch PIN/password UI, or a future
-explicitly trusted input-method path. Swaylock remains suitable for protocol
-testing and for docked use with a physical keyboard.
+locker therefore needs an integrated touch PIN/password UI, which `patin-lock`
+now supplies. Swaylock remains suitable for protocol testing and for docked use
+with a physical keyboard.
+
+## Verification
+
+Verified on the FP5 reference target on 30 July 2026: `patin-lock` acquired the
+0xin session lock, rendered its integrated touch keyboard, authenticated the
+user through PAM, and unlocked normally.
+
+After enabling the short-power mapping, repository validation passed:
+
+```text
+$ cargo test --all-targets
+34 tests passed
+
+$ mdbook build
+INFO HTML book written to `/home/vdzee/proj/0xin/book`
+
+$ git diff --check
+(no output, exit 0)
+```

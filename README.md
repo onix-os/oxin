@@ -218,8 +218,9 @@ with:
 0xinctl quit
 ```
 
-0xin implements `ext-session-lock-v1` for secure lock clients such as
-`swaylock`. Accepting a lock immediately covers every output with an opaque
+0xin implements `ext-session-lock-v1` for secure lock clients such as Patin's
+touch-capable `patin-lock` or `swaylock`. Accepting a lock immediately covers
+every output with an opaque
 compositor fallback and routes input exclusively to the lock client. If that
 client crashes without unlocking, the fallback remains and the desktop stays
 inaccessible.

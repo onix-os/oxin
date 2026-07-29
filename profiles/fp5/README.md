@@ -89,19 +89,20 @@ install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-session-menu ~/.local/bin/
 install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
 ```
 
-A shorter power-button press remains reserved for locking; reaching the
-two-second hold threshold launches the session menu. 0xin now implements
-`ext-session-lock-v1`, and swaylock can validate it, but swaylock has no touch
-keyboard. The profile therefore leaves its short-power binding commented out:
-enabling it requires a physical keyboard to unlock.
+A shorter power-button press launches the independently installed,
+touch-capable Patin lock client; reaching the two-second hold threshold launches
+the session menu instead. The `pgrep` guard prevents another locker from being
+started while Patin's supervisor or lock worker is already running.
 
 ```ini
-# bind = , XF86PowerOff, spawn, pgrep -x swaylock >/dev/null || swaylock
+bind = , XF86PowerOff, spawn, pgrep -x patin-lock >/dev/null || patin-lock
+hold = , XF86PowerOff, 2000, spawn, ~/.local/bin/0xin-session-menu
 ```
 
-A phone-ready lock client needs its own secure touch authentication UI. An
-ordinary layer-shell wvkbd cannot be placed above the lock surface without
-weakening the lock boundary.
+`patin-lock` owns its touch password keyboard because an ordinary layer-shell
+wvkbd cannot be placed above the lock surface without weakening the lock
+boundary. Install and validate Patin's binary and PAM policy before enabling
+this profile.
 
 Swipe upward from the bottom-center gesture area to show wvkbd. The FP5 profile
 sets `gesture_handle = hidden`, so this target has no visible pill. To hide
