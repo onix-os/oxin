@@ -28,11 +28,10 @@ sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
 ```
 
 The thin pill at the bottom is a compositor-owned gesture handle. Swipe upward
-from it to show wvkbd. While wvkbd is visible the handle moves just above its
-top edge; swipe downward from there to hide it. Its close target stays tightly
-above the keyboard around the pill, so it is easy to acquire without covering
-keyboard buttons. Touches that begin outside the handle target continue to
-applications unchanged.
+from it to show wvkbd. To hide wvkbd, make a deliberate downward swipe on the
+keyboard that reaches the bottom edge. Ordinary taps reach wvkbd first and
+remain keys; only the completed swipe is claimed by 0xin, matching SXMO's
+bottom-edge gesture style.
 
 Swipe inward from the left edge for the previous workspace or from the right
 edge for the next workspace. The nine-workspace ring wraps at either end.
@@ -44,3 +43,16 @@ These meanings come from the profile's `gesture = TRIGGER, ACTION` mappings,
 not hardcoded phone policy. The same `workspacenext`, `workspaceprev`, and
 virtual-keyboard actions can be assigned to ordinary `bind =` keyboard chords
 on desktops and convertibles.
+
+The first SXMO-inspired hardware-button mappings are:
+
+- **Volume up:** open the Fuzzel application menu.
+- **Volume down:** toggle wvkbd.
+
+The profile binds the standard xkb names `XF86AudioRaiseVolume` and
+`XF86AudioLowerVolume`; it does not depend on FP5 input-device paths or raw
+event codes. Other Wayland devices whose buttons expose those standard key
+symbols can use the same mappings. These are currently single-press actions.
+Multi-press and hold recognition will belong to a later, generic input-trigger
+layer, where volume up can select context, main, and window menus supplied by
+the shell toolkit.

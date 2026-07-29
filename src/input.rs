@@ -24,7 +24,7 @@ pub(crate) unsafe extern "C" fn handle_gesture(userdata: *mut c_void, raw_trigge
     let server = &mut *(userdata as *mut Server);
     let trigger = match raw_trigger {
         0 => GestureTrigger::BottomUp,
-        1 => GestureTrigger::KeyboardTopDown,
+        1 => GestureTrigger::BottomDown,
         2 => GestureTrigger::EdgeLeftIn,
         3 => GestureTrigger::EdgeRightIn,
         _ => return,

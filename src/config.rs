@@ -85,7 +85,7 @@ pub struct Bind {
 #[repr(u32)]
 pub enum GestureTrigger {
     BottomUp = 0,
-    KeyboardTopDown = 1,
+    BottomDown = 1,
     EdgeLeftIn = 2,
     EdgeRightIn = 3,
 }
@@ -342,7 +342,7 @@ impl Config {
         self.gestures.iter().any(|binding| {
             matches!(
                 binding.trigger,
-                GestureTrigger::BottomUp | GestureTrigger::KeyboardTopDown
+                GestureTrigger::BottomUp | GestureTrigger::BottomDown
             )
         })
     }
@@ -564,7 +564,7 @@ fn parse_gesture(val: &str) -> Option<GestureBind> {
     let mut parts = val.splitn(3, ',');
     let trigger = match parts.next()?.trim().to_ascii_lowercase().as_str() {
         "bottom-up" => GestureTrigger::BottomUp,
-        "keyboard-top-down" => GestureTrigger::KeyboardTopDown,
+        "bottom-down" => GestureTrigger::BottomDown,
         "edge-left-in" => GestureTrigger::EdgeLeftIn,
         "edge-right-in" => GestureTrigger::EdgeRightIn,
         _ => return None,
@@ -686,6 +686,35 @@ mod tests {
     }
 
     #[test]
+    fn modifier_free_media_keys_map_to_shared_actions() {
+        let mut cfg = Config::default();
+        cfg.binds = default_binds(cfg.modifier);
+        cfg.apply_binds(
+            "bind = , XF86AudioRaiseVolume, spawn, fuzzel\n\
+             bind = , XF86AudioLowerVolume, keyboardtoggle\n",
+        );
+
+        let raise = key("XF86AudioRaiseVolume");
+        let lower = key("XF86AudioLowerVolume");
+        let raise_bind = cfg
+            .binds
+            .iter()
+            .find(|bind| bind.mods == 0 && bind.keysym == raise)
+            .unwrap();
+        let lower_bind = cfg
+            .binds
+            .iter()
+            .find(|bind| bind.mods == 0 && bind.keysym == lower)
+            .unwrap();
+
+        assert!(matches!(
+            &raise_bind.action,
+            Action::Spawn(command) if command == "fuzzel"
+        ));
+        assert!(matches!(lower_bind.action, Action::KeyboardToggle));
+    }
+
+    #[test]
     fn fullscreen_action_parses_and_has_default_bind() {
         let mut cfg = Config::default();
         cfg.binds = default_binds(cfg.modifier);
@@ -740,7 +769,7 @@ mod tests {
         );
         cfg.apply_gestures(
             "gesture = bottom-up, keyboardshow\n\
-             gesture = keyboard-top-down, keyboardhide\n",
+             gesture = bottom-down, keyboardhide\n",
         );
         assert_eq!(
             cfg.virtual_keyboard_show.as_deref(),

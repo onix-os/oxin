@@ -10,25 +10,23 @@ visible keyboard hides it.*
 
 ## Gesture recognition
 
-The input shim reserves an enlarged touch target around the small visible pill.
-A touch sequence that starts in this target belongs to the compositor and is
-not sent partly to an application:
+The input shim reserves an enlarged touch target around the small bottom pill
+while the keyboard is hidden:
 
 - an upward movement of 60 logical pixels while hidden requests **show**;
-- a downward movement of 60 logical pixels while visible requests **hide**;
-- shorter movements end without an action.
+- a keyboard touch moving at least 70 logical pixels downward and reaching the
+  bottom 28-pixel edge requests **hide**;
+- taps and shorter movements remain ordinary client input.
 
 All touches beginning outside the target retain the existing native Wayland
 touch path. This avoids interpreting application scrolling as compositor
 policy.
 
-When the keyboard is hidden the handle sits at the bottom edge. After a show
-gesture it moves just above the configured keyboard top edge, so the close
-gesture is physically possible without covering keyboard buttons. The close
-target is a centered 220-by-56-logical-pixel strip entirely above the keyboard:
-the downward sequence remains compositor-owned after crossing the boundary,
-but no keyboard button loses its touch-down. The hidden bottom-edge target
-remains larger for easy acquisition.
+When the keyboard is hidden the handle sits at the bottom edge and an upward
+swipe is captured immediately. Hiding follows SXMO-style delayed arbitration:
+the touch-down first reaches wvkbd, so taps remain usable keys. Only when the
+motion qualifies as a downward swipe ending at the bottom does 0xin cancel that
+client touch sequence and run the mapped `bottom-down` action.
 
 ## Keyboard control
 
@@ -41,7 +39,7 @@ virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
 virtual_keyboard_height = 125
 
 gesture = bottom-up, keyboardshow
-gesture = keyboard-top-down, keyboardhide
+gesture = bottom-down, keyboardhide
 ```
 
 The configured commands use wvkbd's documented `SIGUSR2` show and `SIGUSR1`

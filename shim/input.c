@@ -186,6 +186,7 @@ struct oxide_touch_point {
     // 0 = client touch, 1 = keyboard handle, 2 = workspace edge.
     int gesture_kind;
     bool gesture_fired;
+    bool gesture_candidate;
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
     double start_lx, start_ly;
@@ -338,8 +339,7 @@ static struct oxide_touch_point *touch_point_find(
 }
 
 static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) {
-    uint32_t trigger = p->keyboard_visible ? 1 : 0;
-    if ((p->gesture_mask & (1u << trigger)) == 0
+    if (p->keyboard_visible || (p->gesture_mask & (1u << 0)) == 0
             || p->output_layout == NULL) {
         return false;
     }
@@ -351,14 +351,6 @@ static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) 
     struct wlr_box box;
     wlr_output_layout_get_box(p->output_layout, output, &box);
     double center_x = box.x + box.width / 2.0;
-    if (p->keyboard_visible) {
-        double keyboard_top = box.y + box.height - p->keyboard_height;
-        // Make the close gesture easy to acquire, but keep its complete start
-        // region above wvkbd. The downward sequence remains ours after crossing
-        // into the keyboard; no keyboard button loses its touch-down.
-        return lx >= center_x - 110 && lx <= center_x + 110
-                && ly >= keyboard_top - 56 && ly < keyboard_top;
-    }
     // The hidden handle sits at the physical bottom edge and needs a larger
     // upward-only acquisition target.
     double handle_y = box.y + box.height - 10;
@@ -462,6 +454,18 @@ static void handle_touch_down(void *userdata, void *data) {
     point->offset_y = ly - sy;
     point->client = seat_point->client;
     point->touch = e->touch;
+    point->start_lx = lx;
+    point->start_ly = ly;
+    if (p->keyboard_visible && (p->gesture_mask & (1u << 1)) != 0) {
+        struct wlr_output *output =
+                wlr_output_layout_output_at(p->output_layout, lx, ly);
+        if (output != NULL) {
+            struct wlr_box box;
+            wlr_output_layout_get_box(p->output_layout, output, &box);
+            point->gesture_candidate =
+                    ly >= box.y + box.height - p->keyboard_height;
+        }
+    }
     wl_list_insert(&p->touch_points, &point->link);
 }
 
@@ -475,14 +479,29 @@ static void handle_touch_motion(void *userdata, void *data) {
     double lx, ly;
     wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
             e->x, e->y, &lx, &ly);
+    if (point->gesture_candidate) {
+        struct wlr_output *output =
+                wlr_output_layout_output_at(p->output_layout, lx, ly);
+        if (output != NULL) {
+            struct wlr_box box;
+            wlr_output_layout_get_box(p->output_layout, output, &box);
+            if (ly - point->start_ly >= 70
+                    && ly >= box.y + box.height - 28) {
+                struct wlr_seat_client *client = point->client;
+                touch_cancel_client(p, client);
+                if (p->gesture_callback != NULL) {
+                    p->gesture_callback(p->gesture_userdata, 1);
+                }
+                return;
+            }
+        }
+    }
     if (point->gesture_kind == 1) {
         double dy = ly - point->start_ly;
-        bool show = !p->keyboard_visible && dy <= -60;
-        bool hide = p->keyboard_visible && dy >= 60;
-        if (!point->gesture_fired && (show || hide)) {
+        if (!point->gesture_fired && dy <= -60) {
             point->gesture_fired = true;
             if (p->gesture_callback != NULL) {
-                p->gesture_callback(p->gesture_userdata, show ? 0 : 1);
+                p->gesture_callback(p->gesture_userdata, 0);
             }
         }
         return;

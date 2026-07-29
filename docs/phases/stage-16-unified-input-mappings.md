@@ -19,7 +19,7 @@ The input path has three layers:
 The current named touch triggers are:
 
 - `bottom-up`
-- `keyboard-top-down`
+- `bottom-down`
 - `edge-left-in`
 - `edge-right-in`
 
@@ -78,6 +78,21 @@ The show/hide/toggle actions run those commands and update compositor keyboard
 visibility, recognizer state, and handle position. Missing commands make the
 corresponding action a logged no-op. A convertible or desktop setup may bind
 `keyboardtoggle` to a key; the FP5 maps explicit show/hide gestures.
+
+Hardware buttons use the same keybinding path when libinput/xkb exposes a
+standard keysym. For example, the FP5 profile starts an application menu with
+volume up and toggles the virtual keyboard with volume down:
+
+```ini
+bind = , XF86AudioRaiseVolume, spawn, fuzzel
+bind = , XF86AudioLowerVolume, keyboardtoggle
+```
+
+There are deliberately no raw `/dev/input/event*` paths or Linux key codes in
+the configuration. This keeps the mappings usable on other Wayland devices
+with conventional media buttons. The present binding engine handles each key
+press independently; recognizing SXMO-like double/triple presses and holds is
+future work for a generic trigger layer, not FP5-specific compositor policy.
 
 `virtual_keyboard_height` is only a startup fallback. After the keyboard's
 layer surface maps, 0xin derives its real top edge from the bottom exclusive

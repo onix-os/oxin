@@ -159,7 +159,7 @@ virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
 virtual_keyboard_height = 125
 
 gesture = bottom-up, keyboardshow
-gesture = keyboard-top-down, keyboardhide
+gesture = bottom-down, keyboardhide
 gesture = edge-left-in, workspaceprev
 gesture = edge-right-in, workspacenext
 
@@ -167,6 +167,10 @@ gesture = edge-right-in, workspacenext
 bind = MOD, bracketleft, workspaceprev
 bind = MOD, bracketright, workspacenext
 bind = MOD, K, keyboardtoggle
+
+# Modifier-free media buttons are ordinary input mappings too.
+bind = , XF86AudioRaiseVolume, spawn, fuzzel
+bind = , XF86AudioLowerVolume, keyboardtoggle
 ```
 
 A line 0xin can't parse is warned about on stderr and skipped — never fatal. See
