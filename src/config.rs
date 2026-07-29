@@ -66,6 +66,8 @@ pub enum Action {
     Workspace(usize),
     /// Move the focused window to a workspace (0-based index).
     MoveToWorkspace(usize),
+    MoveToWorkspaceNext,
+    MoveToWorkspacePrevious,
     WorkspaceNext,
     WorkspacePrevious,
     KeyboardShow,
@@ -92,6 +94,14 @@ pub enum GestureTrigger {
     TopLeft = 5,
     TopDown = 6,
     ToTop = 7,
+    TwoUp = 8,
+    TwoDown = 9,
+    TwoLeft = 10,
+    TwoRight = 11,
+    ThreeUp = 12,
+    ThreeDown = 13,
+    ThreeLeft = 14,
+    ThreeRight = 15,
 }
 
 #[derive(Clone)]
@@ -569,6 +579,10 @@ fn parse_action(name: &str, arg: Option<&str>) -> Option<Action> {
         "float" | "togglefloating" => Some(Action::ToggleFloating),
         "workspace" => Some(Action::Workspace(workspace_index(arg?)?)),
         "movetoworkspace" => Some(Action::MoveToWorkspace(workspace_index(arg?)?)),
+        "movetoworkspacenext" => Some(Action::MoveToWorkspaceNext),
+        "movetoworkspaceprev" | "movetoworkspaceprevious" => {
+            Some(Action::MoveToWorkspacePrevious)
+        }
         "workspacenext" => Some(Action::WorkspaceNext),
         "workspaceprev" | "workspaceprevious" => Some(Action::WorkspacePrevious),
         "keyboardshow" => Some(Action::KeyboardShow),
@@ -589,6 +603,14 @@ fn parse_gesture(val: &str) -> Option<GestureBind> {
         "top-left" => GestureTrigger::TopLeft,
         "top-down" => GestureTrigger::TopDown,
         "to-top" => GestureTrigger::ToTop,
+        "two-up" => GestureTrigger::TwoUp,
+        "two-down" => GestureTrigger::TwoDown,
+        "two-left" => GestureTrigger::TwoLeft,
+        "two-right" => GestureTrigger::TwoRight,
+        "three-up" => GestureTrigger::ThreeUp,
+        "three-down" => GestureTrigger::ThreeDown,
+        "three-left" => GestureTrigger::ThreeLeft,
+        "three-right" => GestureTrigger::ThreeRight,
         _ => return None,
     };
     let action_name = parts.next()?.trim();
@@ -851,6 +873,37 @@ mod tests {
         assert!(matches!(
             &cfg.gestures[3].action,
             Action::Spawn(command) if command == "pkill -x fuzzel"
+        ));
+    }
+
+    #[test]
+    fn multi_finger_window_gestures_parse() {
+        let mut cfg = Config::default();
+        cfg.apply_gestures(
+            "gesture = two-up, movewindow, u\n\
+             gesture = two-down, movewindow, d\n\
+             gesture = two-left, movewindow, l\n\
+             gesture = two-right, movewindow, r\n\
+             gesture = three-up, close\n\
+             gesture = three-down, close\n\
+             gesture = three-left, movetoworkspacenext\n\
+             gesture = three-right, movetoworkspaceprev\n",
+        );
+
+        assert_eq!(cfg.gestures.len(), 8);
+        assert_eq!(cfg.gesture_mask(), 0xff00);
+        assert!(matches!(
+            cfg.gestures[0].action,
+            Action::MoveWindow(Direction::Up)
+        ));
+        assert!(matches!(cfg.gestures[4].action, Action::Close));
+        assert!(matches!(
+            cfg.gestures[6].action,
+            Action::MoveToWorkspaceNext
+        ));
+        assert!(matches!(
+            cfg.gestures[7].action,
+            Action::MoveToWorkspacePrevious
         ));
     }
 

@@ -50,6 +50,20 @@ menu. An upward swipe that travels at least 70 logical pixels and reaches the
 top edge closes it. These are the `top-down` and `to-top` triggers; the profile
 maps them to a duplicate-safe Fuzzel launch and a targeted Fuzzel termination.
 
+Window management is available directly on the central application surface:
+
+- Swipe with two fingers in any direction to swap the focused tiled window
+  with its spatial neighbor in that direction.
+- Swipe up or down with three fingers to close the focused window.
+- Swipe left with three fingers to send the focused window to the next
+  workspace; swipe right to send it to the previous workspace. The workspace
+  ring wraps at either end, and the display stays on its current workspace.
+
+The first finger initially remains application input. When the second finger
+arrives, 0xin cancels that client touch sequence and owns the multi-finger
+gesture. All participating fingers must move in the chosen direction, which
+avoids triggering from a stationary second or third tap.
+
 These meanings come from the profile's `gesture = TRIGGER, ACTION` mappings,
 not hardcoded phone policy. The same `workspacenext`, `workspaceprev`, and
 virtual-keyboard actions can be assigned to ordinary `bind =` keyboard chords

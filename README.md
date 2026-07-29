@@ -169,6 +169,15 @@ gesture = top-left, spawn, brightnessctl set 5%-
 gesture = top-down, spawn, pgrep -x fuzzel >/dev/null || fuzzel
 gesture = to-top, spawn, pkill -x fuzzel
 
+gesture = two-up, movewindow, u
+gesture = two-down, movewindow, d
+gesture = two-left, movewindow, l
+gesture = two-right, movewindow, r
+gesture = three-up, close
+gesture = three-down, close
+gesture = three-left, movetoworkspacenext
+gesture = three-right, movetoworkspaceprev
+
 # The same actions are available on non-touch devices.
 bind = MOD, bracketleft, workspaceprev
 bind = MOD, bracketright, workspacenext

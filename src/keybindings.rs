@@ -283,6 +283,18 @@ pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
         Action::ToggleFloating => {}
         Action::Workspace(ws) => switch_workspace(server, ws),
         Action::MoveToWorkspace(ws) => move_to_workspace(server, ws),
+        Action::MoveToWorkspaceNext if n > 0 => {
+            let current = active_workspace(server);
+            move_to_workspace(server, (current + 1) % server.workspaces.len());
+        }
+        Action::MoveToWorkspacePrevious if n > 0 => {
+            let current = active_workspace(server);
+            move_to_workspace(
+                server,
+                (current + server.workspaces.len() - 1) % server.workspaces.len(),
+            );
+        }
+        Action::MoveToWorkspaceNext | Action::MoveToWorkspacePrevious => {}
         Action::WorkspaceNext if !server.outputs.is_empty() => {
             let current = active_workspace(server);
             let count = server.workspaces.len() as i32;

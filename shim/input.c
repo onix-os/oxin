@@ -1,4 +1,5 @@
 #define WLR_USE_UNSTABLE
+#include <math.h>
 #include <stdlib.h>
 #include <xkbcommon/xkbcommon.h>
 #include <wlr/backend.h>
@@ -176,6 +177,16 @@ struct oxide_pointer {
     int keyboard_height;
     oxide_gesture_callback gesture_callback;
     void *gesture_userdata;
+    // Touchscreen multi-finger gesture, promoted from ordinary client touch
+    // when a second configured finger arrives.
+    bool multi_active;
+    bool multi_fired;
+    int multi_count;
+    int multi_active_count;
+    int32_t multi_ids[3];
+    bool multi_down[3];
+    double multi_start_x[3], multi_start_y[3];
+    double multi_x[3], multi_y[3];
 };
 
 struct oxide_touch_point {
@@ -184,7 +195,7 @@ struct oxide_touch_point {
     struct wlr_seat_client *client;
     struct wlr_touch *touch;
     // 0 = client touch, 1 = keyboard handle, 2 = workspace edge,
-    // 3 = horizontal top-edge gesture.
+    // 3 = top-edge gesture, 4 = bare-background multi-finger candidate.
     int gesture_kind;
     bool gesture_fired;
     bool gesture_candidate;
@@ -417,6 +428,119 @@ static void touch_cancel_client(struct oxide_pointer *p,
     }
 }
 
+static bool multi_gestures_enabled(struct oxide_pointer *p) {
+    return (p->gesture_mask & 0xff00u) != 0;
+}
+
+static int multi_index(struct oxide_pointer *p, int32_t touch_id) {
+    for (int i = 0; i < p->multi_count; i++) {
+        if (p->multi_down[i] && p->multi_ids[i] == touch_id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void multi_reset(struct oxide_pointer *p) {
+    p->multi_active = false;
+    p->multi_fired = false;
+    p->multi_count = 0;
+    p->multi_active_count = 0;
+}
+
+static void multi_add(struct oxide_pointer *p, int32_t touch_id,
+        double lx, double ly) {
+    if (p->multi_count >= 3) {
+        return;
+    }
+    int i = p->multi_count++;
+    p->multi_ids[i] = touch_id;
+    p->multi_down[i] = true;
+    p->multi_start_x[i] = p->multi_x[i] = lx;
+    p->multi_start_y[i] = p->multi_y[i] = ly;
+    p->multi_active_count++;
+}
+
+static void multi_begin(struct oxide_pointer *p,
+        struct oxide_touch_point *first, int32_t second_id,
+        double second_lx, double second_ly) {
+    int32_t first_id = first->touch_id;
+    double first_lx = first->start_lx;
+    double first_ly = first->start_ly;
+    struct wlr_seat_client *client = first->client;
+
+    // The application saw the first finger. Once a second finger makes this a
+    // compositor gesture, cancel that client sequence before consuming it.
+    if (client != NULL) {
+        touch_cancel_client(p, client);
+    } else {
+        wl_list_remove(&first->link);
+        free(first);
+    }
+
+    multi_reset(p);
+    p->multi_active = true;
+    multi_add(p, first_id, first_lx, first_ly);
+    multi_add(p, second_id, second_lx, second_ly);
+}
+
+static void multi_motion(struct oxide_pointer *p, int32_t touch_id,
+        double lx, double ly) {
+    int changed = multi_index(p, touch_id);
+    if (changed < 0) {
+        return;
+    }
+    p->multi_x[changed] = lx;
+    p->multi_y[changed] = ly;
+    if (p->multi_fired || p->multi_active_count != p->multi_count
+            || (p->multi_count != 2 && p->multi_count != 3)) {
+        return;
+    }
+
+    double dx = 0, dy = 0;
+    for (int i = 0; i < p->multi_count; i++) {
+        dx += p->multi_x[i] - p->multi_start_x[i];
+        dy += p->multi_y[i] - p->multi_start_y[i];
+    }
+    dx /= p->multi_count;
+    dy /= p->multi_count;
+
+    int direction;
+    double distance;
+    if (fabs(dx) > fabs(dy)) {
+        direction = dx < 0 ? 2 : 3; // left, right
+        distance = fabs(dx);
+    } else {
+        direction = dy < 0 ? 0 : 1; // up, down
+        distance = fabs(dy);
+    }
+    if (distance < 70) {
+        return;
+    }
+
+    // Require every finger to participate in the centroid direction. This
+    // avoids treating one moving finger plus one stationary tap as a swipe.
+    for (int i = 0; i < p->multi_count; i++) {
+        double finger_dx = p->multi_x[i] - p->multi_start_x[i];
+        double finger_dy = p->multi_y[i] - p->multi_start_y[i];
+        double projected = direction == 0 ? -finger_dy
+                : direction == 1 ? finger_dy
+                : direction == 2 ? -finger_dx : finger_dx;
+        if (projected < 35) {
+            return;
+        }
+    }
+
+    uint32_t trigger = (p->multi_count == 2 ? 8 : 12) + direction;
+    if ((p->gesture_mask & (1u << trigger)) == 0) {
+        return;
+    }
+    p->multi_fired = true;
+    if (p->gesture_callback != NULL) {
+        p->gesture_callback(p->gesture_userdata, trigger);
+    }
+}
+
 static void handle_touch_down(void *userdata, void *data) {
     struct oxide_pointer *p = userdata;
     struct wlr_touch_down_event *e = data;
@@ -428,6 +552,25 @@ static void handle_touch_down(void *userdata, void *data) {
     double lx, ly, sx, sy;
     wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
             e->x, e->y, &lx, &ly);
+    if (p->multi_active) {
+        multi_add(p, e->touch_id, lx, ly);
+        return;
+    }
+    if (multi_gestures_enabled(p)) {
+        struct oxide_touch_point *candidate = NULL;
+        int candidates = 0;
+        struct oxide_touch_point *existing;
+        wl_list_for_each(existing, &p->touch_points, link) {
+            if (existing->gesture_kind == 0 || existing->gesture_kind == 4) {
+                candidate = existing;
+                candidates++;
+            }
+        }
+        if (candidates == 1) {
+            multi_begin(p, candidate, e->touch_id, lx, ly);
+            return;
+        }
+    }
     if (keyboard_gesture_hit(p, lx, ly)) {
         struct oxide_touch_point *point = calloc(1, sizeof(*point));
         point->touch_id = e->touch_id;
@@ -463,6 +606,15 @@ static void handle_touch_down(void *userdata, void *data) {
     struct wlr_surface *surface =
             surface_at_coords(p, lx, ly, &sx, &sy);
     if (surface == NULL) {
+        if (multi_gestures_enabled(p)) {
+            struct oxide_touch_point *point = calloc(1, sizeof(*point));
+            point->touch_id = e->touch_id;
+            point->touch = e->touch;
+            point->gesture_kind = 4;
+            point->start_lx = lx;
+            point->start_ly = ly;
+            wl_list_insert(&p->touch_points, &point->link);
+        }
         return;
     }
 
@@ -508,6 +660,13 @@ static void handle_touch_down(void *userdata, void *data) {
 static void handle_touch_motion(void *userdata, void *data) {
     struct oxide_pointer *p = userdata;
     struct wlr_touch_motion_event *e = data;
+    if (p->multi_active && multi_index(p, e->touch_id) >= 0) {
+        double lx, ly;
+        wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
+                e->x, e->y, &lx, &ly);
+        multi_motion(p, e->touch_id, lx, ly);
+        return;
+    }
     struct oxide_touch_point *point = touch_point_find(p, e->touch_id);
     if (point == NULL) {
         return;
@@ -593,6 +752,17 @@ static void handle_touch_motion(void *userdata, void *data) {
 static void handle_touch_up(void *userdata, void *data) {
     struct oxide_pointer *p = userdata;
     struct wlr_touch_up_event *e = data;
+    if (p->multi_active) {
+        int i = multi_index(p, e->touch_id);
+        if (i >= 0) {
+            p->multi_down[i] = false;
+            p->multi_active_count--;
+            if (p->multi_active_count == 0) {
+                multi_reset(p);
+            }
+            return;
+        }
+    }
     struct oxide_touch_point *point = touch_point_find(p, e->touch_id);
     if (point == NULL) {
         return;
@@ -607,6 +777,10 @@ static void handle_touch_up(void *userdata, void *data) {
 static void handle_touch_cancel(void *userdata, void *data) {
     struct oxide_pointer *p = userdata;
     struct wlr_touch_cancel_event *e = data;
+    if (p->multi_active && multi_index(p, e->touch_id) >= 0) {
+        multi_reset(p);
+        return;
+    }
     struct wlr_touch_point *seat_point =
             wlr_seat_touch_get_point(p->seat, e->touch_id);
     if (seat_point == NULL) {
@@ -631,6 +805,9 @@ static void handle_touch_device_destroy(void *userdata, void *data) {
     (void)data;
     struct oxide_touch_device *td = userdata;
     struct oxide_pointer *p = td->pointer;
+    // A group can span only the currently attached touchscreen in practice;
+    // abandon it if that device disappears mid-gesture.
+    multi_reset(p);
 
     // Device destruction is allowed without a preceding cancel (notably while
     // a session is paused). Cancel each affected client once; canceling a

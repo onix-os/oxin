@@ -41,6 +41,8 @@ The action parser and dispatcher add:
 
 - `workspacenext`
 - `workspaceprev`
+- `movetoworkspacenext`
+- `movetoworkspaceprev`
 - `keyboardshow`
 - `keyboardhide`
 - `keyboardtoggle`

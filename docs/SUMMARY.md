@@ -28,3 +28,4 @@
 - [Stage 15 — Edge Workspace Gestures](phases/stage-15-edge-workspace-gestures.md)
 - [Stage 16 — Unified Input Mappings](phases/stage-16-unified-input-mappings.md)
 - [Stage 17 — Top-edge Shell Gestures](phases/stage-17-top-edge-brightness.md)
+- [Stage 18 — Multi-finger Window Gestures](phases/stage-18-multifinger-window-gestures.md)

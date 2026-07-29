@@ -63,6 +63,8 @@ float_size = 60% x 60%
 #   ACTION spawn <cmd> | close | quit | focusnext | focusprev
 #          | movefocus <l|r|u|d> | movewindow <l|r|u|d> | resizewindow <l|r|u|d>
 #          | fullscreen | togglefloating | workspace <n> | movetoworkspace <n>
+#          | workspacenext | workspaceprev
+#          | movetoworkspacenext | movetoworkspaceprev
 #          (n = 1..9)
 
 bind = MOD, Return, spawn, kitty
