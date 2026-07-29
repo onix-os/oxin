@@ -133,6 +133,9 @@ pub struct Config {
     /// Background color of empty workspace area (r, g, b in 0..1).
     pub background: (f32, f32, f32),
     pub binds: Vec<Bind>,
+    /// Shell commands launched once, in declaration order, after the Wayland
+    /// socket is ready on each compositor start.
+    pub exec_once: Vec<String>,
     /// Per-output explicit position/scale (`monitor =` lines); empty means
     /// every output uses auto-placement.
     pub monitors: Vec<MonitorConfig>,
@@ -163,6 +166,7 @@ impl Default for Config {
             first_split_vertical: true,
             background: (0.0, 0.6, 0.6),
             binds: Vec::new(),
+            exec_once: Vec::new(),
             monitors: Vec::new(),
             float_rules: Vec::new(),
             float_size: (60, 60),
@@ -263,6 +267,13 @@ impl Config {
                         warn(n, "empty float rule (want `float = APP_ID`)", raw);
                     } else if !self.float_rules.contains(&app_id) {
                         self.float_rules.push(app_id);
+                    }
+                }
+                "exec_once" => {
+                    if val.is_empty() {
+                        warn(n, "empty exec_once command", raw);
+                    } else {
+                        self.exec_once.push(val.to_string());
                     }
                 }
                 "virtual_keyboard_show" => {
@@ -804,6 +815,21 @@ mod tests {
 
         cfg.parse_scalars("first_split = vertical\n");
         assert!(cfg.first_split_vertical);
+    }
+
+    #[test]
+    fn exec_once_preserves_repeated_commands_in_order() {
+        let mut cfg = Config::default();
+        cfg.parse_scalars(
+            "exec_once = shell-toolkit\n\
+             exec_once = terminal\n\
+             exec_once = virtual-keyboard --hidden\n",
+        );
+
+        assert_eq!(
+            cfg.exec_once,
+            vec!["shell-toolkit", "terminal", "virtual-keyboard --hidden"]
+        );
     }
 
     #[test]

@@ -17,6 +17,13 @@ gap = 10
 # Background color of empty space, as `r g b` floats in 0..1.
 background = 0.0 0.6 0.6
 
+# --- session startup ---------------------------------------------------------
+#
+# Repeated commands run once per 0xin process start, in declaration order,
+# after WAYLAND_DISPLAY is ready. They run independently through a shell.
+# exec_once = patin
+# exec_once = foot
+
 # --- monitors ----------------------------------------------------------------
 #
 # monitor = NAME, XxY[, SCALE]

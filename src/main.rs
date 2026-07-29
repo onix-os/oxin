@@ -227,6 +227,14 @@ fn main() {
         // own backend already connected to the host before this point.)
         env::set_var("WAYLAND_DISPLAY", &socket);
 
+        // Declarative session startup. Commands run separately through the
+        // same shell/client-environment path as configured key and gesture
+        // actions, in the order they appear in 0xin.conf.
+        for command in server.config.exec_once.clone() {
+            println!("0xin: exec_once `{command}`");
+            keybindings::spawn(&command);
+        }
+
         // `cargo nested -- <cmd> [args…]` auto-spawns a test client against us.
         let mut args = env::args().skip(1);
         if let Some(program) = args.next() {

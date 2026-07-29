@@ -5,6 +5,12 @@ with Foot and a gesture-controlled wvkbd, without a bar, text-input-driven
 automatic keyboard activation, or autologin. Phosh and Hyprland remain separate
 sessions.
 
+The wrapper now starts only 0xin. Session clients are declared in the profile's
+`config/0xin/0xin.conf` with repeated `exec_once` lines: Patin, Foot, and
+wvkbd. Each is launched once per compositor process after `WAYLAND_DISPLAY` is
+ready. Edit those lines to change the shell/session composition without
+rewriting the session wrapper.
+
 Build 0xin in `~/Projects/0xin`, then install the chooser entry:
 
 ```sh

@@ -140,6 +140,10 @@ modifier   = super
 gap        = 10
 background = 0.0 0.6 0.6
 
+# Commands are repeatable and launch once per compositor start.
+exec_once = patin
+exec_once = foot
+
 bind = MOD, Return, spawn, kitty
 bind = MOD, Q, close
 bind = MOD SHIFT, Q, quit

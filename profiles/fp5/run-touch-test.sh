@@ -13,7 +13,4 @@ export WLR_BACKENDS=drm,libinput
 export LIBSEAT_BACKEND=logind
 export LD_LIBRARY_PATH="$repo_dir/.sysroot/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-exec "$repo_dir/target/debug/0xin" sh -c '
-    foot &
-    exec wvkbd-mobintl --hidden --no-popup -H 300 -L 200
-'
+exec "$repo_dir/target/debug/0xin"

@@ -117,7 +117,7 @@ unsafe fn nudge_floating(server: &mut Server, tl: *mut Toplevel, dir: Direction)
 /// through a shell (like Hyprland's `exec`) so `~`, env vars, `&&`, and quoting
 /// in bind commands work as expected — a plain `execvp` doesn't expand any of
 /// that.
-fn spawn(cmd: &str) {
+pub(crate) fn spawn(cmd: &str) {
     let mut command = Command::new("sh");
     command.arg("-c").arg(cmd);
     reset_signals(&mut command);
