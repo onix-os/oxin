@@ -283,5 +283,6 @@ void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
         struct wlr_output_layout *layout, uint32_t enabled_mask,
         int keyboard_height, oxide_gesture_callback callback, void *userdata);
 void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor, bool visible);
+void oxide_cursor_set_keyboard_height(struct wlr_cursor *cursor, int height);
 
 #endif // OXIN_SHIM_H

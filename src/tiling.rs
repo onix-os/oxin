@@ -216,6 +216,23 @@ pub(crate) unsafe fn arrange_layers(server: &mut Server, output_idx: usize) {
 
     let o = &mut server.outputs[output_idx];
     (o.ux, o.uy, o.uw, o.uh) = (ux, uy, uw, uh);
+    // Once the keyboard's layer surface has mapped, its exclusive zone gives
+    // us the real boundary. Replace the startup height estimate so the handle
+    // and recognizer follow the actual scaled surface on every device.
+    if server.keyboard_visible {
+        let usable_bottom = uy + uh;
+        let reserved_bottom = fy + fh - usable_bottom;
+        if reserved_bottom > 0 {
+            oxide_cursor_set_keyboard_height(server.cursor, reserved_bottom);
+            if !o.gesture_handle.is_null() {
+                oxide_scene_rect_set_position(
+                    o.gesture_handle,
+                    o.x + (o.w - 120) / 2,
+                    usable_bottom - 8,
+                );
+            }
+        }
+    }
 }
 
 /// The output the cursor is currently on (the target for new windows and

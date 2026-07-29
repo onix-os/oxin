@@ -351,15 +351,19 @@ static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) 
     struct wlr_box box;
     wlr_output_layout_get_box(p->output_layout, output, &box);
     double center_x = box.x + box.width / 2.0;
-    double handle_y = box.y + box.height
-            - (p->keyboard_visible ? p->keyboard_height + 8 : 10);
-    // Keep the hidden handle easy to acquire at the physical screen edge.
-    // Once the keyboard is visible, constrain capture closely around the pill
-    // just above it so nearby keys remain native wvkbd touch targets.
-    double half_width = p->keyboard_visible ? 70 : 100;
-    double half_height = p->keyboard_visible ? 18 : 45;
-    return lx >= center_x - half_width && lx <= center_x + half_width
-            && ly >= handle_y - half_height && ly <= handle_y + half_height;
+    if (p->keyboard_visible) {
+        double keyboard_top = box.y + box.height - p->keyboard_height;
+        // Make the close gesture easy to acquire, but keep its complete start
+        // region above wvkbd. The downward sequence remains ours after crossing
+        // into the keyboard; no keyboard button loses its touch-down.
+        return lx >= center_x - 110 && lx <= center_x + 110
+                && ly >= keyboard_top - 56 && ly < keyboard_top;
+    }
+    // The hidden handle sits at the physical bottom edge and needs a larger
+    // upward-only acquisition target.
+    double handle_y = box.y + box.height - 10;
+    return lx >= center_x - 100 && lx <= center_x + 100
+            && ly >= handle_y - 45 && ly <= handle_y + 45;
 }
 
 static int workspace_gesture_edge(struct oxide_pointer *p,
@@ -375,6 +379,13 @@ static int workspace_gesture_edge(struct oxide_pointer *p,
     }
     struct wlr_box box;
     wlr_output_layout_get_box(p->output_layout, output, &box);
+    // The virtual keyboard owns its full surface, including edge-column keys
+    // such as Tab, Backspace, P, and Return. Keep workspace-edge policy above
+    // it while visible instead of stealing those touches.
+    if (p->keyboard_visible
+            && ly >= box.y + box.height - p->keyboard_height) {
+        return 0;
+    }
     if (lx <= box.x + 28 && (p->gesture_mask & (1u << 2)) != 0) {
         return -1;
     }
@@ -659,6 +670,13 @@ void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor,
         bool visible) {
     struct oxide_pointer *p = cursor->data;
     p->keyboard_visible = visible;
+}
+
+void oxide_cursor_set_keyboard_height(struct wlr_cursor *cursor, int height) {
+    struct oxide_pointer *p = cursor->data;
+    if (height > 0) {
+        p->keyboard_height = height;
+    }
 }
 
 void oxide_handle_new_input(struct wlr_seat *seat, struct wlr_cursor *cursor,

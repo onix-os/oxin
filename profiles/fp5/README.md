@@ -30,13 +30,15 @@ sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
 The thin pill at the bottom is a compositor-owned gesture handle. Swipe upward
 from it to show wvkbd. While wvkbd is visible the handle moves just above its
 top edge; swipe downward from there to hide it. Its close target stays tightly
-around the pill so it does not cover keyboard buttons. Touches that begin
-outside the handle target continue to applications unchanged.
+above the keyboard around the pill, so it is easy to acquire without covering
+keyboard buttons. Touches that begin outside the handle target continue to
+applications unchanged.
 
 Swipe inward from the left edge for the previous workspace or from the right
 edge for the next workspace. The nine-workspace ring wraps at either end.
 Touches must begin within the narrow edge activation strip; horizontal gestures
-started elsewhere remain application input.
+started elsewhere remain application input. When wvkbd is visible, these strips
+stop at its top edge so the keyboard's left- and right-edge keys remain usable.
 
 These meanings come from the profile's `gesture = TRIGGER, ACTION` mappings,
 not hardcoded phone policy. The same `workspacenext`, `workspaceprev`, and

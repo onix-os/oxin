@@ -28,6 +28,10 @@ Only triggers present in `gesture =` lines are enabled in the C recognizer.
 Consequently an unconfigured desktop touchscreen loses no input to compositor
 gesture policy.
 
+Recognizer regions also respect active input surfaces: when the configured
+virtual keyboard is visible, workspace edge triggers are limited to the area
+above it so edge keys remain normal client input.
+
 Each trigger has at most one mapping. A later line for the same trigger
 replaces the earlier line, matching keyboard chord override semantics.
 
@@ -74,6 +78,12 @@ The show/hide/toggle actions run those commands and update compositor keyboard
 visibility, recognizer state, and handle position. Missing commands make the
 corresponding action a logged no-op. A convertible or desktop setup may bind
 `keyboardtoggle` to a key; the FP5 maps explicit show/hide gestures.
+
+`virtual_keyboard_height` is only a startup fallback. After the keyboard's
+layer surface maps, 0xin derives its real top edge from the bottom exclusive
+zone already computed by layer-shell arrangement. The handle and recognizer
+therefore follow the actual scaled surface rather than relying on a
+device-specific pixel conversion.
 
 The controller commands are intentionally generic. The current FP5 profile
 uses wvkbd signals, while a future input-method implementation can replace the

@@ -24,9 +24,11 @@ policy.
 
 When the keyboard is hidden the handle sits at the bottom edge. After a show
 gesture it moves just above the configured keyboard top edge, so the close
-gesture is physically possible without covering keyboard buttons. The visible
-keyboard target is deliberately constrained to 140 by 36 logical pixels around
-the pill; the hidden bottom-edge target remains larger for easy acquisition.
+gesture is physically possible without covering keyboard buttons. The close
+target is a centered 220-by-56-logical-pixel strip entirely above the keyboard:
+the downward sequence remains compositor-owned after crossing the boundary,
+but no keyboard button loses its touch-down. The hidden bottom-edge target
+remains larger for easy acquisition.
 
 ## Keyboard control
 
@@ -49,9 +51,10 @@ protocol while hidden, avoiding protocol and startup latency on every gesture.
 The height is in logical output pixels and must match the keyboard surface's
 scaled portrait height. A client configured in buffer pixels needs conversion:
 the FP5 uses `-H 300` at output scale 2.4, so its configured logical height is
-125. Desktop configurations omit the gesture mappings, so they get no handle
-and no intercepted edge touches; they can still bind the keyboard actions to
-physical keys.
+125 as a startup fallback. Once the layer surface maps, Stage 16 replaces this
+estimate with the actual bottom exclusive zone. Desktop configurations omit
+the gesture mappings, so they get no handle and no intercepted edge touches;
+they can still bind the keyboard actions to physical keys.
 
 ## FP5 reference profile
 

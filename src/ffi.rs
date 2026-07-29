@@ -215,6 +215,7 @@ extern "C" {
         userdata: *mut c_void,
     );
     pub(crate) fn oxide_cursor_set_keyboard_visible(cursor: *mut wlr::wlr_cursor, visible: bool);
+    pub(crate) fn oxide_cursor_set_keyboard_height(cursor: *mut wlr::wlr_cursor, height: i32);
     pub(crate) fn oxide_xdg_toplevel_surface(
         toplevel: *mut wlr::wlr_xdg_toplevel,
     ) -> *mut c_void;

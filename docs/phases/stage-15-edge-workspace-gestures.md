@@ -23,6 +23,11 @@ carousels, and Firefox gestures that begin elsewhere continue through native
 Wayland touch unchanged. The keyboard handle is checked first, so its bottom
 gesture remains available independently.
 
+While the virtual keyboard is visible, the side-edge strips stop at its top
+edge. The keyboard owns its entire surface, including edge-column keys such as
+Tab, Backspace, P, and Return; workspace swipes remain available in the
+application area above it.
+
 ## Workspace behavior
 
 The gesture calls the same workspace-switching function as keyboard bindings.
