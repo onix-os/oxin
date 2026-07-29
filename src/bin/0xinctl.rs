@@ -12,7 +12,7 @@ fn socket_path() -> Result<PathBuf, String> {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: 0xinctl wallpaper PATH\n       0xinctl wallpaper clear");
+    eprintln!("usage: 0xinctl quit\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear");
     std::process::exit(2);
 }
 
@@ -21,17 +21,13 @@ fn main() {
     let Some(command) = args.next() else {
         usage();
     };
-    let Some(argument) = args.next() else {
-        usage();
-    };
-    if args.next().is_some() || command != "wallpaper" {
-        usage();
-    }
-
-    let request = if argument == "clear" {
-        "wallpaper clear\n".to_string()
-    } else {
-        format!("wallpaper {argument}\n")
+    let request = match (command.as_str(), args.next(), args.next()) {
+        ("quit", None, None) => "quit\n".to_string(),
+        ("wallpaper", Some(argument), None) if argument == "clear" => {
+            "wallpaper clear\n".to_string()
+        }
+        ("wallpaper", Some(argument), None) => format!("wallpaper {argument}\n"),
+        _ => usage(),
     };
     let path = socket_path().unwrap_or_else(|error| {
         eprintln!("0xinctl: {error}");

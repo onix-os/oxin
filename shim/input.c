@@ -47,10 +47,11 @@ static void handle_key(void *userdata, void *data) {
     struct oxide_keyboard *kb = userdata;
     struct wlr_keyboard_key_event *event = data;
 
-    // Offer the press to Rust as a possible keybinding first. wlroots keycodes
+    // Offer the event to Rust as a possible keybinding first. Releases matter
+    // for long-press cancellation. wlroots keycodes
     // are offset by 8 from xkb keycodes.
     bool handled = false;
-    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && kb->key_callback != NULL) {
+    if (kb->key_callback != NULL) {
         uint32_t keycode = event->keycode + 8;
         // Match bindings on the layout level-0 (unshifted) keysym, so e.g.
         // Mod+Shift+1 reads as '1' (+Shift modifier), not the shifted '!'.
@@ -61,7 +62,8 @@ static void handle_key(void *userdata, void *data) {
                 keycode, layout, 0, &syms);
         uint32_t modifiers = wlr_keyboard_get_modifiers(kb->keyboard);
         for (int i = 0; i < nsyms; i++) {
-            if (kb->key_callback(kb->key_userdata, syms[i], modifiers)) {
+            bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
+            if (kb->key_callback(kb->key_userdata, syms[i], modifiers, pressed)) {
                 handled = true;
             }
         }

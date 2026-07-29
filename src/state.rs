@@ -1,5 +1,6 @@
 //! Long-lived compositor state: the structs shared across every module.
 
+use crate::config::Action;
 use crate::config::Config;
 use crate::ffi::ShimListener;
 use crate::layout::Node;
@@ -63,6 +64,11 @@ pub(crate) struct Server {
     pub(crate) outputs: Vec<Output>,
     /// User configuration: modifier, gap, background, keybindings.
     pub(crate) config: Config,
+    pub(crate) event_loop: *mut wlr::wl_event_loop,
+    pub(crate) hold_source: *mut c_void,
+    pub(crate) held_keysym: u32,
+    pub(crate) held_modifiers: u32,
+    pub(crate) held_action: Option<Action>,
     /// Nonblocking local IPC endpoint used by 0xinctl.
     pub(crate) control_listener: Option<UnixListener>,
     pub(crate) control_path: Option<PathBuf>,

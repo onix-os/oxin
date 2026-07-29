@@ -32,3 +32,4 @@
 - [Stage 19 — Declarative Session Startup](phases/stage-19-declarative-session-startup.md)
 - [Stage 20 — Internal Wallpaper Control](phases/stage-20-internal-wallpaper.md)
 - [Stage 21 — Application Window Opacity](phases/stage-21-window-opacity.md)
+- [Stage 22 — Hold Bindings & Session Exit](phases/stage-22-hold-bindings-session-exit.md)

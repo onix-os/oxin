@@ -83,6 +83,14 @@ pub struct Bind {
     pub action: Action,
 }
 
+#[derive(Clone)]
+pub struct HoldBind {
+    pub mods: u32,
+    pub keysym: u32,
+    pub duration_ms: i32,
+    pub action: Action,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum GestureTrigger {
@@ -137,6 +145,7 @@ pub struct Config {
     /// Opacity applied to application toplevel buffers (1.0 = fully opaque).
     pub window_opacity: f32,
     pub binds: Vec<Bind>,
+    pub hold_binds: Vec<HoldBind>,
     /// Shell commands launched once, in declaration order, after the Wayland
     /// socket is ready on each compositor start.
     pub exec_once: Vec<String>,
@@ -172,6 +181,7 @@ impl Default for Config {
             wallpaper: None,
             window_opacity: 1.0,
             binds: Vec::new(),
+            hold_binds: Vec::new(),
             exec_once: Vec::new(),
             monitors: Vec::new(),
             float_rules: Vec::new(),
@@ -216,6 +226,7 @@ impl Config {
         cfg.binds = default_binds(cfg.modifier);
         if let Some(text) = &contents {
             cfg.apply_binds(text);
+            cfg.apply_hold_binds(text);
             cfg.apply_gestures(text);
         }
 
@@ -316,7 +327,7 @@ impl Config {
                         raw,
                     ),
                 },
-                "bind" | "gesture" => {} // handled in their second passes
+                "bind" | "hold" | "gesture" => {} // handled in their second passes
                 _ => warn(n, "unknown setting", raw),
             }
         }
@@ -360,6 +371,47 @@ impl Config {
             mods,
             keysym,
             action,
+        })
+    }
+
+    fn apply_hold_binds(&mut self, text: &str) {
+        for (n, raw) in lines(text) {
+            let Some((key, val)) = split_kv(raw) else {
+                continue;
+            };
+            if key != "hold" {
+                continue;
+            }
+            let Some(binding) = self.parse_hold_bind(val) else {
+                warn(n, "invalid hold bind", raw);
+                continue;
+            };
+            match self
+                .hold_binds
+                .iter_mut()
+                .find(|item| item.mods == binding.mods && item.keysym == binding.keysym)
+            {
+                Some(existing) => *existing = binding,
+                None => self.hold_binds.push(binding),
+            }
+        }
+    }
+
+    fn parse_hold_bind(&self, val: &str) -> Option<HoldBind> {
+        let mut parts = val.splitn(5, ',');
+        let mods = parse_mods(parts.next()?.trim(), self.modifier)?;
+        let keysym = keysym_from_name(parts.next()?.trim())?;
+        let duration_ms = parts.next()?.trim().parse::<i32>().ok()?;
+        if !(100..=60_000).contains(&duration_ms) {
+            return None;
+        }
+        let action_name = parts.next()?.trim();
+        let arg = parts.next().map(str::trim);
+        Some(HoldBind {
+            mods,
+            keysym,
+            duration_ms,
+            action: parse_action(action_name, arg)?,
         })
     }
 
@@ -863,6 +915,19 @@ mod tests {
 
         cfg.parse_scalars("window_opacity = 1.1\nwindow_opacity = nope\n");
         assert_eq!(cfg.window_opacity, 0.8);
+    }
+
+    #[test]
+    fn hold_bind_parses_duration_and_action() {
+        let mut cfg = Config::default();
+        cfg.apply_hold_binds(
+            "hold = , XF86PowerOff, 2000, spawn, session-menu\n\
+             hold = MOD, q, 99, quit\n",
+        );
+        assert_eq!(cfg.hold_binds.len(), 1);
+        let binding = &cfg.hold_binds[0];
+        assert_eq!(binding.duration_ms, 2000);
+        assert!(matches!(&binding.action, Action::Spawn(cmd) if cmd == "session-menu"));
     }
 
     #[test]

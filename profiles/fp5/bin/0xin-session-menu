@@ -1,0 +1,12 @@
+#!/bin/sh
+
+choice=$(
+    printf '%s\n' "Log out to Phrog" "Cancel" |
+        fuzzel --dmenu --prompt "Session: "
+)
+
+case "$choice" in
+    "Log out to Phrog")
+        "$HOME/.local/bin/0xinctl" quit
+        ;;
+esac

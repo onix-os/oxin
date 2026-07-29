@@ -76,8 +76,12 @@ unsafe extern "C" fn handle_readable(userdata: *mut c_void, _data: *mut c_void) 
 }
 
 unsafe fn dispatch(server: &mut Server, request: &str) -> String {
+    if request == "quit" {
+        wlr::wl_display_terminate(server.display);
+        return "ok\n".into();
+    }
     let Some(argument) = request.strip_prefix("wallpaper ") else {
-        return "error expected `wallpaper PATH` or `wallpaper clear`\n".into();
+        return "error expected `quit`, `wallpaper PATH`, or `wallpaper clear`\n".into();
     };
     let result = if argument == "clear" {
         wallpaper::set(server, None)

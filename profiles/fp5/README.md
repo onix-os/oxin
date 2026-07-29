@@ -73,6 +73,23 @@ entry when it is no longer needed:
 sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
 ```
 
+## Power button and logout
+
+Holding the power button for two seconds opens the profile's fuzzel session
+menu. Choosing **Log out to Phrog** calls `0xinctl quit`, which terminates the
+Wayland display cleanly and lets the session wrapper return to greetd.
+
+Install the profile helper and current control client:
+
+```sh
+install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-session-menu ~/.local/bin/
+install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
+```
+
+A shorter power-button press is consumed but intentionally does nothing yet.
+It is reserved for screen locking once 0xin has a secure lock protocol and
+lock-surface implementation; merely hiding windows is not a secure lock.
+
 Swipe upward from the bottom-center gesture area to show wvkbd. The FP5 profile
 sets `gesture_handle = hidden`, so this target has no visible pill. To hide
 wvkbd, make a deliberate downward swipe on the keyboard that reaches the

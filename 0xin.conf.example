@@ -72,6 +72,13 @@ float_size = 60% x 60%
 
 # --- keybindings -----------------------------------------------------------
 #
+# A normal `bind` acts immediately when the key is pressed:
+# bind = MODS, KEY, ACTION[, ARG]
+#
+# A `hold` acts only after the key remains down for the requested milliseconds.
+# Releasing it earlier cancels the action:
+# hold = , XF86PowerOff, 2000, spawn, session-menu
+#
 # bind = MODS, KEY, ACTION[, ARG]
 #   MODS   space/`+` separated: MOD (=primary), SUPER, ALT, SHIFT, CTRL
 #   KEY    an xkb key name: Return, Q, 1, space, F1, ... (case-insensitive)

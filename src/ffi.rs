@@ -9,8 +9,8 @@ use std::os::raw::{c_char, c_void};
 /// Type of the callbacks our C shim invokes: (userdata, signal-data).
 pub(crate) type ShimCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 
-/// Keybinding callback: (userdata, keysym, modifiers) -> was it consumed?
-pub(crate) type KeyCallback = unsafe extern "C" fn(*mut c_void, u32, u32) -> bool;
+/// Keybinding callback: (userdata, keysym, modifiers, pressed) -> consumed?
+pub(crate) type KeyCallback = unsafe extern "C" fn(*mut c_void, u32, u32, bool) -> bool;
 
 /// Pointer-grab button callback: (userdata, clicked root wlr_surface — NULL
 /// on release, button, modifiers, pressed, cursor x, cursor y) -> did a grab
@@ -44,6 +44,13 @@ extern "C" {
         callback: ShimCallback,
         userdata: *mut c_void,
     ) -> *mut c_void;
+    pub(crate) fn oxide_event_loop_add_timer(
+        loop_: *mut wlr::wl_event_loop,
+        delay_ms: i32,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut c_void;
+    pub(crate) fn oxide_event_source_remove(source: *mut c_void);
     pub(crate) fn oxide_reset_child_signals();
     pub(crate) fn oxide_virtual_keyboard_setup(
         display: *mut wlr::wl_display,

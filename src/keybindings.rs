@@ -188,9 +188,54 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
     userdata: *mut c_void,
     keysym: u32,
     modifiers: u32,
+    pressed: bool,
 ) -> bool {
     let server = &mut *(userdata as *mut Server);
     let mods = modifiers & MOD_MASK;
+
+    if server.held_keysym == keysym && server.held_modifiers == mods {
+        if !pressed {
+            cancel_hold(server);
+        }
+        return true;
+    }
+
+    if let Some(binding) = server
+        .config
+        .hold_binds
+        .iter()
+        .find(|binding| binding.mods == mods && binding.keysym == keysym)
+        .cloned()
+    {
+        if pressed {
+            cancel_hold(server);
+            server.held_keysym = keysym;
+            server.held_modifiers = mods;
+            server.held_action = Some(binding.action);
+            server.hold_source = oxide_event_loop_add_timer(
+                server.event_loop,
+                binding.duration_ms,
+                handle_hold_timer,
+                userdata,
+            );
+            if server.hold_source.is_null() {
+                eprintln!("0xin: failed to arm hold binding timer");
+                cancel_hold(server);
+            }
+        }
+        return true;
+    }
+
+    // Ordinary bindings act only on press, but consume their release too so a
+    // client never receives a release for a press handled by the compositor.
+    let is_regular_bind = server
+        .config
+        .binds
+        .iter()
+        .any(|binding| binding.mods == mods && binding.keysym == keysym);
+    if !pressed {
+        return is_regular_bind;
+    }
 
     // VT switching (Ctrl+Alt+F1..F12). Handled before config binds and always
     // consumed; the shim no-ops it when there's no session (nested).
@@ -211,6 +256,28 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
 
     dispatch_action(server, action);
     true
+}
+
+unsafe extern "C" fn handle_hold_timer(userdata: *mut c_void, source: *mut c_void) {
+    let server = &mut *(userdata as *mut Server);
+    if server.hold_source != source {
+        return;
+    }
+    server.hold_source = std::ptr::null_mut();
+    oxide_event_source_remove(source);
+    if let Some(action) = server.held_action.take() {
+        dispatch_action(server, action);
+    }
+}
+
+unsafe fn cancel_hold(server: &mut Server) {
+    if !server.hold_source.is_null() {
+        oxide_event_source_remove(server.hold_source);
+        server.hold_source = std::ptr::null_mut();
+    }
+    server.held_keysym = 0;
+    server.held_modifiers = 0;
+    server.held_action = None;
 }
 
 /// Execute compositor policy independently of which input produced it.

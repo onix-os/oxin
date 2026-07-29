@@ -152,6 +152,8 @@ bind = MOD, H, movefocus, l
 bind = MOD SHIFT, H, movewindow, l
 bind = MOD, 1, workspace, 1
 bind = MOD SHIFT, 1, movetoworkspace, 1
+# Hold bindings are cancelled when released before their duration.
+hold = , XF86PowerOff, 2000, spawn, session-menu
 
 # monitor = NAME, XxY[, SCALE] — explicit position for a named output
 # (connector name, as logged: "output <name> online..."). Unlisted outputs
@@ -207,6 +209,13 @@ wallpaper without restarting:
 
 Runtime changes last until 0xin exits. Set `wallpaper =` in the config to make
 the selection persistent across sessions.
+
+End the running compositor cleanly (and return to its login/session chooser)
+with:
+
+```sh
+0xinctl quit
+```
 
 Application windows can reveal that background with `window_opacity`, where
 `1.0` is fully opaque (the default) and `0.0` is fully transparent. The value

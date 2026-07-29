@@ -73,6 +73,44 @@ void *oxide_event_loop_add_readable(struct wl_event_loop *loop, int fd,
     return source;
 }
 
+struct oxide_timer_source {
+    oxide_callback callback;
+    void *userdata;
+    struct wl_event_source *source;
+};
+
+static int handle_timer(void *data) {
+    struct oxide_timer_source *timer = data;
+    timer->callback(timer->userdata, timer);
+    return 0;
+}
+
+void *oxide_event_loop_add_timer(struct wl_event_loop *loop, int delay_ms,
+        oxide_callback callback, void *userdata) {
+    struct oxide_timer_source *timer = calloc(1, sizeof(*timer));
+    timer->callback = callback;
+    timer->userdata = userdata;
+    timer->source = wl_event_loop_add_timer(loop, handle_timer, timer);
+    if (timer->source == NULL ||
+            wl_event_source_timer_update(timer->source, delay_ms) < 0) {
+        if (timer->source != NULL) {
+            wl_event_source_remove(timer->source);
+        }
+        free(timer);
+        return NULL;
+    }
+    return timer;
+}
+
+void oxide_event_source_remove(void *source) {
+    struct oxide_timer_source *timer = source;
+    if (timer == NULL) {
+        return;
+    }
+    wl_event_source_remove(timer->source);
+    free(timer);
+}
+
 // Undo the compositor's signal state in a freshly forked child, before exec.
 // Two things leak into clients otherwise, because they survive exec:
 //  - SIG_IGN dispositions (unlike handlers, which exec resets): our ignored

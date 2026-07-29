@@ -33,7 +33,7 @@ typedef void (*oxide_callback)(void *userdata, void *data);
 // Key callback: returns true if the keysym was consumed as a binding (and so
 // must NOT be forwarded to the focused client).
 typedef bool (*oxide_key_callback)(void *userdata, uint32_t keysym,
-        uint32_t modifiers);
+        uint32_t modifiers, bool pressed);
 
 // Pointer-grab callbacks (Mod+drag move/resize of floating windows).
 // Button: called on press (with the clicked root surface, held modifiers and
@@ -62,6 +62,9 @@ void oxide_setup_signals(struct wl_event_loop *loop, struct wl_display *display)
 // Call `callback(userdata, NULL)` whenever fd becomes readable.
 void *oxide_event_loop_add_readable(struct wl_event_loop *loop, int fd,
         oxide_callback callback, void *userdata);
+void *oxide_event_loop_add_timer(struct wl_event_loop *loop, int delay_ms,
+        oxide_callback callback, void *userdata);
+void oxide_event_source_remove(void *source);
 // Reset the compositor's signal state (ignored SIGCHLD, blocked INT/TERM) in
 // a forked child before exec, so clients start with clean signals. Must be
 // called from every spawn path's pre_exec.
