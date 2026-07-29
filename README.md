@@ -152,7 +152,8 @@ bind = MOD, H, movefocus, l
 bind = MOD SHIFT, H, movewindow, l
 bind = MOD, 1, workspace, 1
 bind = MOD SHIFT, 1, movetoworkspace, 1
-# Hold bindings are cancelled when released before their duration.
+# Pairing the same chord gives it distinct short-press and hold actions.
+bind = , XF86PowerOff, spawn, swaylock
 hold = , XF86PowerOff, 2000, spawn, session-menu
 
 # monitor = NAME, XxY[, SCALE] — explicit position for a named output
@@ -216,6 +217,12 @@ with:
 ```sh
 0xinctl quit
 ```
+
+0xin implements `ext-session-lock-v1` for secure lock clients such as
+`swaylock`. Accepting a lock immediately covers every output with an opaque
+compositor fallback and routes input exclusively to the lock client. If that
+client crashes without unlocking, the fallback remains and the desktop stays
+inaccessible.
 
 Application windows can reveal that background with `window_opacity`, where
 `1.0` is fully opaque (the default) and `0.0` is fully transparent. The value

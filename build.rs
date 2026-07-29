@@ -78,6 +78,7 @@ fn main() {
         "shim/output.c",
         "shim/xdg_shell.c",
         "shim/layer_shell.c",
+        "shim/session_lock.c",
         "shim/decoration.c",
         "shim/input.c",
     ];

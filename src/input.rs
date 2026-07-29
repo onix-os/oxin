@@ -22,6 +22,9 @@ const MIN_FLOAT_SIZE: i32 = 50;
 /// keyboard chords use.
 pub(crate) unsafe extern "C" fn handle_gesture(userdata: *mut c_void, raw_trigger: u32) {
     let server = &mut *(userdata as *mut Server);
+    if server.locked {
+        return;
+    }
     let trigger = match raw_trigger {
         0 => GestureTrigger::BottomUp,
         1 => GestureTrigger::BottomDown,
@@ -73,6 +76,9 @@ pub(crate) unsafe extern "C" fn handle_new_input(userdata: *mut c_void, data: *m
 /// matches nothing and changes nothing.
 pub(crate) unsafe extern "C" fn handle_click_focus(userdata: *mut c_void, data: *mut c_void) {
     let server = &mut *(userdata as *mut Server);
+    if server.locked {
+        return;
+    }
     for ws in server.workspaces.iter_mut() {
         let hit = ws
             .windows
@@ -111,6 +117,9 @@ pub(crate) unsafe extern "C" fn handle_grab_button(
     cy: f64,
 ) -> bool {
     let server = &mut *(userdata as *mut Server);
+    if server.locked {
+        return false;
+    }
 
     if !pressed {
         if server.grab == GrabMode::None {
@@ -152,6 +161,9 @@ pub(crate) unsafe extern "C" fn handle_grab_motion(
     cy: f64,
 ) -> bool {
     let server = &mut *(userdata as *mut Server);
+    if server.locked {
+        return false;
+    }
     let tl = server.grab_tl;
     let (dx, dy) = ((cx - server.grab_cx) as i32, (cy - server.grab_cy) as i32);
     match server.grab {

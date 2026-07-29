@@ -33,3 +33,4 @@
 - [Stage 20 — Internal Wallpaper Control](phases/stage-20-internal-wallpaper.md)
 - [Stage 21 — Application Window Opacity](phases/stage-21-window-opacity.md)
 - [Stage 22 — Hold Bindings & Session Exit](phases/stage-22-hold-bindings-session-exit.md)
+- [Stage 23 — Secure Session Lock](phases/stage-23-secure-session-lock.md)

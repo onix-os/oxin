@@ -193,9 +193,28 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
     let server = &mut *(userdata as *mut Server);
     let mods = modifiers & MOD_MASK;
 
+    // The lock client owns all physical and virtual keyboard input. Returning
+    // false forwards the event through the seat instead of executing policy.
+    if server.locked {
+        return false;
+    }
+
     if server.held_keysym == keysym && server.held_modifiers == mods {
         if !pressed {
+            let short_action = if server.held_action.is_some() {
+                server
+                    .config
+                    .binds
+                    .iter()
+                    .find(|binding| binding.mods == mods && binding.keysym == keysym)
+                    .map(|binding| binding.action.clone())
+            } else {
+                None
+            };
             cancel_hold(server);
+            if let Some(action) = short_action {
+                dispatch_action(server, action);
+            }
         }
         return true;
     }

@@ -89,9 +89,19 @@ install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-session-menu ~/.local/bin/
 install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
 ```
 
-A shorter power-button press is consumed but intentionally does nothing yet.
-It is reserved for screen locking once 0xin has a secure lock protocol and
-lock-surface implementation; merely hiding windows is not a secure lock.
+A shorter power-button press remains reserved for locking; reaching the
+two-second hold threshold launches the session menu. 0xin now implements
+`ext-session-lock-v1`, and swaylock can validate it, but swaylock has no touch
+keyboard. The profile therefore leaves its short-power binding commented out:
+enabling it requires a physical keyboard to unlock.
+
+```ini
+# bind = , XF86PowerOff, spawn, pgrep -x swaylock >/dev/null || swaylock
+```
+
+A phone-ready lock client needs its own secure touch authentication UI. An
+ordinary layer-shell wvkbd cannot be placed above the lock surface without
+weakening the lock boundary.
 
 Swipe upward from the bottom-center gesture area to show wvkbd. The FP5 profile
 sets `gesture_handle = hidden`, so this target has no visible pill. To hide

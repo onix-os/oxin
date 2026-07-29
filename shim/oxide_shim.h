@@ -18,6 +18,9 @@ struct wlr_xdg_shell;
 struct wlr_xdg_toplevel;
 struct wlr_layer_shell_v1;
 struct wlr_layer_surface_v1;
+struct wlr_session_lock_manager_v1;
+struct wlr_session_lock_v1;
+struct wlr_session_lock_surface_v1;
 struct wlr_scene_layer_surface_v1;
 struct wlr_xdg_decoration_manager_v1;
 struct wlr_seat;
@@ -299,5 +302,43 @@ void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
         int keyboard_height, oxide_gesture_callback callback, void *userdata);
 void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor, bool visible);
 void oxide_cursor_set_keyboard_height(struct wlr_cursor *cursor, int height);
+// Disable compositor gestures and cancel active touch sequences while locked;
+// restore the configured gesture mask when unlocked.
+void oxide_cursor_set_locked(struct wlr_cursor *cursor, bool locked);
+
+// --- ext-session-lock-v1 ---------------------------------------------------
+struct wlr_session_lock_manager_v1 *oxide_session_lock_manager_create(
+        struct wl_display *display);
+struct oxide_listener *oxide_session_lock_manager_add_new_lock(
+        struct wlr_session_lock_manager_v1 *manager,
+        oxide_callback callback, void *userdata);
+struct oxide_listener *oxide_session_lock_add_new_surface(
+        struct wlr_session_lock_v1 *lock,
+        oxide_callback callback, void *userdata);
+struct oxide_listener *oxide_session_lock_add_unlock(
+        struct wlr_session_lock_v1 *lock,
+        oxide_callback callback, void *userdata);
+struct oxide_listener *oxide_session_lock_add_destroy(
+        struct wlr_session_lock_v1 *lock,
+        oxide_callback callback, void *userdata);
+void oxide_session_lock_send_locked(struct wlr_session_lock_v1 *lock);
+void oxide_session_lock_reject(struct wlr_session_lock_v1 *lock);
+struct wlr_output *oxide_session_lock_surface_output(
+        struct wlr_session_lock_surface_v1 *surface);
+struct wlr_scene_tree *oxide_scene_session_lock_surface_create(
+        struct wlr_scene_tree *parent,
+        struct wlr_session_lock_surface_v1 *surface);
+void oxide_session_lock_surface_configure(
+        struct wlr_session_lock_surface_v1 *surface,
+        uint32_t width, uint32_t height);
+void oxide_focus_session_lock_surface(struct wlr_seat *seat,
+        struct wlr_session_lock_surface_v1 *surface);
+void oxide_seat_clear_keyboard_focus(struct wlr_seat *seat);
+struct oxide_listener *oxide_session_lock_surface_add_map(
+        struct wlr_session_lock_surface_v1 *surface,
+        oxide_callback callback, void *userdata);
+struct oxide_listener *oxide_session_lock_surface_add_destroy(
+        struct wlr_session_lock_surface_v1 *surface,
+        oxide_callback callback, void *userdata);
 
 #endif // OXIN_SHIM_H

@@ -18,10 +18,11 @@ through 60000 milliseconds are accepted. A press arms a Wayland event-loop
 timer; release cancels it. Both events are consumed so applications never see
 an unmatched power-key press or release.
 
-This mechanism is general input mapping and is not FP5-specific. The FP5
-profile supplies the hardware policy: a two-second power-key hold launches
-`~/.local/bin/0xin-session-menu`. Short press is deliberately reserved for a
-future secure screen-lock action.
+This mechanism is general input mapping and is not FP5-specific. If a chord
+has both `bind` and `hold` mappings, release before the threshold runs the
+normal bind; reaching the threshold runs only the hold action. The FP5 profile
+currently uses only the two-second session-menu action and reserves short
+press for a touch-capable secure lock client.
 
 ## Clean session exit
 
@@ -40,9 +41,5 @@ and the system policy layer remain responsible for authorization. The script
 replaces the earlier Hyprland-specific `hypr-phone-menu`, whose logout action
 depended on `hyprctl dispatch exit`.
 
-## Locking boundary
-
-Short press is not mapped to a fake lock. A secure lock needs a lock protocol,
-an authentication surface that cannot be bypassed by ordinary clients, and
-correct input/focus handling. Until that exists, leaving short press unused is
-safer than presenting window hiding as device security.
+Secure locking is implemented separately through `ext-session-lock-v1`; see
+Stage 23.

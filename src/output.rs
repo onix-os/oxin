@@ -1,6 +1,7 @@
 //! Output (monitor) lifecycle: creation, destroy, VT-resume repaint, framing.
 
 use crate::ffi::*;
+use crate::session_lock;
 use crate::state::*;
 use crate::tiling::{arrange_layers, refresh};
 use crate::wallpaper;
@@ -106,16 +107,20 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         background,
         wallpaper,
         gesture_handle,
+        lock_fallback: std::ptr::null_mut(),
         frame_ctx,
         repaint_frames: REPAINT_FRAMES,
     });
+    let idx = server.outputs.len() - 1;
+    if server.locked {
+        session_lock::ensure_output_fallback(server, idx);
+    }
 
     // Any layer surface that arrived before an output existed is pending (see
     // layer_shell.rs) — either because it had no output request at all, or
     // because it named this exact output before we started tracking it.
     // Attach the pending ones now and (re-)arrange every layer targeting this
     // output, so tiling below accounts for their exclusive zones.
-    let idx = server.outputs.len() - 1;
     for &ls in &server.layers {
         if (*ls).wlr_output.is_null() {
             (*ls).wlr_output = output;
@@ -157,6 +162,9 @@ unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_v
     }
     if !o.gesture_handle.is_null() {
         oxide_scene_rect_destroy(o.gesture_handle);
+    }
+    if !o.lock_fallback.is_null() {
+        oxide_scene_rect_destroy(o.lock_fallback);
     }
     let frame_ctx = o.frame_ctx;
     server.outputs.remove(pos);

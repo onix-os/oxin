@@ -56,8 +56,15 @@ pub(crate) struct Server {
     /// out of here as they enter/leave fullscreen.
     pub(crate) tree_fullscreen: *mut wlr::wlr_scene_tree,
     pub(crate) tree_layer_overlay: *mut wlr::wlr_scene_tree,
+    pub(crate) tree_session_lock: *mut wlr::wlr_scene_tree,
     /// Layer-shell surfaces (bars, panels, wallpaper) from any output.
     pub(crate) layers: Vec<*mut LayerSurface>,
+    pub(crate) lock_surfaces: Vec<*mut LockSurface>,
+    pub(crate) locked: bool,
+    pub(crate) active_lock: *mut c_void,
+    pub(crate) lock_new_surface_listener: *mut ShimListener,
+    pub(crate) lock_unlock_listener: *mut ShimListener,
+    pub(crate) lock_destroy_listener: *mut ShimListener,
     /// Virtual workspaces; each is shown on at most one output at a time.
     pub(crate) workspaces: Vec<Workspace>,
     /// Connected outputs (monitors), each displaying one workspace.
@@ -122,6 +129,9 @@ pub(crate) struct Output {
     pub(crate) wallpaper: *mut c_void,
     /// Bottom gesture-handle rectangle, or NULL when the profile disables it.
     pub(crate) gesture_handle: *mut c_void,
+    /// Opaque compositor-owned cover shown immediately while locked, including
+    /// when the lock client has not mapped yet or has crashed.
+    pub(crate) lock_fallback: *mut c_void,
     pub(crate) frame_ctx: *mut FrameCtx,
     /// Frames remaining to force a full repaint (after creation/VT resume). A
     /// `frame` event only fires once the output is actually presenting, so doing
@@ -178,5 +188,12 @@ pub(crate) struct LayerSurface {
     pub(crate) commit_listener: *mut ShimListener,
     pub(crate) map_listener: *mut ShimListener,
     pub(crate) unmap_listener: *mut ShimListener,
+    pub(crate) destroy_listener: *mut ShimListener,
+}
+
+pub(crate) struct LockSurface {
+    pub(crate) server: *mut Server,
+    pub(crate) lock_surface: *mut c_void,
+    pub(crate) map_listener: *mut ShimListener,
     pub(crate) destroy_listener: *mut ShimListener,
 }

@@ -247,6 +247,52 @@ extern "C" {
     );
     pub(crate) fn oxide_cursor_set_keyboard_visible(cursor: *mut wlr::wlr_cursor, visible: bool);
     pub(crate) fn oxide_cursor_set_keyboard_height(cursor: *mut wlr::wlr_cursor, height: i32);
+    pub(crate) fn oxide_cursor_set_locked(cursor: *mut wlr::wlr_cursor, locked: bool);
+    pub(crate) fn oxide_session_lock_manager_create(display: *mut wlr::wl_display) -> *mut c_void;
+    pub(crate) fn oxide_session_lock_manager_add_new_lock(
+        manager: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_session_lock_add_new_surface(
+        lock: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_session_lock_add_unlock(
+        lock: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_session_lock_add_destroy(
+        lock: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_session_lock_send_locked(lock: *mut c_void);
+    pub(crate) fn oxide_session_lock_reject(lock: *mut c_void);
+    pub(crate) fn oxide_session_lock_surface_output(surface: *mut c_void) -> *mut wlr::wlr_output;
+    pub(crate) fn oxide_scene_session_lock_surface_create(
+        parent: *mut wlr::wlr_scene_tree,
+        surface: *mut c_void,
+    ) -> *mut wlr::wlr_scene_tree;
+    pub(crate) fn oxide_session_lock_surface_configure(
+        surface: *mut c_void,
+        width: u32,
+        height: u32,
+    );
+    pub(crate) fn oxide_focus_session_lock_surface(seat: *mut wlr::wlr_seat, surface: *mut c_void);
+    pub(crate) fn oxide_seat_clear_keyboard_focus(seat: *mut wlr::wlr_seat);
+    pub(crate) fn oxide_session_lock_surface_add_map(
+        surface: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_session_lock_surface_add_destroy(
+        surface: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
     pub(crate) fn oxide_xdg_toplevel_surface(toplevel: *mut wlr::wlr_xdg_toplevel) -> *mut c_void;
 
     // Layer-shell (bars, panels, wallpaper). Layer surfaces and the scene

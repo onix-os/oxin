@@ -76,7 +76,9 @@ float_size = 60% x 60%
 # bind = MODS, KEY, ACTION[, ARG]
 #
 # A `hold` acts only after the key remains down for the requested milliseconds.
-# Releasing it earlier cancels the action:
+# When the same chord also has a normal bind, releasing early runs the normal
+# action; reaching the hold threshold runs only the hold action:
+# bind = , XF86PowerOff, spawn, swaylock
 # hold = , XF86PowerOff, 2000, spawn, session-menu
 #
 # bind = MODS, KEY, ACTION[, ARG]

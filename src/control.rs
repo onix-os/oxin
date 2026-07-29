@@ -76,6 +76,9 @@ unsafe extern "C" fn handle_readable(userdata: *mut c_void, _data: *mut c_void) 
 }
 
 unsafe fn dispatch(server: &mut Server, request: &str) -> String {
+    if server.locked {
+        return "error session is locked\n".into();
+    }
     if request == "quit" {
         wlr::wl_display_terminate(server.display);
         return "ok\n".into();

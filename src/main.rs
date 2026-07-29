@@ -26,6 +26,7 @@ mod keybindings;
 mod layer_shell;
 mod layout;
 mod output;
+mod session_lock;
 mod state;
 mod tiling;
 mod toplevel;
@@ -113,6 +114,9 @@ fn main() {
         // Fullscreen windows paint over bars (layer top) but under overlay.
         let tree_fullscreen = oxide_scene_add_layer_tree(scene);
         let tree_layer_overlay = oxide_scene_add_layer_tree(scene);
+        // Always last: compositor fallback + ext-session-lock surfaces must
+        // cover applications and every shell layer while the session is locked.
+        let tree_session_lock = oxide_scene_add_layer_tree(scene);
 
         // Cursor over the layout; the shim routes its events through scene
         // hit-testing to the seat. Pointer devices get attached in new_input.
@@ -144,7 +148,14 @@ fn main() {
             tree_layer_top,
             tree_fullscreen,
             tree_layer_overlay,
+            tree_session_lock,
             layers: Vec::new(),
+            lock_surfaces: Vec::new(),
+            locked: false,
+            active_lock: std::ptr::null_mut(),
+            lock_new_surface_listener: std::ptr::null_mut(),
+            lock_unlock_listener: std::ptr::null_mut(),
+            lock_destroy_listener: std::ptr::null_mut(),
             workspaces: (0..WORKSPACE_COUNT)
                 .map(|_| Workspace {
                     windows: Vec::new(),
@@ -189,6 +200,10 @@ fn main() {
         );
         // Repaint outputs when we regain the VT (no-op when nested / no session).
         oxide_session_add_active(session, handle_session_active, server_ptr);
+
+        // ext-session-lock-v1: a locker receives exclusive input and renders
+        // above the compositor-owned opaque fallback on every output.
+        session_lock::setup(display, server_ptr);
 
         // xdg-shell: the xdg_wm_base global apps bind to create windows. We hook
         // its new_toplevel signal so each app window enters our scene graph.

@@ -11,6 +11,7 @@
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/types/wlr_touch.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
@@ -175,6 +176,7 @@ struct oxide_pointer {
     size_t touch_device_count;
     struct wlr_output_layout *output_layout;
     uint32_t gesture_mask;
+    uint32_t configured_gesture_mask;
     bool keyboard_visible;
     int keyboard_height;
     oxide_gesture_callback gesture_callback;
@@ -245,6 +247,7 @@ static void focus_surface(struct oxide_pointer *p, struct wlr_surface *surface) 
             ? wlr_layer_surface_v1_try_from_wlr_surface(root) : NULL;
     bool focusable = root != NULL
             && (wlr_xdg_toplevel_try_from_wlr_surface(root) != NULL
+                || wlr_session_lock_surface_v1_try_from_wlr_surface(root) != NULL
                 || (layer != NULL && layer->current.keyboard_interactive
                     != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE));
     if (!focusable) {
@@ -954,9 +957,29 @@ void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
     struct oxide_pointer *p = cursor->data;
     p->output_layout = layout;
     p->gesture_mask = enabled_mask;
+    p->configured_gesture_mask = enabled_mask;
     p->keyboard_height = keyboard_height;
     p->gesture_callback = callback;
     p->gesture_userdata = userdata;
+}
+
+void oxide_cursor_set_locked(struct wlr_cursor *cursor, bool locked) {
+    struct oxide_pointer *p = cursor->data;
+    p->gesture_mask = locked ? 0 : p->configured_gesture_mask;
+    if (!locked) {
+        return;
+    }
+    multi_reset(p);
+    while (!wl_list_empty(&p->touch_points)) {
+        struct oxide_touch_point *point =
+                wl_container_of(p->touch_points.next, point, link);
+        if (point->client != NULL) {
+            touch_cancel_client(p, point->client);
+        } else {
+            wl_list_remove(&point->link);
+            free(point);
+        }
+    }
 }
 
 void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor,
