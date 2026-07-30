@@ -59,6 +59,26 @@ fn main() {
         layer_shell_xml.display()
     );
 
+    // Same again for wlr-output-power-management-unstable-v1: wlroots' own
+    // wlr_output_power_management_v1.h #includes the generated protocol
+    // header. wlroots implements the whole wire protocol for us — we only
+    // react to its `set_mode` signal (see src/output_power.rs).
+    let output_power_xml =
+        manifest_dir.join("protocols/wlr-output-power-management-unstable-v1.xml");
+    let output_power_header =
+        out_dir.join("wlr-output-power-management-unstable-v1-protocol.h");
+    let status = Command::new("wayland-scanner")
+        .arg("server-header")
+        .arg(&output_power_xml)
+        .arg(&output_power_header)
+        .status()
+        .expect("failed to run wayland-scanner");
+    assert!(
+        status.success(),
+        "wayland-scanner failed on {}",
+        output_power_xml.display()
+    );
+
     // Include dirs shared by the shim build (cc) and bindgen (clang): the
     // library headers plus OUT_DIR for our generated protocol header.
     let mut include_paths: Vec<PathBuf> = wlroots
@@ -79,6 +99,7 @@ fn main() {
         "shim/xdg_shell.c",
         "shim/layer_shell.c",
         "shim/session_lock.c",
+        "shim/output_power.c",
         "shim/decoration.c",
         "shim/input.c",
     ];
@@ -133,6 +154,7 @@ fn main() {
         .allowlist_function("wlr_xdg_toplevel_set_fullscreen")
         .allowlist_function("wlr_xdg_toplevel_send_close")
         .allowlist_function("wlr_layer_shell_v1_create")
+        .allowlist_function("wlr_output_power_manager_v1_create")
         .allowlist_function("wlr_xdg_decoration_manager_v1_create")
         .allowlist_function("wlr_screencopy_manager_v1_create")
         .allowlist_function("wlr_xdg_output_manager_v1_create")
@@ -159,4 +181,7 @@ fn main() {
     println!("cargo:rerun-if-changed=shim/oxide_shim.h");
     println!("cargo:rerun-if-changed=shim/oxide_shim_internal.h");
     println!("cargo:rerun-if-changed=protocols/wlr-layer-shell-unstable-v1.xml");
+    println!(
+        "cargo:rerun-if-changed=protocols/wlr-output-power-management-unstable-v1.xml"
+    );
 }

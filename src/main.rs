@@ -26,6 +26,7 @@ mod keybindings;
 mod layer_shell;
 mod layout;
 mod output;
+mod output_power;
 mod session_lock;
 mod state;
 mod tiling;
@@ -228,6 +229,12 @@ fn main() {
         // some clients (hyprpaper) refuse to bind below v5.
         let layer_shell = wlr::wlr_layer_shell_v1_create(display, 5);
         oxide_layer_shell_add_new_surface(layer_shell, handle_new_layer_surface, server_ptr);
+
+        // wlr-output-power-management-unstable-v1: lets a client (e.g.
+        // patin-lock) request a real DPMS on/off per output, distinct from
+        // the opaque lock-fallback cover. wlroots handles the wire protocol;
+        // we just apply the on/off it reports (src/output_power.rs).
+        output_power::setup(display, server_ptr);
 
         // wlr-screencopy-unstable-v1: lets clients (grim, wf-recorder) capture
         // our own composited output. wlroots does all the work internally

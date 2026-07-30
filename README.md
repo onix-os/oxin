@@ -31,6 +31,9 @@ automatically to fill the screen instead of floating and overlapping.
   decoration, so clients don't draw their own title bar/border: bare, borderless windows.
 - **Screenshots/screen recording** (`wlr-screencopy-unstable-v1` + `xdg-output`) — tools
   like `grim` and `wf-recorder` capture 0xin's real composited output directly.
+- **Real display power-off** (`wlr-output-power-management-unstable-v1`) — a client
+  (e.g. [Patin](https://github.com/termworks/patin)'s `patin-lock`) can request an
+  actual DPMS on/off per output, distinct from the opaque lock cover below.
 
 ## Docs
 
@@ -230,6 +233,13 @@ Application windows can reveal that background with `window_opacity`, where
 applies to XDG application toplevels on any supported Wayland device;
 layer-shell surfaces such as panels, Patin, and virtual keyboards are left
 fully opaque.
+
+0xin also implements `wlr-output-power-management-unstable-v1`, so a client
+can request a real DPMS power-off/on per output — independent of, and
+usable alongside, the session-lock cover above. wlroots handles the wire
+protocol; 0xin just applies the on/off it reports and forces a repaint when
+an output comes back on so windows that were visible before power-off
+reappear correctly.
 
 ## Repository layout
 

@@ -49,6 +49,16 @@ void oxide_output_enable(struct wlr_output *output, float scale) {
     wlr_output_state_finish(&state);
 }
 
+// Flip the output's physical power state (DPMS on/off) without touching mode
+// or scale — used by the wlr-output-power-management-unstable-v1 handler.
+void oxide_output_set_powered(struct wlr_output *output, bool enabled) {
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, enabled);
+    wlr_output_commit_state(output, &state);
+    wlr_output_state_finish(&state);
+}
+
 // The connector name (e.g. "eDP-1", "HDMI-A-1") — read once by Rust and
 // converted to an owned String immediately, so there's no pointer lifetime to
 // worry about on the Rust side.

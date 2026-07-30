@@ -351,4 +351,20 @@ extern "C" {
         userdata: *mut c_void,
     ) -> *mut ShimListener;
     pub(crate) fn oxide_xdg_toplevel_decoration_set_server_side(decoration: *mut c_void);
+
+    // wlr-output-power-management-unstable-v1: wlroots owns the wire
+    // protocol; we only react to `set_mode` and apply it via
+    // oxide_output_set_powered.
+    pub(crate) fn oxide_output_power_manager_add_set_mode(
+        manager: *mut wlr::wlr_output_power_manager_v1,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    // `event` is the set_mode signal's data (opaque — never reached through
+    // an allowlisted function signature, so bindgen never sees its type).
+    pub(crate) fn oxide_output_power_set_mode_event_output(
+        event: *mut c_void,
+    ) -> *mut wlr::wlr_output;
+    pub(crate) fn oxide_output_power_set_mode_event_is_on(event: *mut c_void) -> bool;
+    pub(crate) fn oxide_output_set_powered(output: *mut wlr::wlr_output, enabled: bool);
 }

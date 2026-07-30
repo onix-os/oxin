@@ -28,6 +28,8 @@ struct wlr_input_device;
 struct wlr_cursor;
 struct wlr_output_layout;
 struct wlr_session;
+struct wlr_output_power_manager_v1;
+struct wlr_output_power_v1_set_mode_event;
 struct oxide_listener;
 
 // Generic event callback handed to Rust: (userdata, signal-data).
@@ -136,6 +138,10 @@ struct wlr_output *oxide_output_at_cursor(struct wlr_cursor *cursor,
 void oxide_scene_output_render(struct wlr_scene_output *scene_output);
 // Request a `frame` event once the output is ready (kicks the first paint).
 void oxide_output_schedule_frame(struct wlr_output *output);
+// Enable/disable the output's physical power state (DPMS on/off) — owns the
+// wlr_output_state commit dance, same shape as oxide_output_enable but
+// without touching mode/scale.
+void oxide_output_set_powered(struct wlr_output *output, bool enabled);
 
 // --- xdg-shell (app windows) ----------------------------------------------
 struct oxide_listener *oxide_xdg_shell_add_new_toplevel(
@@ -340,5 +346,25 @@ struct oxide_listener *oxide_session_lock_surface_add_map(
 struct oxide_listener *oxide_session_lock_surface_add_destroy(
         struct wlr_session_lock_surface_v1 *surface,
         oxide_callback callback, void *userdata);
+
+// --- wlr-output-power-management-unstable-v1 --------------------------------
+//
+// wlroots implements the whole wire protocol (get_output_power, set_mode,
+// the mode/failed events it echoes back) itself; we only react to its
+// `set_mode` signal and actually flip the output via oxide_output_set_powered
+// above. The manager global is created directly from Rust via bindgen's
+// wlr_output_power_manager_v1_create binding (same pattern as
+// wlr_layer_shell_v1_create) — no shim wrapper needed for a plain creation
+// call.
+
+struct oxide_listener *oxide_output_power_manager_add_set_mode(
+        struct wlr_output_power_manager_v1 *manager,
+        oxide_callback callback, void *userdata);
+// Accessors for the set_mode event (`data` in the callback above).
+struct wlr_output *oxide_output_power_set_mode_event_output(
+        struct wlr_output_power_v1_set_mode_event *event);
+// True for ZWLR_OUTPUT_POWER_V1_MODE_ON, false for ...MODE_OFF.
+bool oxide_output_power_set_mode_event_is_on(
+        struct wlr_output_power_v1_set_mode_event *event);
 
 #endif // OXIN_SHIM_H
