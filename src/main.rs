@@ -75,6 +75,16 @@ fn main() {
         let allocator = wlr::wlr_allocator_autocreate(backend, renderer);
         assert!(!allocator.is_null(), "failed to create wlr_allocator");
 
+        // Compositor-owned GLES2 program for corner-radius masking (wlroots'
+        // scene/render-pass API has no such primitive — see
+        // shim/gles2_corner.c). NULL on failure (e.g. a non-GLES2 renderer,
+        // or a driver shader-compile quirk) — corner_radius then silently
+        // has no effect rather than crashing the compositor.
+        let corner_program = oxide_gles2_corner_program_create(renderer);
+        if corner_program.is_null() {
+            eprintln!("0xin: corner-radius GLES2 program unavailable — corner_radius will have no effect");
+        }
+
         // Buffer-factory globals: wl_shm + linux-dmabuf. Clients need these to
         // hand us pixel buffers; without them no app can show anything.
         wlr::wlr_renderer_init_wl_display(renderer, display);
@@ -142,6 +152,7 @@ fn main() {
             cursor,
             renderer,
             allocator,
+            corner_program,
             tree_bg_fallback,
             tree_layer_bg,
             tree_layer_bottom,

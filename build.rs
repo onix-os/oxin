@@ -25,6 +25,14 @@ fn main() {
     let xkbcommon = pkg_config::Config::new()
         .probe("xkbcommon")
         .expect("xkbcommon not found via pkg-config");
+    // The corner-radius mask pass drives GLES2/EGL directly (wlroots' scene
+    // API has no shader-injection point), so we need both libraries too.
+    let glesv2 = pkg_config::Config::new()
+        .probe("glesv2")
+        .expect("glesv2 not found via pkg-config");
+    let egl = pkg_config::Config::new()
+        .probe("egl")
+        .expect("egl not found via pkg-config");
 
     // 2. Generate xdg-shell-protocol.h into OUT_DIR. wlroots' xdg-shell header
     //    #includes it; wayland-scanner produces it from the protocol XML.
@@ -86,6 +94,8 @@ fn main() {
         .iter()
         .chain(wayland.include_paths.iter())
         .chain(xkbcommon.include_paths.iter())
+        .chain(glesv2.include_paths.iter())
+        .chain(egl.include_paths.iter())
         .cloned()
         .collect();
     include_paths.push(out_dir.clone());
@@ -102,6 +112,7 @@ fn main() {
         "shim/output_power.c",
         "shim/decoration.c",
         "shim/input.c",
+        "shim/gles2_corner.c",
     ];
     let mut shim = cc::Build::new();
     shim.files(shim_files);
@@ -112,8 +123,11 @@ fn main() {
     // `cc` emits the static shim archive here. Repeat xkbcommon after it so
     // strict `--as-needed` linkers (Alpine/musl) see the library after the
     // shim's xkb_* references instead of discarding the earlier pkg-config
-    // link flag before those references appear.
+    // link flag before those references appear. Same story for GLESv2/EGL,
+    // which the corner-radius mask pass (shim/gles2_corner.c) calls directly.
     println!("cargo:rustc-link-lib=xkbcommon");
+    println!("cargo:rustc-link-lib=GLESv2");
+    println!("cargo:rustc-link-lib=EGL");
 
     // 4. Generate Rust bindings. We allowlist exactly the functions Rust calls
     //    directly; bindgen pulls in the types they reference automatically. The

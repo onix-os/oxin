@@ -341,6 +341,9 @@ mod tests {
             unmap_listener: ptr::null_mut(),
             destroy_listener: ptr::null_mut(),
             fullscreen_listener: ptr::null_mut(),
+            corner_swapchain: ptr::null_mut(),
+            corner_swapchain_w: 0,
+            corner_swapchain_h: 0,
         }))
     }
 
@@ -355,6 +358,7 @@ mod tests {
             cursor: ptr::null_mut(),
             renderer: ptr::null_mut(),
             allocator: ptr::null_mut(),
+            corner_program: ptr::null_mut(),
             tree_bg_fallback: ptr::null_mut(),
             tree_layer_bg: ptr::null_mut(),
             tree_layer_bottom: ptr::null_mut(),

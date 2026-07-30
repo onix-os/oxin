@@ -374,4 +374,28 @@ extern "C" {
     ) -> *mut wlr::wlr_output;
     pub(crate) fn oxide_output_power_set_mode_event_is_on(event: *mut c_void) -> bool;
     pub(crate) fn oxide_output_set_powered(output: *mut wlr::wlr_output, enabled: bool);
+
+    // Rounded-corner GLES2 masking: a compositor-owned shader program,
+    // compiled once at startup, living for the process's lifetime (no
+    // destroy — see oxide_shim.h). NULL on failure — treat as "unavailable".
+    pub(crate) fn oxide_gles2_corner_program_create(
+        renderer: *mut wlr::wlr_renderer,
+    ) -> *mut c_void;
+    // Best-effort: returns false and leaves the previous buffer in place on
+    // any failure. `swapchain_inout`/`_w_inout`/`_h_inout` are the caller's
+    // per-Toplevel corner_swapchain/_w/_h fields, updated in place.
+    pub(crate) fn oxide_toplevel_apply_corner_radius(
+        renderer: *mut wlr::wlr_renderer,
+        allocator: *mut wlr::wlr_allocator,
+        corner_program: *mut c_void,
+        scene_tree: *mut wlr::wlr_scene_tree,
+        root_surface: *mut c_void,
+        radius: i32,
+        dst_w: i32,
+        dst_h: i32,
+        swapchain_inout: *mut *mut c_void,
+        swapchain_w_inout: *mut i32,
+        swapchain_h_inout: *mut i32,
+    ) -> bool;
+    pub(crate) fn oxide_swapchain_destroy(swapchain: *mut c_void);
 }

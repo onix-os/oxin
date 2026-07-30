@@ -30,6 +30,8 @@ struct wlr_output_layout;
 struct wlr_session;
 struct wlr_output_power_manager_v1;
 struct wlr_output_power_v1_set_mode_event;
+struct wlr_renderer;
+struct wlr_allocator;
 struct oxide_listener;
 
 // Generic event callback handed to Rust: (userdata, signal-data).
@@ -372,5 +374,43 @@ struct wlr_output *oxide_output_power_set_mode_event_output(
 // True for ZWLR_OUTPUT_POWER_V1_MODE_ON, false for ...MODE_OFF.
 bool oxide_output_power_set_mode_event_is_on(
         struct wlr_output_power_v1_set_mode_event *event);
+
+// --- rounded-corner GLES2 masking --------------------------------------------
+//
+// wlroots' scene/render-pass API has no corner-radius primitive; this compiles
+// and owns a compositor-side GLES2 program used to mask a window's texture
+// into a compositor-owned buffer (see shim/gles2_corner.c and
+// src/toplevel.rs's handle_commit). Compiled once at startup; the opaque
+// handle is threaded through as `void *` the same way other wlroots handles
+// Rust never looks inside are (e.g. session-lock objects).
+
+// NULL on failure (shader compile/link error) — caller should treat that as
+// "corner-radius masking unavailable" rather than crash. Lives for the
+// process's lifetime, same as the renderer/allocator it's built from — 0xin
+// deliberately skips tearing down top-level wlroots globals on shutdown
+// (see main.rs), so there is no paired destroy function.
+void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer);
+
+// Renders `root_surface`'s current texture through the corner-radius shader
+// into a compositor-owned GPU buffer, then swaps it into whichever
+// `wlr_scene_buffer` under `scene_tree` is backed by that exact surface
+// (never a popup/subsurface). `*swapchain_inout` is a per-toplevel
+// `struct wlr_swapchain*` (opaque `void*` — NULL initially), recreated by
+// this call whenever the surface's buffer size no longer matches
+// `*swapchain_w_inout`/`*swapchain_h_inout`; the caller owns destroying it
+// (`oxide_swapchain_destroy` below) when the window itself is destroyed.
+// `dst_w`/`dst_h` are the compositor's own logical tile size for this
+// window (0 = fall back to the buffer's own size) — required to restate
+// explicitly on a fractionally-scaled output, since this call's own buffer
+// swap bypasses wlroots' client-viewport-driven auto-scaling.
+// Returns false (no-op) on any failure — masking is best-effort, never fatal.
+bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
+        struct wlr_allocator *allocator, void *corner_program,
+        struct wlr_scene_tree *scene_tree, struct wlr_surface *root_surface,
+        int radius, int dst_w, int dst_h, void **swapchain_inout,
+        int *swapchain_w_inout, int *swapchain_h_inout);
+// Free a per-toplevel corner_swapchain (a no-op if it was never created —
+// NULL means the window was never masked). Call on window destroy.
+void oxide_swapchain_destroy(void *swapchain);
 
 #endif // OXIN_SHIM_H

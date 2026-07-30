@@ -144,6 +144,7 @@ gap        = 10
 background = 0.0 0.6 0.6
 wallpaper = ~/Pictures/wallpaper.jpg
 window_opacity = 1.0
+corner_radius = 0
 
 # Commands are repeatable and launch once per compositor start.
 exec_once = patin
@@ -234,6 +235,15 @@ Application windows can reveal that background with `window_opacity`, where
 applies to XDG application toplevels on any supported Wayland device;
 layer-shell surfaces such as panels, Patin, and virtual keyboards are left
 fully opaque.
+
+`corner_radius` (pixels, `0` = disabled, the default) rounds tiled/floating
+window corners with real per-pixel masking — a compositor-owned GLES2 shader
+renders each window through a rounded-rect mask, so it looks correct over a
+wallpaper image, another window, or a reduced `window_opacity`, not just a
+flat background color. Fullscreen windows are unaffected. This costs a real
+extra GPU pass per commit of every masked window while enabled — see
+[Stage 26](docs/phases/stage-26-rounded-window-corners.md) for the full
+tradeoffs.
 
 0xin also implements `wlr-output-power-management-unstable-v1`, so a client
 can request a real DPMS power-off/on per output — independent of, and

@@ -149,6 +149,9 @@ pub struct Config {
     pub wallpaper: Option<String>,
     /// Opacity applied to application toplevel buffers (1.0 = fully opaque).
     pub window_opacity: f32,
+    /// Corner radius applied to tiled/floating application windows, in
+    /// logical pixels (0 = disabled, the default — no masking cost).
+    pub corner_radius: i32,
     pub binds: Vec<Bind>,
     pub hold_binds: Vec<HoldBind>,
     /// Shell commands launched once, in declaration order, after the Wayland
@@ -185,6 +188,7 @@ impl Default for Config {
             background: (0.0, 0.6, 0.6),
             wallpaper: None,
             window_opacity: 1.0,
+            corner_radius: 0,
             binds: Vec::new(),
             hold_binds: Vec::new(),
             exec_once: Vec::new(),
@@ -278,6 +282,14 @@ impl Config {
                     _ => warn(
                         n,
                         "invalid window_opacity (want a number from 0.0 to 1.0)",
+                        raw,
+                    ),
+                },
+                "corner_radius" => match val.parse::<i32>() {
+                    Ok(radius) if (0..=200).contains(&radius) => self.corner_radius = radius,
+                    _ => warn(
+                        n,
+                        "invalid corner_radius (want an integer from 0 to 200)",
                         raw,
                     ),
                 },
@@ -922,6 +934,18 @@ mod tests {
 
         cfg.parse_scalars("window_opacity = 1.1\nwindow_opacity = nope\n");
         assert_eq!(cfg.window_opacity, 0.8);
+    }
+
+    #[test]
+    fn corner_radius_is_disabled_by_default_and_bounded() {
+        let mut cfg = Config::default();
+        assert_eq!(cfg.corner_radius, 0);
+
+        cfg.parse_scalars("corner_radius = 12\n");
+        assert_eq!(cfg.corner_radius, 12);
+
+        cfg.parse_scalars("corner_radius = 201\ncorner_radius = -1\ncorner_radius = nope\n");
+        assert_eq!(cfg.corner_radius, 12);
     }
 
     #[test]

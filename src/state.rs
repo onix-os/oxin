@@ -39,6 +39,10 @@ pub(crate) struct Server {
     pub(crate) cursor: *mut wlr::wlr_cursor,
     pub(crate) renderer: *mut wlr::wlr_renderer,
     pub(crate) allocator: *mut wlr::wlr_allocator,
+    /// Compositor-owned GLES2 program used to mask window corners (opaque —
+    /// see shim/gles2_corner.c); NULL if compilation failed at startup, in
+    /// which case corner-radius masking is silently unavailable.
+    pub(crate) corner_program: *mut c_void,
     /// Ordered scene trees for z-layering. Creation order is paint order
     /// (later = on top): the config background, then layer-shell background,
     /// bottom, app windows (normal), layer-shell top, then overlay.
@@ -180,6 +184,14 @@ pub(crate) struct Toplevel {
     pub(crate) unmap_listener: *mut ShimListener,
     pub(crate) destroy_listener: *mut ShimListener,
     pub(crate) fullscreen_listener: *mut ShimListener,
+    /// Per-window GPU buffer chain for corner-radius masking (opaque —
+    /// `struct wlr_swapchain*`, see shim/gles2_corner.c); NULL until the
+    /// first masked commit. Recreated when the surface's buffer size
+    /// changes, so `corner_swapchain_w`/`_h` track what size it currently
+    /// matches.
+    pub(crate) corner_swapchain: *mut c_void,
+    pub(crate) corner_swapchain_w: i32,
+    pub(crate) corner_swapchain_h: i32,
 }
 
 /// One layer-shell surface (bar, panel, wallpaper — e.g. quickshell). Heap-

@@ -35,6 +35,9 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
         unmap_listener: ptr::null_mut(),
         destroy_listener: ptr::null_mut(),
         fullscreen_listener: ptr::null_mut(),
+        corner_swapchain: ptr::null_mut(),
+        corner_swapchain_w: 0,
+        corner_swapchain_h: 0,
     }));
 
     // Listen for its lifecycle so Rust can keep the window list current. We keep
@@ -265,6 +268,24 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
     // created. Reapply on every commit so new buffers and subsurfaces inherit
     // the configured application opacity.
     oxide_scene_tree_set_opacity((*tl).scene_tree, server.config.window_opacity);
+    // Fullscreen windows are excluded: rounding a window's edges against the
+    // bare screen looks wrong, and skipping the extra GPU pass on exactly the
+    // "video playing, committing every frame" case is a real perf win too.
+    if server.config.corner_radius > 0 && !(*tl).fullscreen {
+        oxide_toplevel_apply_corner_radius(
+            server.renderer,
+            server.allocator,
+            server.corner_program,
+            (*tl).scene_tree,
+            oxide_xdg_toplevel_surface((*tl).xdg_toplevel),
+            server.config.corner_radius,
+            (*tl).w,
+            (*tl).h,
+            &mut (*tl).corner_swapchain,
+            &mut (*tl).corner_swapchain_w,
+            &mut (*tl).corner_swapchain_h,
+        );
+    }
     if !oxide_xdg_initial_commit((*tl).xdg_toplevel) {
         return;
     }
@@ -365,6 +386,7 @@ unsafe extern "C" fn handle_destroy(userdata: *mut c_void, _data: *mut c_void) {
     oxide_listener_remove((*tl).unmap_listener);
     oxide_listener_remove((*tl).destroy_listener);
     oxide_listener_remove((*tl).fullscreen_listener);
+    oxide_swapchain_destroy((*tl).corner_swapchain);
     remove_window(server, tl);
     drop(Box::from_raw(tl));
 }
