@@ -188,6 +188,7 @@ gesture = three-up, close
 gesture = three-down, close
 gesture = three-left, movetoworkspaceprev
 gesture = three-right, movetoworkspacenext
+gesture = double-tap, solo
 
 # The same actions are available on non-touch devices.
 bind = MOD, bracketleft, workspaceprev

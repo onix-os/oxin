@@ -103,6 +103,12 @@ pub(crate) struct Workspace {
     pub(crate) focused: usize,
     pub(crate) tree: Option<Node>,
     pub(crate) first_split_vertical: bool,
+    /// The one window temporarily shown alone on this workspace (others
+    /// hidden, not repositioned); `None` for normal tiled display. Never
+    /// mutates `tree` — entering/exiting solo is purely a visibility and
+    /// placement decision, so exiting restores the exact prior layout with
+    /// no explicit restore step.
+    pub(crate) solo: Option<*mut Toplevel>,
 }
 
 /// One connected output (monitor): its box in layout coordinates, the workspace

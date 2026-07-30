@@ -230,6 +230,13 @@ extern "C" {
         callback: ShimCallback,
         userdata: *mut c_void,
     );
+    // Double-tap hook: the callback's `data` is the tapped root wlr_surface
+    // (same opaque `*mut c_void` shape as the focus callback above).
+    pub(crate) fn oxide_cursor_set_double_tap_callback(
+        cursor: *mut wlr::wlr_cursor,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    );
     // A toplevel's root wlr_surface, for matching clicks back to windows.
     pub(crate) fn oxide_cursor_set_grab_callbacks(
         cursor: *mut wlr::wlr_cursor,

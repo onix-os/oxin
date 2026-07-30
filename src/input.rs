@@ -1,12 +1,13 @@
 //! Input device hotplug, pointer-driven focus policy, and pointer grabs.
 
-use crate::config::{GestureTrigger, MOD_MASK};
+use crate::config::{Action, GestureTrigger, MOD_MASK};
 use crate::ffi::{
-    oxide_handle_new_input, oxide_scene_tree_set_position, oxide_xdg_toplevel_surface,
+    oxide_focus_toplevel, oxide_handle_new_input, oxide_scene_tree_set_position,
+    oxide_xdg_toplevel_surface,
 };
 use crate::keybindings::{dispatch_action, handle_keybinding};
 use crate::state::{GrabMode, Server, Toplevel};
-use crate::toplevel::clamp_floating;
+use crate::toplevel::{clamp_floating, set_solo};
 use crate::wlr;
 use std::os::raw::c_void;
 use std::ptr;
@@ -19,7 +20,10 @@ const BTN_RIGHT: u32 = 0x111;
 const MIN_FLOAT_SIZE: i32 = 50;
 
 /// Turn the recognizer's device-level trigger into the same configured Action
-/// keyboard chords use.
+/// keyboard chords use. `GestureTrigger::DoubleTap` is deliberately absent
+/// from the table below — this callback's `(userdata, trigger: u32)` shape
+/// has no room for the tapped surface, so double-tap fires through the
+/// separate `handle_double_tap` callback instead.
 pub(crate) unsafe extern "C" fn handle_gesture(userdata: *mut c_void, raw_trigger: u32) {
     let server = &mut *(userdata as *mut Server);
     if server.locked {
@@ -101,6 +105,52 @@ unsafe fn toplevel_from_surface(server: &Server, surface: *mut c_void) -> Option
         }
     }
     None
+}
+
+/// Called by the shim when a completed touch double-tap is recognized on a
+/// window's root surface. Focuses the tapped window, then applies whatever
+/// action is configured for `double-tap`. `Action::ToggleSolo` is resolved
+/// directly against the tapped window rather than through `dispatch_action`'s
+/// usual active-workspace lookup: that lookup depends on the pointer
+/// cursor's last position, which touch never updates, so on a multi-monitor
+/// setup it could target the wrong output's focused window — we already
+/// have the exact tapped window in hand from the hit test above.
+pub(crate) unsafe extern "C" fn handle_double_tap(userdata: *mut c_void, data: *mut c_void) {
+    let server = &mut *(userdata as *mut Server);
+    if server.locked {
+        return;
+    }
+    let Some(tl) = toplevel_from_surface(server, data) else {
+        return;
+    };
+    let Some(wi) = server.workspaces.iter().position(|ws| ws.windows.contains(&tl)) else {
+        return;
+    };
+    let idx = server.workspaces[wi]
+        .windows
+        .iter()
+        .position(|&w| w == tl)
+        .unwrap();
+    server.workspaces[wi].focused = idx;
+    oxide_focus_toplevel(server.seat, (*tl).xdg_toplevel);
+
+    let action = server
+        .config
+        .gestures
+        .iter()
+        .find(|binding| binding.trigger == GestureTrigger::DoubleTap)
+        .map(|binding| binding.action.clone());
+    let Some(action) = action else {
+        return;
+    };
+
+    match action {
+        Action::ToggleSolo => {
+            let want_on = server.workspaces[wi].solo != Some(tl);
+            set_solo(server, tl, want_on);
+        }
+        other => dispatch_action(server, other),
+    }
 }
 
 /// Called by the shim for every pointer button. Returning true consumes the

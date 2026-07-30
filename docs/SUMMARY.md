@@ -35,3 +35,4 @@
 - [Stage 22 — Hold Bindings & Session Exit](phases/stage-22-hold-bindings-session-exit.md)
 - [Stage 23 — Secure Session Lock](phases/stage-23-secure-session-lock.md)
 - [Stage 24 — Output Power Management (DPMS)](phases/stage-24-output-power-management.md)
+- [Stage 25 — Double-tap to Solo a Window](phases/stage-25-double-tap-solo.md)

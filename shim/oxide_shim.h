@@ -295,6 +295,12 @@ struct wlr_cursor *oxide_cursor_setup(struct wlr_output_layout *layout,
 void oxide_cursor_set_focus_callback(struct wlr_cursor *cursor,
         oxide_callback callback, void *userdata);
 
+// Register a hook called when a touch double-tap is recognized on a
+// window's root surface (data = that wlr_surface). Same late-registration
+// story as the focus callback above.
+void oxide_cursor_set_double_tap_callback(struct wlr_cursor *cursor,
+        oxide_callback callback, void *userdata);
+
 // Register the pointer-grab hooks (see the callback typedefs above). Same
 // late-registration story as the focus callback: the Server userdata is only
 // constructed after the cursor.

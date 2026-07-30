@@ -88,6 +88,29 @@ pub(crate) unsafe fn set_fullscreen(server: &mut Server, tl: *mut Toplevel, on: 
     println!("0xin: fullscreen {}", if on { "on" } else { "off" });
 }
 
+/// Toggle `tl` as the sole visible window on its workspace. Unlike
+/// `set_fullscreen`, this never touches the split tree, never reparents the
+/// scene node, and never tells the client it's protocol-fullscreen (an
+/// ordinary resize configure only) — it just hides every sibling's scene
+/// node and sizes `tl` to the usable area (respecting layer-shell bars). A
+/// no-op for floating/fullscreen windows (solo only applies to tiled ones)
+/// and for a redundant on/off flip.
+pub(crate) unsafe fn set_solo(server: &mut Server, tl: *mut Toplevel, on: bool) {
+    if (*tl).fullscreen || (*tl).floating {
+        return;
+    }
+    let Some(a) = workspace_of(server, tl) else {
+        return;
+    };
+    let current = server.workspaces[a].solo;
+    if on == (current == Some(tl)) {
+        return;
+    }
+    server.workspaces[a].solo = if on { Some(tl) } else { None };
+    refresh(server);
+    println!("0xin: solo {}", if on { "on" } else { "off" });
+}
+
 /// Float or re-tile a window. Floating windows keep their own size (no tiled
 /// states, configures are hints), paint above tiled ones (the `tree_floating`
 /// scene layer), and hold no leaf in the split tree; re-tiling restores the
@@ -103,6 +126,12 @@ pub(crate) unsafe fn set_floating(server: &mut Server, tl: *mut Toplevel, on: bo
     if on && !(*tl).fullscreen {
         if let Some(a) = ws_idx {
             tree_untrack(&mut server.workspaces[a], tl);
+            // Floating a solo'd window would otherwise leave solo's forced
+            // full-usable-rect placement fighting place_floating's centered
+            // sizing on every refresh — end solo instead.
+            if server.workspaces[a].solo == Some(tl) {
+                server.workspaces[a].solo = None;
+            }
         }
     }
     (*tl).floating = on;
@@ -352,6 +381,9 @@ unsafe fn remove_window(server: &mut Server, tl: *mut Toplevel) {
         if let Some(pos) = ws.windows.iter().position(|&w| w == tl) {
             if !(*tl).floating && !(*tl).fullscreen {
                 tree_untrack(ws, tl);
+            }
+            if ws.solo == Some(tl) {
+                ws.solo = None;
             }
             ws.windows.remove(pos);
             if ws.focused >= ws.windows.len() && !ws.windows.is_empty() {

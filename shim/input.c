@@ -20,6 +20,12 @@
 
 #include "oxide_shim_internal.h"
 
+// Double-tap thresholds: max travel for a touch to still count as a tap, and
+// the max time/distance gap between two taps for them to count as a pair.
+#define OXIDE_TAP_DRAG_PX 24
+#define OXIDE_DOUBLE_TAP_MS 400
+#define OXIDE_DOUBLE_TAP_PX 100
+
 // --- seat & input ----------------------------------------------------------
 
 struct wlr_seat *oxide_seat_create(struct wl_display *display, const char *name) {
@@ -191,6 +197,16 @@ struct oxide_pointer {
     bool multi_down[3];
     double multi_start_x[3], multi_start_y[3];
     double multi_x[3], multi_y[3];
+    // Double-tap: a compositor-owned window-identity gesture, detected
+    // retroactively at touch-up (a tap gives no "in progress" signal to
+    // promote on, unlike the motion-based gestures above) — both taps are
+    // still delivered to the client normally, so an app with its own
+    // double-tap handling also reacts. See oxide_cursor_set_double_tap_callback.
+    struct wlr_surface *last_tap_surface;
+    double last_tap_lx, last_tap_ly;
+    uint32_t last_tap_time_msec;
+    oxide_callback double_tap_callback;
+    void *double_tap_userdata;
 };
 
 struct oxide_touch_point {
@@ -208,6 +224,12 @@ struct oxide_touch_point {
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
     double start_lx, start_ly;
+    // The root surface hit-tested at touch-down, and the position last seen
+    // in handle_touch_motion — used (for gesture_kind == 0 points) to
+    // classify a completed touch-up as a tap vs. a drag, and to identify
+    // which window it landed on for double-tap matching.
+    struct wlr_surface *root_surface;
+    double last_lx, last_ly;
     struct wl_list link;
 };
 
@@ -641,6 +663,9 @@ static void handle_touch_down(void *userdata, void *data) {
     point->touch = e->touch;
     point->start_lx = lx;
     point->start_ly = ly;
+    point->root_surface = wlr_surface_get_root_surface(surface);
+    point->last_lx = lx;
+    point->last_ly = ly;
     if ((p->gesture_mask & (1u << 7)) != 0 && p->output_layout != NULL) {
         struct wlr_output *output =
                 wlr_output_layout_output_at(p->output_layout, lx, ly);
@@ -778,6 +803,8 @@ static void handle_touch_motion(void *userdata, void *data) {
         }
         return;
     }
+    point->last_lx = lx;
+    point->last_ly = ly;
     wlr_seat_touch_notify_motion(p->seat, e->time_msec, e->touch_id,
             lx - point->offset_x, ly - point->offset_y);
 }
@@ -802,6 +829,32 @@ static void handle_touch_up(void *userdata, void *data) {
     }
     if (point->gesture_kind == 0) {
         wlr_seat_touch_notify_up(p->seat, e->time_msec, e->touch_id);
+
+        if ((p->gesture_mask & (1u << 16)) != 0 && point->root_surface != NULL
+                && p->double_tap_callback != NULL) {
+            double travel = hypot(point->last_lx - point->start_lx,
+                    point->last_ly - point->start_ly);
+            if (travel <= OXIDE_TAP_DRAG_PX) {
+                bool matched = p->last_tap_surface == point->root_surface
+                        && (e->time_msec - p->last_tap_time_msec)
+                                <= OXIDE_DOUBLE_TAP_MS
+                        && hypot(point->last_lx - p->last_tap_lx,
+                                 point->last_ly - p->last_tap_ly)
+                                <= OXIDE_DOUBLE_TAP_PX;
+                if (matched) {
+                    // Consumed — a third tap starts a fresh pair rather than
+                    // matching again against this same recorded tap.
+                    p->last_tap_surface = NULL;
+                    p->double_tap_callback(
+                            p->double_tap_userdata, point->root_surface);
+                } else {
+                    p->last_tap_surface = point->root_surface;
+                    p->last_tap_lx = point->last_lx;
+                    p->last_tap_ly = point->last_ly;
+                    p->last_tap_time_msec = e->time_msec;
+                }
+            }
+        }
     }
     wl_list_remove(&point->link);
     free(point);
@@ -938,6 +991,17 @@ void oxide_cursor_set_focus_callback(struct wlr_cursor *cursor,
     struct oxide_pointer *p = cursor->data;
     p->focus_callback = callback;
     p->focus_userdata = userdata;
+}
+
+// Register the Rust double-tap hook (same late-registration story as the
+// focus callback above). Fires with the tapped root wlr_surface — reuses the
+// generic oxide_callback shape, same as the focus callback, rather than a
+// bespoke type for this one extra trigger.
+void oxide_cursor_set_double_tap_callback(struct wlr_cursor *cursor,
+        oxide_callback callback, void *userdata) {
+    struct oxide_pointer *p = cursor->data;
+    p->double_tap_callback = callback;
+    p->double_tap_userdata = userdata;
 }
 
 // Register the Rust pointer-grab hooks (same late-registration story as the

@@ -60,6 +60,10 @@ pub enum Action {
     ResizeWindow(Direction),
     /// Toggle the focused window fullscreen (full output box, above bars).
     Fullscreen,
+    /// Toggle the focused tiled window as the sole visible window on its
+    /// workspace: others hide, it fills the usable area, and the split tree
+    /// is untouched — toggling off restores the exact prior layout.
+    ToggleSolo,
     /// Toggle the focused window between tiled and floating.
     ToggleFloating,
     /// Switch to workspace (0-based index).
@@ -110,6 +114,7 @@ pub enum GestureTrigger {
     ThreeDown = 13,
     ThreeLeft = 14,
     ThreeRight = 15,
+    DoubleTap = 16,
 }
 
 #[derive(Clone)]
@@ -654,6 +659,7 @@ fn parse_action(name: &str, arg: Option<&str>) -> Option<Action> {
         "movewindow" => Some(Action::MoveWindow(direction_from_arg(arg?)?)),
         "resizewindow" => Some(Action::ResizeWindow(direction_from_arg(arg?)?)),
         "fullscreen" | "togglefullscreen" => Some(Action::Fullscreen),
+        "solo" | "togglesolo" => Some(Action::ToggleSolo),
         "float" | "togglefloating" => Some(Action::ToggleFloating),
         "workspace" => Some(Action::Workspace(workspace_index(arg?)?)),
         "movetoworkspace" => Some(Action::MoveToWorkspace(workspace_index(arg?)?)),
@@ -687,6 +693,7 @@ fn parse_gesture(val: &str) -> Option<GestureBind> {
         "three-down" => GestureTrigger::ThreeDown,
         "three-left" => GestureTrigger::ThreeLeft,
         "three-right" => GestureTrigger::ThreeRight,
+        "double-tap" => GestureTrigger::DoubleTap,
         _ => return None,
     };
     let action_name = parts.next()?.trim();
@@ -998,6 +1005,31 @@ mod tests {
             &cfg.gestures[3].action,
             Action::Spawn(command) if command == "pkill -x fuzzel"
         ));
+    }
+
+    #[test]
+    fn solo_gesture_and_action_parse() {
+        let mut cfg = Config::default();
+        cfg.apply_gestures("gesture = double-tap, solo\n");
+        assert_eq!(cfg.gestures.len(), 1);
+        assert_eq!(cfg.gesture_mask(), 0x1_0000);
+        assert!(matches!(cfg.gestures[0].action, Action::ToggleSolo));
+
+        // Both bind-line spellings parse, with no argument required.
+        cfg.apply_binds("bind = MOD, S, solo\nbind = MOD SHIFT, S, togglesolo\n");
+        let s = key("S");
+        let plain = cfg
+            .binds
+            .iter()
+            .find(|b| b.mods == cfg.modifier && b.keysym == s)
+            .unwrap();
+        assert!(matches!(plain.action, Action::ToggleSolo));
+        let shifted = cfg
+            .binds
+            .iter()
+            .find(|b| b.mods == (cfg.modifier | MOD_SHIFT) && b.keysym == s)
+            .unwrap();
+        assert!(matches!(shifted.action, Action::ToggleSolo));
     }
 
     #[test]

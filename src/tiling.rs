@@ -20,7 +20,12 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
     }
     for (wi, ws) in server.workspaces.iter().enumerate() {
         for &tl in &ws.windows {
-            oxide_scene_tree_set_enabled((*tl).scene_tree, shown[wi]);
+            let visible = shown[wi]
+                && match ws.solo {
+                    Some(solo_tl) => tl == solo_tl || (*tl).fullscreen,
+                    None => true,
+                };
+            oxide_scene_tree_set_enabled((*tl).scene_tree, visible);
         }
     }
 
@@ -45,10 +50,21 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
         // layer-shell top); floating ones keep whatever rect they already
         // have (we never place them here — their size is the client's own);
         // the rest tile in the usable area as usual.
-        let tiled = tiled_windows(ws);
         for &tl in ws.windows.iter().filter(|&&tl| (*tl).fullscreen) {
             place(tl, o.x, o.y, o.w, o.h);
         }
+
+        if let Some(solo_tl) = ws.solo {
+            // solo_tl is never fullscreen (set_solo excludes it) — the
+            // branch above already placed any genuinely-fullscreen window on
+            // this workspace. Give the solo target the usable area (not the
+            // full output box — solo isn't meant to be true fullscreen) and
+            // skip the normal tiled placement entirely for this output.
+            place(solo_tl, o.ux, o.uy, o.uw, o.uh);
+            continue;
+        }
+
+        let tiled = tiled_windows(ws);
         let rects = match &ws.tree {
             Some(t) => tree_rects(t, o.ux, o.uy, o.uw, o.uh, gap),
             None => Vec::new(),
@@ -360,6 +376,7 @@ mod tests {
                 focused: 0,
                 tree: None,
                 first_split_vertical: true,
+                solo: None,
             }],
             outputs: Vec::new(),
             config: Config::default(),

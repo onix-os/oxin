@@ -8,7 +8,7 @@ use crate::tiling::{
     active_output, active_workspace, refresh, spatial_neighbor, tiled_position, tree_track,
     tree_untrack,
 };
-use crate::toplevel::{clamp_floating, set_floating, set_fullscreen};
+use crate::toplevel::{clamp_floating, set_floating, set_fullscreen, set_solo};
 use crate::wlr;
 use std::os::raw::c_void;
 use std::process::Command;
@@ -79,6 +79,9 @@ unsafe fn move_to_workspace(server: &mut Server, target: usize) {
     let tiled = !(*tl).floating && !(*tl).fullscreen;
     if tiled {
         tree_untrack(&mut server.workspaces[a], tl);
+    }
+    if server.workspaces[a].solo == Some(tl) {
+        server.workspaces[a].solo = None;
     }
     server.workspaces[a].windows.remove(focused);
     let len = server.workspaces[a].windows.len();
@@ -362,6 +365,14 @@ pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
             }
         }
         Action::Fullscreen => {}
+        Action::ToggleSolo if n > 0 => {
+            let a = active_workspace(server);
+            let ws = &server.workspaces[a];
+            if let Some(&tl) = ws.windows.get(ws.focused) {
+                set_solo(server, tl, ws.solo != Some(tl));
+            }
+        }
+        Action::ToggleSolo => {}
         Action::ToggleFloating if n > 0 => {
             let a = active_workspace(server);
             let ws = &server.workspaces[a];

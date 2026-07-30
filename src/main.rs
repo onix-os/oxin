@@ -37,7 +37,8 @@ use config::Config;
 use decoration::handle_new_decoration;
 use ffi::*;
 use input::{
-    handle_click_focus, handle_gesture, handle_grab_button, handle_grab_motion, handle_new_input,
+    handle_click_focus, handle_double_tap, handle_gesture, handle_grab_button, handle_grab_motion,
+    handle_new_input,
 };
 use layer_shell::handle_new_layer_surface;
 use output::{handle_new_output, handle_session_active};
@@ -163,6 +164,7 @@ fn main() {
                     focused: 0,
                     tree: None,
                     first_split_vertical,
+                    solo: None,
                 })
                 .collect(),
             outputs: Vec::new(),
@@ -189,6 +191,9 @@ fn main() {
         oxide_backend_add_new_input(backend, handle_new_input, server_ptr);
         // Keep Rust's focused-window bookkeeping in sync with click-to-focus.
         oxide_cursor_set_focus_callback(cursor, handle_click_focus, server_ptr);
+        // Touch double-tap on a window: solo it (or whatever `double-tap =`
+        // is configured to) — see src/input.rs::handle_double_tap.
+        oxide_cursor_set_double_tap_callback(cursor, handle_double_tap, server_ptr);
         // Mod+drag move/resize of floating windows (pointer grabs).
         oxide_cursor_set_grab_callbacks(cursor, handle_grab_button, handle_grab_motion, server_ptr);
         oxide_cursor_set_gestures(
