@@ -403,16 +403,15 @@ void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer);
 // (`oxide_swapchain_destroy` below) when the window itself is destroyed.
 // The destination display size restated on the scene buffer (required on a
 // fractionally-scaled output, since this call's own buffer swap bypasses
-// wlroots' client-viewport-driven auto-scaling) is read from
-// `root_surface`'s own committed logical size, not passed in — the
-// authoritative value is whatever the client itself intended when it
-// committed this content.
+// wlroots' client-viewport-driven auto-scaling) is `dst_w`/`dst_h` — 0xin's
+// own tile size for this window, the same value its scene tree's clip box
+// is set to, so the two can never disagree.
 // Returns false (no-op) on any failure — masking is best-effort, never fatal.
 bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, void *corner_program,
         struct wlr_scene_tree *scene_tree, struct wlr_surface *root_surface,
-        int radius, void **swapchain_inout, int *swapchain_w_inout,
-        int *swapchain_h_inout);
+        int radius, int dst_w, int dst_h, void **swapchain_inout,
+        int *swapchain_w_inout, int *swapchain_h_inout);
 // Free a per-toplevel corner_swapchain (a no-op if it was never created —
 // NULL means the window was never masked). Call on window destroy.
 void oxide_swapchain_destroy(void *swapchain);

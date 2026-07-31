@@ -392,6 +392,8 @@ extern "C" {
         scene_tree: *mut wlr::wlr_scene_tree,
         root_surface: *mut c_void,
         radius: i32,
+        dst_w: i32,
+        dst_h: i32,
         swapchain_inout: *mut *mut c_void,
         swapchain_w_inout: *mut i32,
         swapchain_h_inout: *mut i32,
