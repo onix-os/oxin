@@ -396,7 +396,12 @@ static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) 
 
 static int workspace_gesture_edge(struct oxide_pointer *p,
         double lx, double ly) {
-    if ((p->gesture_mask & ((1u << 2) | (1u << 3))) == 0
+    // Bits 2/3: horizontal workspace-switch swipes. Bits 17/18: left-edge
+    // vertical volume swipes — same 28px left strip, so the zone must claim
+    // touches for those too even if edge-left-in itself isn't configured.
+    if ((p->gesture_mask
+                    & ((1u << 2) | (1u << 3) | (1u << 17) | (1u << 18)))
+                    == 0
             || p->output_layout == NULL) {
         return 0;
     }
@@ -414,7 +419,9 @@ static int workspace_gesture_edge(struct oxide_pointer *p,
             && ly >= box.y + box.height - p->keyboard_height) {
         return 0;
     }
-    if (lx <= box.x + 28 && (p->gesture_mask & (1u << 2)) != 0) {
+    if (lx <= box.x + 28
+            && (p->gesture_mask & ((1u << 2) | (1u << 17) | (1u << 18)))
+                    != 0) {
         return -1;
     }
     if (lx >= box.x + box.width - 28
@@ -796,13 +803,24 @@ static void handle_touch_motion(void *userdata, void *data) {
     }
     if (point->gesture_kind == 2) {
         double dx = lx - point->start_lx;
+        double dy = ly - point->start_ly;
         bool previous = point->gesture_edge == -1 && dx >= 70;
         bool next = point->gesture_edge == 1 && dx <= -70;
-        if (!point->gesture_fired && (previous || next)) {
+        // Left-edge-only vertical swipes (volume). No explicit axis lock
+        // needed: gesture_fired latches on whichever condition below is
+        // met first as motion events stream in, so a natural swipe
+        // dominated by one axis resolves to that axis' gesture, and at
+        // most one of these ever fires per touch either way.
+        bool vol_up = point->gesture_edge == -1 && dy <= -70
+                && (p->gesture_mask & (1u << 17)) != 0;
+        bool vol_down = point->gesture_edge == -1 && dy >= 70
+                && (p->gesture_mask & (1u << 18)) != 0;
+        if (!point->gesture_fired && (previous || next || vol_up || vol_down)) {
             point->gesture_fired = true;
             if (p->gesture_callback != NULL) {
-                p->gesture_callback(
-                        p->gesture_userdata, previous ? 2 : 3);
+                uint32_t trigger =
+                        previous ? 2 : next ? 3 : vol_up ? 17 : 18;
+                p->gesture_callback(p->gesture_userdata, trigger);
             }
         }
         return;

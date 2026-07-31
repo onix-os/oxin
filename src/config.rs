@@ -115,6 +115,8 @@ pub enum GestureTrigger {
     ThreeLeft = 14,
     ThreeRight = 15,
     DoubleTap = 16,
+    EdgeLeftUp = 17,
+    EdgeLeftDown = 18,
 }
 
 #[derive(Clone)]
@@ -693,6 +695,8 @@ fn parse_gesture(val: &str) -> Option<GestureBind> {
         "bottom-down" => GestureTrigger::BottomDown,
         "edge-left-in" => GestureTrigger::EdgeLeftIn,
         "edge-right-in" => GestureTrigger::EdgeRightIn,
+        "edge-left-up" => GestureTrigger::EdgeLeftUp,
+        "edge-left-down" => GestureTrigger::EdgeLeftDown,
         "top-right" => GestureTrigger::TopRight,
         "top-left" => GestureTrigger::TopLeft,
         "top-down" => GestureTrigger::TopDown,

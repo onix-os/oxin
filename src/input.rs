@@ -46,6 +46,8 @@ pub(crate) unsafe extern "C" fn handle_gesture(userdata: *mut c_void, raw_trigge
         13 => GestureTrigger::ThreeDown,
         14 => GestureTrigger::ThreeLeft,
         15 => GestureTrigger::ThreeRight,
+        17 => GestureTrigger::EdgeLeftUp,
+        18 => GestureTrigger::EdgeLeftDown,
         _ => return,
     };
     let action = server
