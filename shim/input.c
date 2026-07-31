@@ -222,6 +222,10 @@ struct oxide_touch_point {
     int gesture_steps;
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
+    // Left-edge-only vertical volume swipe: 0 = undetermined, -1 = locked
+    // up, +1 = locked down. Separate from gesture_edge, which already
+    // means left/right zone identity for this gesture kind (kind 2).
+    int gesture_vlock;
     double start_lx, start_ly;
     // Position last seen in handle_touch_motion.
     double last_lx, last_ly;
@@ -804,23 +808,47 @@ static void handle_touch_motion(void *userdata, void *data) {
     if (point->gesture_kind == 2) {
         double dx = lx - point->start_lx;
         double dy = ly - point->start_ly;
+        // Left-edge-only: lock vertical direction after a small deliberate
+        // movement, same pattern as the top-edge brightness gesture (kind
+        // 3 below) just rotated 90° — each 5% of output height crossed
+        // emits one volume step, so a full top-to-bottom (or reverse)
+        // swipe spans 0-100%. Uses gesture_vlock rather than gesture_edge
+        // for the lock, since gesture_edge already carries left/right zone
+        // identity for this kind.
+        if (point->gesture_edge == -1 && point->gesture_vlock == 0
+                && (p->gesture_mask & ((1u << 17) | (1u << 18))) != 0
+                && fabs(dy) >= 30 && fabs(dy) > fabs(dx)) {
+            point->gesture_vlock = dy > 0 ? 1 : -1;
+        }
+        if (point->gesture_vlock != 0) {
+            struct wlr_output *output =
+                    wlr_output_layout_output_at(p->output_layout, lx, ly);
+            if (output != NULL) {
+                struct wlr_box box;
+                wlr_output_layout_get_box(p->output_layout, output, &box);
+                double travel = point->gesture_vlock * dy;
+                int steps = box.height > 0
+                        ? (int)(travel * 20.0 / box.height) : 0;
+                if (steps > 20) {
+                    steps = 20;
+                }
+                uint32_t trigger = point->gesture_vlock > 0 ? 18 : 17;
+                while (steps > point->gesture_steps
+                        && (p->gesture_mask & (1u << trigger)) != 0) {
+                    point->gesture_steps++;
+                    if (p->gesture_callback != NULL) {
+                        p->gesture_callback(p->gesture_userdata, trigger);
+                    }
+                }
+            }
+            return;
+        }
         bool previous = point->gesture_edge == -1 && dx >= 70;
         bool next = point->gesture_edge == 1 && dx <= -70;
-        // Left-edge-only vertical swipes (volume). No explicit axis lock
-        // needed: gesture_fired latches on whichever condition below is
-        // met first as motion events stream in, so a natural swipe
-        // dominated by one axis resolves to that axis' gesture, and at
-        // most one of these ever fires per touch either way.
-        bool vol_up = point->gesture_edge == -1 && dy <= -70
-                && (p->gesture_mask & (1u << 17)) != 0;
-        bool vol_down = point->gesture_edge == -1 && dy >= 70
-                && (p->gesture_mask & (1u << 18)) != 0;
-        if (!point->gesture_fired && (previous || next || vol_up || vol_down)) {
+        if (!point->gesture_fired && (previous || next)) {
             point->gesture_fired = true;
             if (p->gesture_callback != NULL) {
-                uint32_t trigger =
-                        previous ? 2 : next ? 3 : vol_up ? 17 : 18;
-                p->gesture_callback(p->gesture_userdata, trigger);
+                p->gesture_callback(p->gesture_userdata, previous ? 2 : 3);
             }
         }
         return;
