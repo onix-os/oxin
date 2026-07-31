@@ -254,30 +254,27 @@ static void find_root_scene_buffer(struct wlr_scene_buffer *buffer, int sx,
 // masking, since wlroots' render-pass API has no clip/mask/shader hook.
 // `radius` is in the same pixel units as the surface's buffer size (not yet
 // adjusted for output scale — see the caller in src/toplevel.rs for the
-// current state of that open question). `dst_w`/`dst_h` are 0xin's own
-// authoritative tile size for this window (its `Toplevel.w`/`.h`) — the same
-// values the scene tree's clip box (`oxide_scene_tree_set_clip`) is set to,
-// so the mask buffer can never disagree with what it's clipped against.
-// Previously this read the destination size from the client's own
-// `root_surface->current.width/height` instead, to avoid a second,
-// independent source of truth (see git history) — but that broke down for
-// clients that report a logical size computed under a different scale than
-// the output's actual (possibly fractional) scale: observed on a 2.4x
-// output with Firefox, which reports an integer `buffer_scale` of 3 instead
-// of matching 2.4, so its self-reported logical width/height doesn't match
-// the tile 0xin actually assigned it. Since the scene tree is now also
-// clipped to the tile box, trusting the client's own mismatched size there
-// made the mask buffer bigger than its clip region — visually: content
-// anchored top-left with its bottom-right edge cut off. Restating the
-// destination as 0xin's own tile size instead keeps the mask buffer and its
-// clip box in exact agreement, regardless of what scale the client thinks
-// it's using. Returns false (no-op, previous buffer untouched) on any
-// failure — masking is best-effort, never fatal.
+// current state of that open question). The destination size restated below
+// is read from the surface's OWN committed logical size
+// (`root_surface->current.width/height` — already post any viewport/scale
+// the client applied), not from 0xin's separately-tracked tile size: on a
+// fractionally-scaled output, wlroots' automatic buffer-to-viewport scaling
+// is driven by that same committed surface state via
+// wlr_scene_xdg_surface_create's internal commit listener, which our own
+// raw wlr_scene_buffer_set_buffer() call below does not go through — so
+// without restating it explicitly the mask buffer displays at its full
+// physical size instead. Using the surface's own authoritative value here
+// (rather than a compositor-side tracked size that can rack up its own
+// rounding, e.g. for clients — GTK4/libadwaita observed in practice — that
+// compute their own viewport scale slightly differently) avoids a second,
+// independent source of truth that can drift out of sync and skew or
+// mis-center the result. Returns false (no-op, previous buffer untouched)
+// on any failure — masking is best-effort, never fatal.
 bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, void *corner_program,
         struct wlr_scene_tree *scene_tree, struct wlr_surface *root_surface,
-        int radius, int dst_w, int dst_h, void **swapchain_inout,
-        int *swapchain_w_inout, int *swapchain_h_inout) {
+        int radius, void **swapchain_inout, int *swapchain_w_inout,
+        int *swapchain_h_inout) {
     if (corner_program == NULL) {
         return false;
     }
@@ -290,15 +287,10 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     wlr_scene_node_for_each_buffer(&scene_tree->node, find_root_scene_buffer,
             &target);
     if (target.found == NULL) {
-        // Expected and harmless on every window's very first commit: xdg-shell
-        // clients do an initial buffer-less commit purely to trigger the first
-        // configure, before wlr_scene_xdg_surface_create's tracked scene_buffer
-        // has any surface attached yet. Confirmed universal (not just some
-        // clients) — logged for visibility, not because it's abnormal.
         wlr_log(WLR_ERROR,
                 "0xin: corner-radius found no scene_buffer for root surface "
-                "%p under this toplevel's tree (expected on the client's "
-                "initial buffer-less commit); masking skipped",
+                "%p under this toplevel's tree — likely rendering via a "
+                "subsurface instead of its root surface; masking skipped",
                 (void *)root_surface);
         return false;
     }
@@ -455,21 +447,6 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     glDisableVertexAttribArray(variant->attrib_texcoord);
     log_gl_errors("draw");
 
-    // Mirror the pre-draw glFinish() above, but for the buffer we just wrote
-    // instead of the one we read: our raw GL draw has no explicit-sync point
-    // for downstream consumers (the diagnostic read below, and the scene
-    // graph once this buffer is swapped in after wlr_render_pass_submit()),
-    // so without this there's no guarantee the draw is actually complete —
-    // wlroots' own doc comment on wlr_render_pass_submit only promises the
-    // pass "cannot be used after" submit, not that submit alone guarantees
-    // completion. Observed to matter specifically for a freshly (re)allocated
-    // swapchain buffer — e.g. a client like Firefox that keeps committing
-    // slightly different sizes while its layout settles, forcing a brand-new
-    // GBM buffer/FBO on nearly every commit — where the buffer isn't "warm"
-    // yet; a client with a stable size (foot, kitty) reuses the same buffer
-    // every frame and never surfaced this race.
-    glFinish();
-
     // Diagnostic: read back the buffer's actual center pixel (guaranteed
     // full corner-mask coverage — not near any edge) to see what the
     // shader really produced, rather than inferring from what shows on
@@ -509,13 +486,18 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     }
 
     wlr_scene_buffer_set_buffer(target.found, mask_buffer);
-    // Restate the destination size explicitly (see the function's doc
+    // Restate the logical display size explicitly (see the function's doc
     // comment) — our mask buffer is the surface's full physical size, but
-    // must always display at 0xin's own tile size, matching the scene
-    // tree's clip box exactly. Also reset any leftover source crop from the
+    // on a fractionally-scaled output that must still be painted at the
+    // compositor's own logical tile size, not 1:1. Read from the surface's
+    // own committed state, not a separately-tracked compositor-side value —
+    // this is exactly the size the client itself intended when it committed
+    // this content, so it can never drift out of sync with what the buffer
+    // actually contains. Also reset any leftover source crop from the
     // client's own buffer/viewport state, since our mask buffer is a full,
     // uncropped copy — a stale src_box would crop it incorrectly.
-    wlr_scene_buffer_set_dest_size(target.found, dst_w, dst_h);
+    wlr_scene_buffer_set_dest_size(target.found, root_surface->current.width,
+            root_surface->current.height);
     wlr_scene_buffer_set_source_box(target.found, NULL);
     wlr_buffer_unlock(mask_buffer);
     return true;

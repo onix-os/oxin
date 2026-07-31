@@ -280,8 +280,6 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
             (*tl).scene_tree,
             oxide_xdg_toplevel_surface((*tl).xdg_toplevel),
             server.config.corner_radius,
-            (*tl).w,
-            (*tl).h,
             &mut (*tl).corner_swapchain,
             &mut (*tl).corner_swapchain_w,
             &mut (*tl).corner_swapchain_h,

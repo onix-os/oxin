@@ -39,7 +39,8 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
         let place = |tl: *mut Toplevel, x: i32, y: i32, w: i32, h: i32| {
             oxide_scene_tree_set_position((*tl).scene_tree, x, y);
             wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
-            oxide_scene_tree_set_clip((*tl).scene_tree, w, h);
+            // TEMP TEST: disabled to check if clip is cropping Firefox's content.
+            // oxide_scene_tree_set_clip((*tl).scene_tree, w, h);
             (*tl).x = x;
             (*tl).y = y;
             (*tl).w = w;
