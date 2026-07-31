@@ -287,10 +287,15 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     wlr_scene_node_for_each_buffer(&scene_tree->node, find_root_scene_buffer,
             &target);
     if (target.found == NULL) {
+        // Expected and harmless on every window's very first commit: xdg-shell
+        // clients do an initial buffer-less commit purely to trigger the first
+        // configure, before wlr_scene_xdg_surface_create's tracked scene_buffer
+        // has any surface attached yet. Confirmed universal (not just some
+        // clients) — logged for visibility, not because it's abnormal.
         wlr_log(WLR_ERROR,
                 "0xin: corner-radius found no scene_buffer for root surface "
-                "%p under this toplevel's tree — likely rendering via a "
-                "subsurface instead of its root surface; masking skipped",
+                "%p under this toplevel's tree (expected on the client's "
+                "initial buffer-less commit); masking skipped",
                 (void *)root_surface);
         return false;
     }
@@ -446,6 +451,21 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     glDisableVertexAttribArray(variant->attrib_pos);
     glDisableVertexAttribArray(variant->attrib_texcoord);
     log_gl_errors("draw");
+
+    // Mirror the pre-draw glFinish() above, but for the buffer we just wrote
+    // instead of the one we read: our raw GL draw has no explicit-sync point
+    // for downstream consumers (the diagnostic read below, and the scene
+    // graph once this buffer is swapped in after wlr_render_pass_submit()),
+    // so without this there's no guarantee the draw is actually complete —
+    // wlroots' own doc comment on wlr_render_pass_submit only promises the
+    // pass "cannot be used after" submit, not that submit alone guarantees
+    // completion. Observed to matter specifically for a freshly (re)allocated
+    // swapchain buffer — e.g. a client like Firefox that keeps committing
+    // slightly different sizes while its layout settles, forcing a brand-new
+    // GBM buffer/FBO on nearly every commit — where the buffer isn't "warm"
+    // yet; a client with a stable size (foot, kitty) reuses the same buffer
+    // every frame and never surfaced this race.
+    glFinish();
 
     // Diagnostic: read back the buffer's actual center pixel (guaranteed
     // full corner-mask coverage — not near any edge) to see what the
