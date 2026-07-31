@@ -202,6 +202,8 @@ bool oxide_xdg_toplevel_requested_fullscreen(struct wlr_xdg_toplevel *toplevel);
 // Layout helpers: move a window's scene node; give a window keyboard focus;
 // read an output's pixel size. (All touch wlroots struct internals.)
 void oxide_scene_tree_set_position(struct wlr_scene_tree *tree, int x, int y);
+// Crop a window's scene subtree to width x height; 0,0 disables clipping.
+void oxide_scene_tree_set_clip(struct wlr_scene_tree *tree, int width, int height);
 void oxide_scene_tree_set_enabled(struct wlr_scene_tree *tree, bool enabled);
 // Apply one opacity value to every buffer currently under a toplevel tree.
 void oxide_scene_tree_set_opacity(struct wlr_scene_tree *tree, float opacity);
@@ -399,16 +401,18 @@ void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer);
 // this call whenever the surface's buffer size no longer matches
 // `*swapchain_w_inout`/`*swapchain_h_inout`; the caller owns destroying it
 // (`oxide_swapchain_destroy` below) when the window itself is destroyed.
-// `dst_w`/`dst_h` are the compositor's own logical tile size for this
-// window (0 = fall back to the buffer's own size) — required to restate
-// explicitly on a fractionally-scaled output, since this call's own buffer
-// swap bypasses wlroots' client-viewport-driven auto-scaling.
+// The destination display size restated on the scene buffer (required on a
+// fractionally-scaled output, since this call's own buffer swap bypasses
+// wlroots' client-viewport-driven auto-scaling) is read from
+// `root_surface`'s own committed logical size, not passed in — the
+// authoritative value is whatever the client itself intended when it
+// committed this content.
 // Returns false (no-op) on any failure — masking is best-effort, never fatal.
 bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, void *corner_program,
         struct wlr_scene_tree *scene_tree, struct wlr_surface *root_surface,
-        int radius, int dst_w, int dst_h, void **swapchain_inout,
-        int *swapchain_w_inout, int *swapchain_h_inout);
+        int radius, void **swapchain_inout, int *swapchain_w_inout,
+        int *swapchain_h_inout);
 // Free a per-toplevel corner_swapchain (a no-op if it was never created —
 // NULL means the window was never masked). Call on window destroy.
 void oxide_swapchain_destroy(void *swapchain);

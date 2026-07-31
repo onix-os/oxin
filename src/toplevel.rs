@@ -181,6 +181,7 @@ unsafe fn place_floating(server: &Server, tl: *mut Toplevel, w: i32, h: i32) {
     let y = (o.uy + (o.uh - h) / 2).max(o.uy);
     oxide_scene_tree_set_position((*tl).scene_tree, x, y);
     wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
+    oxide_scene_tree_set_clip((*tl).scene_tree, 0, 0);
     ((*tl).x, (*tl).y, (*tl).w, (*tl).h) = (x, y, w, h);
 }
 
@@ -279,8 +280,6 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
             (*tl).scene_tree,
             oxide_xdg_toplevel_surface((*tl).xdg_toplevel),
             server.config.corner_radius,
-            (*tl).w,
-            (*tl).h,
             &mut (*tl).corner_swapchain,
             &mut (*tl).corner_swapchain_w,
             &mut (*tl).corner_swapchain_h,

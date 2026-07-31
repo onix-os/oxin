@@ -193,6 +193,7 @@ extern "C" {
         new_parent: *mut wlr::wlr_scene_tree,
     );
     pub(crate) fn oxide_scene_tree_set_position(tree: *mut wlr::wlr_scene_tree, x: i32, y: i32);
+    pub(crate) fn oxide_scene_tree_set_clip(tree: *mut wlr::wlr_scene_tree, width: i32, height: i32);
     pub(crate) fn oxide_scene_tree_set_enabled(tree: *mut wlr::wlr_scene_tree, enabled: bool);
     pub(crate) fn oxide_scene_tree_set_opacity(tree: *mut wlr::wlr_scene_tree, opacity: f32);
     pub(crate) fn oxide_scene_tree_destroy(tree: *mut wlr::wlr_scene_tree);
@@ -391,8 +392,6 @@ extern "C" {
         scene_tree: *mut wlr::wlr_scene_tree,
         root_surface: *mut c_void,
         radius: i32,
-        dst_w: i32,
-        dst_h: i32,
         swapchain_inout: *mut *mut c_void,
         swapchain_w_inout: *mut i32,
         swapchain_h_inout: *mut i32,

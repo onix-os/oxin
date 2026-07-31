@@ -150,6 +150,15 @@ void oxide_scene_tree_set_position(struct wlr_scene_tree *tree, int x, int y) {
     wlr_scene_node_set_position(&tree->node, x, y);
 }
 
+// Crop a window's scene subtree to width x height (surface-local
+// coordinates), so a client that ignores its requested tile size can't
+// visually spill into a neighboring tile. A width/height of 0 disables
+// clipping (used for floating windows, which size themselves freely).
+void oxide_scene_tree_set_clip(struct wlr_scene_tree *tree, int width, int height) {
+    struct wlr_box clip = {0, 0, width, height};
+    wlr_scene_subsurface_tree_set_clip(&tree->node, &clip);
+}
+
 // Destroy a window's scene tree (used to rebuild it from scratch on VT resume,
 // where the original node stops presenting its surface after the outputs are
 // torn down and recreated).

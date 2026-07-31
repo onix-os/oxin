@@ -254,24 +254,27 @@ static void find_root_scene_buffer(struct wlr_scene_buffer *buffer, int sx,
 // masking, since wlroots' render-pass API has no clip/mask/shader hook.
 // `radius` is in the same pixel units as the surface's buffer size (not yet
 // adjusted for output scale — see the caller in src/toplevel.rs for the
-// current state of that open question). `dst_w`/`dst_h` are 0xin's own
-// authoritative logical tile size for this window (its `Toplevel.w`/`.h`) —
-// required on any fractionally-scaled output: wlroots' automatic
-// buffer-to-viewport scaling is driven by the client's own committed
-// viewport state via wlr_scene_xdg_surface_create's internal commit
-// listener, which our own raw wlr_scene_buffer_set_buffer() call below does
-// not go through, so without explicitly restating the destination size here
-// the mask buffer displays at its full physical size instead of the
-// intended logical one (0 falls back to "use the buffer's own size" per
-// wlr_scene_buffer_set_dest_size's documented default — harmless for an
-// as-yet-untiled window on its very first commit, before any layout size is
-// known). Returns false (no-op, previous buffer untouched) on any failure —
-// masking is best-effort, never fatal.
+// current state of that open question). The destination size restated below
+// is read from the surface's OWN committed logical size
+// (`root_surface->current.width/height` — already post any viewport/scale
+// the client applied), not from 0xin's separately-tracked tile size: on a
+// fractionally-scaled output, wlroots' automatic buffer-to-viewport scaling
+// is driven by that same committed surface state via
+// wlr_scene_xdg_surface_create's internal commit listener, which our own
+// raw wlr_scene_buffer_set_buffer() call below does not go through — so
+// without restating it explicitly the mask buffer displays at its full
+// physical size instead. Using the surface's own authoritative value here
+// (rather than a compositor-side tracked size that can rack up its own
+// rounding, e.g. for clients — GTK4/libadwaita observed in practice — that
+// compute their own viewport scale slightly differently) avoids a second,
+// independent source of truth that can drift out of sync and skew or
+// mis-center the result. Returns false (no-op, previous buffer untouched)
+// on any failure — masking is best-effort, never fatal.
 bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, void *corner_program,
         struct wlr_scene_tree *scene_tree, struct wlr_surface *root_surface,
-        int radius, int dst_w, int dst_h, void **swapchain_inout,
-        int *swapchain_w_inout, int *swapchain_h_inout) {
+        int radius, void **swapchain_inout, int *swapchain_w_inout,
+        int *swapchain_h_inout) {
     if (corner_program == NULL) {
         return false;
     }
@@ -486,11 +489,15 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     // Restate the logical display size explicitly (see the function's doc
     // comment) — our mask buffer is the surface's full physical size, but
     // on a fractionally-scaled output that must still be painted at the
-    // compositor's own logical tile size, not 1:1. Also reset any leftover
-    // source crop from the client's own buffer/viewport state, since our
-    // mask buffer is a full, uncropped copy — a stale src_box would crop it
-    // incorrectly.
-    wlr_scene_buffer_set_dest_size(target.found, dst_w, dst_h);
+    // compositor's own logical tile size, not 1:1. Read from the surface's
+    // own committed state, not a separately-tracked compositor-side value —
+    // this is exactly the size the client itself intended when it committed
+    // this content, so it can never drift out of sync with what the buffer
+    // actually contains. Also reset any leftover source crop from the
+    // client's own buffer/viewport state, since our mask buffer is a full,
+    // uncropped copy — a stale src_box would crop it incorrectly.
+    wlr_scene_buffer_set_dest_size(target.found, root_surface->current.width,
+            root_surface->current.height);
     wlr_scene_buffer_set_source_box(target.found, NULL);
     wlr_buffer_unlock(mask_buffer);
     return true;
