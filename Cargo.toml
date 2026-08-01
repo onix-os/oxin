@@ -2,7 +2,7 @@
 name = "oxin"
 version = "0.1.0"
 edition = "2021"
-description = "0xin — a from-scratch tiling Wayland compositor in Rust, built on wlroots"
+description = "0xin — a from-scratch tiling Wayland compositor in Rust, built on Smithay"
 
 # The crate is `oxin` (Cargo forbids a leading digit in package names), but the
 # binary keeps the brand spelling `0xin`.
@@ -17,7 +17,33 @@ path = "src/bin/0xinctl.rs"
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
-[build-dependencies]
-bindgen = "0.71"
-cc = "1"
-pkg-config = "0.3"
+# Smithay replaces the wlroots C library and our C shim: it provides the
+# Wayland server plumbing, the DRM/winit backends, the GLES renderer and the
+# desktop helpers (Space/Window/layer surfaces) entirely in Rust.
+[dependencies.smithay]
+version = "0.7"
+default-features = false
+features = [
+    "backend_drm",
+    "backend_egl",
+    "backend_gbm",
+    "backend_libinput",
+    "backend_session_libseat",
+    "backend_udev",
+    "backend_winit",
+    "desktop",
+    "renderer_gl",
+    "renderer_multi",
+    "use_system_lib",
+    "wayland_frontend",
+]
+
+[dependencies.tracing]
+version = "0.1"
+
+[dependencies.tracing-subscriber]
+version = "0.3"
+features = ["env-filter"]
+
+[dependencies.libc]
+version = "0.2"

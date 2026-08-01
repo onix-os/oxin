@@ -1,11 +1,90 @@
-//! In-compositor PNG/JPEG wallpaper decoding and wlroots scene-buffer updates.
+//! Wallpapers: decode a PNG/JPEG once per output and hand it to the renderer
+//! as a memory buffer.
+//!
+//! 0xin renders wallpapers itself rather than depending on a layer-shell
+//! wallpaper client (swaybg, hyprpaper) — the phone profile has no room for an
+//! extra process, and the solid `background =` colour stays the fallback when
+//! no image is configured or decoding fails.
 
-use crate::ffi::{oxide_scene_add_wallpaper, oxide_scene_wallpaper_destroy};
-use crate::state::Server;
-use image::imageops::FilterType;
 use std::env;
-use std::path::{Path, PathBuf};
-use std::ptr;
+use std::path::PathBuf;
+
+use image::imageops::FilterType;
+use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::element::memory::{
+    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
+};
+use smithay::backend::renderer::element::Kind;
+use smithay::backend::renderer::{ImportMem, Renderer};
+use smithay::utils::{Logical, Scale, Size, Transform};
+
+use crate::state::Oxin;
+
+pub struct Wallpaper {
+    buffer: MemoryRenderBuffer,
+}
+
+impl Wallpaper {
+    /// Decode `path` and cover-scale it to `size` (fill the output, cropping
+    /// the overflowing axis — the semantics the wlroots build had).
+    pub fn load(path: &str, size: Size<i32, Logical>) -> Result<Wallpaper, String> {
+        if size.w <= 0 || size.h <= 0 {
+            return Err("output has no size yet".into());
+        }
+        let path = expand_home(path);
+        let image = image::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let image = image.to_rgba8();
+
+        let (iw, ih) = (image.width() as f32, image.height() as f32);
+        let (ow, oh) = (size.w as f32, size.h as f32);
+        // Cover: scale so both axes are at least the output's, then centre-crop.
+        let factor = (ow / iw).max(oh / ih);
+        let scaled = image::imageops::resize(
+            &image,
+            (iw * factor).ceil() as u32,
+            (ih * factor).ceil() as u32,
+            FilterType::Triangle,
+        );
+        let x = scaled.width().saturating_sub(size.w as u32) / 2;
+        let y = scaled.height().saturating_sub(size.h as u32) / 2;
+        let cropped =
+            image::imageops::crop_imm(&scaled, x, y, size.w as u32, size.h as u32).to_image();
+
+        let buffer = MemoryRenderBuffer::from_slice(
+            cropped.as_raw(),
+            // `image` gives us bytes in R,G,B,A order; Fourcc names channels
+            // from the most significant byte of a little-endian word down, so
+            // those same bytes are ABGR8888.
+            Fourcc::Abgr8888,
+            (size.w, size.h),
+            1,
+            Transform::Normal,
+            None,
+        );
+        Ok(Wallpaper { buffer })
+    }
+
+    pub fn element<R>(
+        &self,
+        renderer: &mut R,
+        _scale: Scale<f64>,
+    ) -> Option<MemoryRenderBufferRenderElement<R>>
+    where
+        R: Renderer + ImportMem,
+        R::TextureId: Send + Clone + 'static,
+    {
+        MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            (0.0, 0.0),
+            &self.buffer,
+            None,
+            None,
+            None,
+            Kind::Unspecified,
+        )
+        .ok()
+    }
+}
 
 fn expand_home(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
@@ -16,116 +95,41 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-fn decode_cover(path: &Path, width: u32, height: u32) -> Result<Vec<u8>, String> {
-    let image =
-        image::open(path).map_err(|error| format!("cannot decode {}: {error}", path.display()))?;
-    Ok(image
-        // Triangle gives a good wallpaper downscale without stalling the
-        // compositor event loop for seconds like Lanczos can in debug/mobile
-        // builds. Decoding/replacement is intentionally synchronous so the
-        // control response means the new scene buffer is already installed.
-        .resize_to_fill(width, height, FilterType::Triangle)
-        .to_rgba8()
-        .into_raw())
-}
-
-unsafe fn create_node(
-    server: &Server,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    pixels: &[u8],
-) -> Result<*mut std::ffi::c_void, String> {
-    let node = oxide_scene_add_wallpaper(
-        server.tree_bg_fallback,
-        x,
-        y,
-        width,
-        height,
-        width,
-        height,
-        pixels.as_ptr(),
-        width as usize * 4,
-    );
-    if node.is_null() {
-        Err("wlroots could not create the wallpaper scene buffer".into())
-    } else {
-        Ok(node)
-    }
-}
-
-/// Apply one image to every connected output using cover scaling. All images
-/// decode before any current node is replaced, avoiding partially updated
-/// multi-monitor state when a path is invalid.
-pub(crate) unsafe fn set(server: &mut Server, requested: Option<&str>) -> Result<(), String> {
-    if requested.is_none() {
-        for output in &mut server.outputs {
-            if !output.wallpaper.is_null() {
-                oxide_scene_wallpaper_destroy(output.wallpaper);
-                output.wallpaper = ptr::null_mut();
-                crate::ffi::oxide_output_schedule_frame(output.wlr_output);
+/// Apply a wallpaper (or clear it) on every output — the `0xinctl wallpaper`
+/// path, and how the configured `wallpaper =` is applied at startup.
+pub fn set(state: &mut Oxin, path: Option<&str>) -> Result<(), String> {
+    match path {
+        None => {
+            for entry in state.outputs.iter_mut() {
+                entry.wallpaper = None;
             }
+            state.config.wallpaper = None;
+            Ok(())
         }
-        server.config.wallpaper = None;
-        return Ok(());
-    }
-
-    let requested = requested.unwrap();
-    let path = expand_home(requested);
-    let mut decoded = Vec::with_capacity(server.outputs.len());
-    for output in &server.outputs {
-        decoded.push(decode_cover(&path, output.w as u32, output.h as u32)?);
-    }
-
-    for (index, pixels) in decoded.iter().enumerate() {
-        let output = &server.outputs[index];
-        let new_node = create_node(server, output.x, output.y, output.w, output.h, pixels)?;
-        let output = &mut server.outputs[index];
-        if !output.wallpaper.is_null() {
-            oxide_scene_wallpaper_destroy(output.wallpaper);
+        Some(path) => {
+            // Decode for every output first: a failure aborts before anything
+            // changes, so a bad path leaves the current wallpaper in place.
+            let mut loaded = Vec::with_capacity(state.outputs.len());
+            for entry in &state.outputs {
+                loaded.push(Wallpaper::load(path, entry.geometry.size)?);
+            }
+            for (entry, wallpaper) in state.outputs.iter_mut().zip(loaded) {
+                entry.wallpaper = Some(wallpaper);
+            }
+            state.config.wallpaper = Some(path.to_string());
+            Ok(())
         }
-        output.wallpaper = new_node;
-        crate::ffi::oxide_output_schedule_frame(output.wlr_output);
     }
-    server.config.wallpaper = Some(requested.to_string());
-    eprintln!("0xin: wallpaper = {}", path.display());
-    Ok(())
 }
 
-/// Build the configured wallpaper for an output which just appeared.
-pub(crate) unsafe fn create_for_output(
-    server: &Server,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-) -> *mut std::ffi::c_void {
-    let Some(requested) = server.config.wallpaper.as_deref() else {
-        return ptr::null_mut();
+/// Give one freshly created output its wallpaper, if one is configured.
+pub fn create_for_output(state: &mut Oxin, index: usize) {
+    let Some(path) = state.config.wallpaper.clone() else {
+        return;
     };
-    let path = expand_home(requested);
-    match decode_cover(&path, width as u32, height as u32)
-        .and_then(|pixels| create_node(server, x, y, width, height, &pixels))
-    {
-        Ok(node) => node,
-        Err(error) => {
-            eprintln!("0xin: wallpaper: {error}; using solid background");
-            ptr::null_mut()
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::expand_home;
-    use std::path::PathBuf;
-
-    #[test]
-    fn absolute_wallpaper_path_is_unchanged() {
-        assert_eq!(
-            expand_home("/tmp/wallpaper.png"),
-            PathBuf::from("/tmp/wallpaper.png")
-        );
+    let size = state.outputs[index].geometry.size;
+    match Wallpaper::load(&path, size) {
+        Ok(wallpaper) => state.outputs[index].wallpaper = Some(wallpaper),
+        Err(error) => eprintln!("0xin: wallpaper: {error}"),
     }
 }
