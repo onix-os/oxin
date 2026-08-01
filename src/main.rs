@@ -9,12 +9,15 @@
 mod backend;
 mod config;
 mod control;
+mod corners;
+mod cursor;
 mod gestures;
 mod handlers;
 mod input;
 mod keybindings;
 mod layout;
 mod output;
+mod protocols;
 mod render;
 mod state;
 mod tiling;
@@ -115,6 +118,12 @@ fn run() -> Result<(), String> {
         // for this seat; its keys reach seat focus like any other keyboard.
         virtual_keyboard_state: VirtualKeyboardManagerState::new::<Oxin, _>(&dh, |_| true),
         dmabuf_state: DmabufState::new(),
+        // wlr-output-power-management: Smithay has no such protocol, so the
+        // wire handling is ours (src/protocols/output_power.rs).
+        output_power_state: crate::protocols::output_power::OutputPowerManagerState::new(&dh),
+        powered: std::collections::HashMap::new(),
+        // wlr-screencopy: what grim and wf-recorder capture through.
+        screencopy_state: crate::protocols::screencopy::ScreencopyManagerState::new(&dh),
 
         seat: seat.clone(),
         space: smithay::desktop::Space::default(),
@@ -141,12 +150,15 @@ fn run() -> Result<(), String> {
 
         control_path: None,
 
+        cursor: std::cell::RefCell::new(crate::cursor::Cursor::load()),
         keyboard_visible: false,
         gestures: Recognizer::new(gesture_mask, keyboard_height, handle_visible),
 
         locked: false,
         lock: None,
     };
+
+    handlers::advertise_layer_shell_v5(&mut state);
 
     seat.add_keyboard(XkbConfig::default(), 600, 25)
         .map_err(|error| format!("cannot create the keyboard: {error}"))?;

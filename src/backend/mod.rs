@@ -26,6 +26,15 @@ impl Backend {
         }
     }
 
+    /// Real DPMS on/off for one output (wlr-output-power-management). Nested,
+    /// there is no such thing — the host owns the panel.
+    pub fn set_output_powered(&mut self, output: &smithay::output::Output, on: bool) {
+        match self {
+            Backend::Winit(_) => {}
+            Backend::Udev(backend) => backend.set_output_powered(output, on),
+        }
+    }
+
     pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
         match self {
             Backend::Winit(backend) => backend.import_dmabuf(dmabuf),

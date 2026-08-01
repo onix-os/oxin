@@ -14,7 +14,8 @@ use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::Client;
+use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::ZwlrLayerShellV1;
+use smithay::reexports::wayland_server::{Client, DataInit, DisplayHandle, GlobalDispatch, New};
 use smithay::utils::Serial;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
@@ -75,6 +76,13 @@ impl CompositorHandler for Oxin {
         }
 
         self.popups.commit(surface);
+        if let Some(PopupKind::Xdg(popup)) = self.popups.find_popup(surface) {
+            // A popup that is never configured never maps — wlroots scheduled
+            // this configure from its own initial-commit hook.
+            if !popup.is_initial_configure_sent() {
+                popup.send_configure().ok();
+            }
+        }
         toplevel_commit(self, surface);
         layer_commit(self, surface);
         lock_surface_commit(self, surface);
@@ -275,6 +283,35 @@ impl XdgDecorationHandler for Oxin {
     }
 }
 
+/// The layer-shell global, advertised at version 5.
+///
+/// Smithay's own constructor advertises 4; the wlroots build advertised 5,
+/// because some clients (hyprpaper) refuse to bind below it. The only addition
+/// in 5 is `set_exclusive_edge`, which Smithay accepts and ignores — exactly
+/// what wlroots did for us, since `arrange_layers` treats exclusive zones
+/// uniformly either way. Binding hands the resource to Smithay's own dispatch
+/// (its per-resource data is `()`), so the whole protocol still runs through
+/// the library.
+impl GlobalDispatch<ZwlrLayerShellV1, ()> for Oxin {
+    fn bind(
+        _state: &mut Self,
+        _handle: &DisplayHandle,
+        _client: &Client,
+        resource: New<ZwlrLayerShellV1>,
+        _global_data: &(),
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        data_init.init(resource, ());
+    }
+}
+
+/// Replace Smithay's v4 layer-shell global with a v5 one.
+pub fn advertise_layer_shell_v5(state: &mut Oxin) {
+    let dh = state.dh.clone();
+    dh.remove_global::<Oxin>(state.layer_shell_state.shell_global());
+    dh.create_global::<Oxin, ZwlrLayerShellV1, ()>(5, ());
+}
+
 impl WlrLayerShellHandler for Oxin {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
         &mut self.layer_shell_state
@@ -420,6 +457,9 @@ impl SessionLockHandler for Oxin {
                 locker.lock();
             }
         }
+        // The lock client owns input from here: drop focus until its surface
+        // arrives, so keystrokes can never reach the app underneath.
+        set_keyboard_focus(self, None);
         eprintln!("0xin: session locked");
     }
 
@@ -430,6 +470,12 @@ impl SessionLockHandler for Oxin {
             entry.lock_surface = None;
         }
         refresh(self);
+        // Hand focus back to whatever was focused before the lock.
+        let workspace = crate::tiling::active_workspace(self);
+        let focused = self.workspaces[workspace].focused;
+        if let Some(window) = self.workspaces[workspace].windows.get(focused).cloned() {
+            crate::keybindings::focus_window(self, &window);
+        }
         eprintln!("0xin: session unlocked");
     }
 
@@ -445,6 +491,7 @@ impl SessionLockHandler for Oxin {
             pending.size = Some((size.w.max(1) as u32, size.h.max(1) as u32).into());
         });
         surface.send_configure();
+        let wl_surface = surface.wl_surface().clone();
         if let Some(entry) = self
             .outputs
             .iter_mut()
@@ -452,17 +499,58 @@ impl SessionLockHandler for Oxin {
         {
             entry.lock_surface = Some(surface);
         }
+        // The locker has a surface now — give it the keyboard, or the user
+        // cannot type a password.
+        set_keyboard_focus(self, Some(wl_surface));
     }
 }
 
-/// Keyboard focus follows the window under the pointer on click; this keeps
-/// `Workspace.focused` in step so close/movefocus/movewindow act on the
-/// clicked window, not the last keyboard-focused one.
+/// Keyboard focus follows what was clicked or tapped.
+///
+/// Only three kinds of surface may take focus, exactly as the wlroots build
+/// decided it: an application toplevel, a session-lock surface, and a layer
+/// surface that asked for keyboard interactivity. Ordinary layer surfaces —
+/// notably an on-screen keyboard — must never steal focus from the app being
+/// typed into.
 pub fn focus_clicked_window(state: &mut Oxin, surface: &WlSurface) {
     let mut root = surface.clone();
     while let Some(parent) = get_parent(&root) {
         root = parent;
     }
+
+    // A session-lock surface owns focus whenever it is up.
+    if state.locked {
+        let lock = state.outputs.iter().find_map(|entry| {
+            entry
+                .lock_surface
+                .as_ref()
+                .filter(|lock| lock.wl_surface() == &root)
+                .map(|lock| lock.wl_surface().clone())
+        });
+        if let Some(lock) = lock {
+            set_keyboard_focus(state, Some(lock));
+        }
+        return;
+    }
+
+    // A layer surface only takes focus if it asked for keyboard interactivity.
+    let layer_focus = state.outputs.iter().find_map(|entry| {
+        let map = layer_map_for_output(&entry.output);
+        let wants_keyboard = map
+            .layers()
+            .find(|layer| layer.wl_surface() == &root)
+            .map(|layer| {
+                layer.cached_state().keyboard_interactivity
+                    != smithay::wayland::shell::wlr_layer::KeyboardInteractivity::None
+            })
+            .unwrap_or(false);
+        wants_keyboard.then(|| root.clone())
+    });
+    if let Some(surface) = layer_focus {
+        set_keyboard_focus(state, Some(surface));
+        return;
+    }
+
     let Some(window) = state.window_for_surface(&root) else {
         return;
     };
@@ -477,6 +565,14 @@ pub fn focus_clicked_window(state: &mut Oxin, surface: &WlSurface) {
         state.workspaces[workspace].focused = index;
     }
     crate::keybindings::focus_window(state, &window);
+}
+
+/// Point the seat's keyboard at a surface (or nothing).
+pub fn set_keyboard_focus(state: &mut Oxin, surface: Option<WlSurface>) {
+    if let Some(keyboard) = state.seat.get_keyboard() {
+        let serial = smithay::utils::SERIAL_COUNTER.next_serial();
+        keyboard.set_focus(state, surface, serial);
+    }
 }
 
 // Protocol dispatch: each macro wires the generated Wayland types to the

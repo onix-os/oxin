@@ -47,3 +47,8 @@ features = ["env-filter"]
 
 [dependencies.libc]
 version = "0.2"
+
+# Cursor imagery: Smithay leaves the pointer image to the compositor, and the
+# wlroots build used wlr_xcursor_manager to load the user's theme.
+[dependencies.xcursor]
+version = "0.3"

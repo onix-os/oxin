@@ -29,6 +29,7 @@ use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::utils::DeviceFd;
 
+use crate::corners::Corners;
 use crate::input::process_input_event;
 use crate::render::{output_elements, send_frames};
 use crate::state::Oxin;
@@ -47,12 +48,16 @@ struct Gpu {
     manager: OxinDrmOutputManager,
     renderer: GlesRenderer,
     surfaces: HashMap<crtc::Handle, Surface>,
+    /// The rounded-corner masking program, or `None` if it failed to compile.
+    corners: Option<Corners>,
 }
 
 struct Surface {
     output: Output,
     drm_output: OxinDrmOutput,
     queued: bool,
+    /// The connectors this CRTC drives — needed to set their DPMS property.
+    connectors: Vec<connector::Handle>,
 }
 
 impl UdevBackend {
@@ -60,6 +65,61 @@ impl UdevBackend {
     pub fn change_vt(&mut self, vt: i32) {
         if let Err(error) = self.session.change_vt(vt) {
             eprintln!("0xin: cannot switch to VT {vt}: {error}");
+        }
+    }
+
+    /// Set the connector's DPMS property, the same thing wlroots' output
+    /// `enabled` toggle did underneath. Powering back on re-arms a frame,
+    /// because a re-enabled output's damage tracking will not re-present idle
+    /// windows on its own.
+    pub fn set_output_powered(&mut self, output: &Output, on: bool) {
+        let Some(gpu) = self.gpu.as_mut() else {
+            return;
+        };
+        let Some(surface) = gpu
+            .surfaces
+            .values_mut()
+            .find(|surface| &surface.output == output)
+        else {
+            return;
+        };
+        let connectors = surface.connectors.clone();
+        surface.queued = false;
+        let device = gpu.manager.device();
+        for connector in connectors {
+            let Ok(properties) = device.get_properties(connector) else {
+                continue;
+            };
+            for (id, _) in properties.iter() {
+                let Ok(info) = device.get_property(*id) else {
+                    continue;
+                };
+                if info.name().to_str() == Ok("DPMS") {
+                    // 0 = DRM_MODE_DPMS_ON, 3 = DRM_MODE_DPMS_OFF.
+                    let value = if on { 0 } else { 3 };
+                    if let Err(error) = device.set_property(connector, *id, value) {
+                        eprintln!("0xin: cannot set DPMS on {}: {error}", output.name());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Lend the renderer out (screencopy re-renders an output through it).
+    pub fn with_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer, Option<&Corners>) -> T,
+    ) -> T {
+        match self.gpu.as_mut() {
+            Some(gpu) => {
+                let corners = gpu.corners.clone();
+                f(&mut gpu.renderer, corners.as_ref())
+            }
+            None => {
+                // No GPU: build a throwaway renderer-less path is impossible,
+                // so callers get the same failure they would from a dead one.
+                panic!("no GPU renderer available")
+            }
         }
     }
 
@@ -87,7 +147,9 @@ impl UdevBackend {
                 continue;
             }
             let output = surface.output.clone();
-            let (elements, clear_color) = output_elements(state, &mut gpu.renderer, &output);
+            let corners = gpu.corners.clone();
+            let (elements, clear_color) =
+                output_elements(state, &mut gpu.renderer, &output, corners.as_ref());
 
             let result = surface.drm_output.render_frame(
                 &mut gpu.renderer,
@@ -185,6 +247,9 @@ pub fn init(state: &mut Oxin) -> Result<(), String> {
 
     eprintln!("0xin: seat {seat_name}, GPU {}", path.display());
     let gpu_dev_id = open_gpu(state, &path)?;
+    if state.outputs.is_empty() {
+        return Err("no connected outputs".into());
+    }
 
     // Hotplug: we only care about the GPU we already opened, but keeping the
     // scanner alive means a later `device_added` for it is not missed.
@@ -207,6 +272,13 @@ pub fn init(state: &mut Oxin) -> Result<(), String> {
                 }
                 if let Some(crate::backend::Backend::Udev(udev)) = state.backend.as_mut() {
                     udev.gpu = None;
+                }
+            }
+            // A connector was plugged or unplugged: wlroots emitted new_output
+            // for this, so rescan and bring up/tear down outputs to match.
+            UdevEvent::Changed { device_id } if device_id == gpu_dev_id => {
+                if let Err(error) = rescan_connectors(state) {
+                    eprintln!("0xin: connector rescan failed: {error}");
                 }
             }
             UdevEvent::Added { .. } | UdevEvent::Changed { .. } | UdevEvent::Removed { .. } => {}
@@ -245,8 +317,15 @@ fn open_gpu(state: &mut Oxin, path: &Path) -> Result<u64, String> {
     let egl_context = EGLContext::new(&egl_display)
         .map_err(|error| format!("cannot create an EGL context: {error}"))?;
     let render_formats = egl_context.dmabuf_render_formats().clone();
-    let renderer = unsafe { GlesRenderer::new(egl_context) }
+    let mut renderer = unsafe { GlesRenderer::new(egl_context) }
         .map_err(|error| format!("cannot create the GLES renderer: {error}"))?;
+    let corners = match Corners::new(&mut renderer) {
+        Ok(corners) => Some(corners),
+        Err(error) => {
+            eprintln!("0xin: corner-radius shader unavailable — corner_radius will have no effect: {error}");
+            None
+        }
+    };
 
     let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING);
     let manager = DrmOutputManager::new(
@@ -266,6 +345,7 @@ fn open_gpu(state: &mut Oxin, path: &Path) -> Result<u64, String> {
         manager,
         renderer,
         surfaces: HashMap::new(),
+        corners,
     });
 
     // linux-dmabuf, advertising this GPU's node so clients allocate on the
@@ -308,7 +388,46 @@ fn open_gpu(state: &mut Oxin, path: &Path) -> Result<u64, String> {
     Ok(dev_id)
 }
 
-/// Turn every connected connector into an output.
+/// Bring up outputs for connectors that appeared, and remove those that went
+/// away. Safe to call repeatedly — this is the hotplug path.
+fn rescan_connectors(state: &mut Oxin) -> Result<(), String> {
+    // Outputs whose connector is no longer connected have to go first, so the
+    // CRTC they held is free for whatever replaced them.
+    let gone: Vec<(crtc::Handle, Output)> = {
+        let Some(crate::backend::Backend::Udev(udev)) = state.backend.as_mut() else {
+            return Err("udev backend missing".into());
+        };
+        let Some(gpu) = udev.gpu.as_mut() else {
+            return Ok(());
+        };
+        gpu.surfaces
+            .iter()
+            .filter(|(_, surface)| {
+                surface.connectors.iter().all(|handle| {
+                    gpu.manager
+                        .device()
+                        .get_connector(*handle, false)
+                        .map(|connector| connector.state() != connector::State::Connected)
+                        .unwrap_or(true)
+                })
+            })
+            .map(|(crtc, surface)| (*crtc, surface.output.clone()))
+            .collect()
+    };
+    for (crtc, output) in gone {
+        crate::output::remove_output(state, &output);
+        if let Some(crate::backend::Backend::Udev(udev)) = state.backend.as_mut() {
+            if let Some(gpu) = udev.gpu.as_mut() {
+                gpu.surfaces.remove(&crtc);
+            }
+        }
+        eprintln!("0xin: connector for {} disconnected", output.name());
+    }
+
+    scan_connectors(state)
+}
+
+/// Turn every newly connected connector into an output.
 fn scan_connectors(state: &mut Oxin) -> Result<(), String> {
     let Some(crate::backend::Backend::Udev(udev)) = state.backend.as_mut() else {
         return Err("udev backend missing".into());
@@ -324,7 +443,12 @@ fn scan_connectors(state: &mut Oxin) -> Result<(), String> {
         .map_err(|error| format!("cannot read DRM resources: {error}"))?;
 
     let mut created: Vec<(crtc::Handle, Output, i32)> = Vec::new();
-    let mut next_x = 0;
+    let mut next_x = state
+        .outputs
+        .iter()
+        .map(|entry| entry.geometry.loc.x + entry.geometry.size.w)
+        .max()
+        .unwrap_or(0);
 
     for handle in resources.connectors() {
         let Ok(connector) = gpu.manager.device().get_connector(*handle, false) else {
@@ -405,14 +529,11 @@ fn scan_connectors(state: &mut Oxin) -> Result<(), String> {
                 output: output.clone(),
                 drm_output,
                 queued: false,
+                connectors: vec![connector.handle()],
             },
         );
         created.push((crtc, output, next_x));
         next_x += output_mode.size.w;
-    }
-
-    if created.is_empty() {
-        return Err("no connected outputs".into());
     }
 
     for (_, output, x) in created {

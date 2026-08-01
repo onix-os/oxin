@@ -9,6 +9,7 @@ use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::utils::{Rectangle, Transform};
 
+use crate::corners::Corners;
 use crate::input::process_input_event;
 use crate::render::{output_elements, send_frames};
 use crate::state::Oxin;
@@ -17,9 +18,22 @@ pub struct WinitBackend {
     backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
     output: Output,
+    /// The rounded-corner masking program, or `None` if it failed to compile —
+    /// in which case windows are drawn with square corners rather than not at
+    /// all.
+    corners: Option<Corners>,
 }
 
 impl WinitBackend {
+
+    /// Lend the renderer out (screencopy re-renders an output through it).
+    pub fn with_renderer<T>(
+        &mut self,
+        f: impl FnOnce(&mut GlesRenderer, Option<&Corners>) -> T,
+    ) -> T {
+        let corners = self.corners.clone();
+        f(self.backend.renderer(), corners.as_ref())
+    }
 
     pub fn import_dmabuf(&mut self, dmabuf: &Dmabuf) -> bool {
         self.backend
@@ -35,8 +49,9 @@ impl WinitBackend {
 
         let output = self.output.clone();
         let (elements, clear_color) = {
+            let corners = self.corners.clone();
             let renderer = self.backend.renderer();
-            output_elements(state, renderer, &output)
+            output_elements(state, renderer, &output, corners.as_ref())
         };
 
         let (renderer, mut framebuffer) = match self.backend.bind() {
@@ -97,10 +112,19 @@ pub fn init(state: &mut Oxin) -> Result<(), String> {
         .dmabuf_state
         .create_global::<Oxin>(&state.dh, formats);
 
+    let corners = match Corners::new(backend.renderer()) {
+        Ok(corners) => Some(corners),
+        Err(error) => {
+            eprintln!("0xin: corner-radius shader unavailable — corner_radius will have no effect: {error}");
+            None
+        }
+    };
+
     state.backend = Some(crate::backend::Backend::Winit(WinitBackend {
         backend,
         damage_tracker,
         output: output.clone(),
+        corners,
     }));
 
     state

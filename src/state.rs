@@ -135,6 +135,12 @@ pub struct Oxin {
     #[allow(dead_code)] // owns its global
     pub virtual_keyboard_state: VirtualKeyboardManagerState,
     pub dmabuf_state: DmabufState,
+    #[allow(dead_code)] // owns its global
+    pub output_power_state: crate::protocols::output_power::OutputPowerManagerState,
+    /// Per-output DPMS state, by connector name. Absent means powered on.
+    pub powered: std::collections::HashMap<String, bool>,
+    #[allow(dead_code)] // owns its global
+    pub screencopy_state: crate::protocols::screencopy::ScreencopyManagerState,
 
     pub seat: Seat<Oxin>,
     /// Every mapped window and output. Placement is ours (see `tiling`); the
@@ -176,6 +182,10 @@ pub struct Oxin {
     /// Where 0xinctl's socket lives, so it can be removed on shutdown. The
     /// listener itself is owned by its calloop source.
     pub control_path: Option<PathBuf>,
+
+    /// The pointer image. Behind a `RefCell` because building its buffer needs
+    /// `&mut`, while element collection only has `&Oxin`.
+    pub cursor: std::cell::RefCell<crate::cursor::Cursor>,
 
     pub keyboard_visible: bool,
     /// Touch gesture recognizer state (the phone profile's edge swipes).

@@ -8,20 +8,28 @@
 //! Both backends render with `GlesRenderer`, so this is written against it
 //! directly rather than being generic.
 
+use std::cell::RefCell;
+
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
-use smithay::backend::renderer::element::{render_elements, Kind};
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::{render_elements, Id, Kind};
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::utils::draw_render_elements;
+use smithay::backend::renderer::{Bind, Color32F, Frame, Offscreen, Renderer};
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 use smithay::wayland::shell::wlr_layer::Layer;
 
-use crate::state::Oxin;
+use crate::corners::{Corners, RoundedElement};
+use crate::cursor::Shape;
+use crate::state::{GrabMode, Oxin};
 use crate::window;
 
 render_elements! {
@@ -29,6 +37,7 @@ render_elements! {
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Solid=SolidColorRenderElement,
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
+    Rounded=RoundedElement,
 }
 
 /// Everything to draw on `output`, topmost first, plus the colour to clear to.
@@ -36,6 +45,7 @@ pub fn output_elements(
     state: &Oxin,
     renderer: &mut GlesRenderer,
     output: &Output,
+    corners: Option<&Corners>,
 ) -> (Vec<OxinElement>, [f32; 4]) {
     let scale = Scale::from(output.current_scale().fractional_scale());
     let mut elements: Vec<OxinElement> = Vec::new();
@@ -44,6 +54,24 @@ pub fn output_elements(
         return (elements, clear_color(state));
     };
     let origin = entry.geometry.loc;
+
+    // The pointer is drawn above everything, including a session lock — the
+    // same place wlroots' cursor plane put it.
+    if entry.geometry.contains(state.pointer_location.to_i32_round()) {
+        let shape = if state.grab == GrabMode::None {
+            Shape::Default
+        } else {
+            Shape::Grabbing
+        };
+        let location = state.pointer_location - origin.to_f64();
+        if let Some(element) = state
+            .cursor
+            .borrow_mut()
+            .element(renderer, shape, location, scale)
+        {
+            elements.push(OxinElement::Memory(element));
+        }
+    }
 
     // The session lock covers everything: the client's own surface when it has
     // one, and always an opaque compositor-owned cover underneath it — so the
@@ -83,6 +111,7 @@ pub fn output_elements(
     // Application windows honour `window_opacity`; layer-shell surfaces (bars,
     // panels, keyboards) stay fully opaque.
     let alpha = state.config.window_opacity;
+    let radius = state.config.corner_radius;
 
     // Fullscreen windows paint over bars (layer top) but under overlay.
     for win in workspace
@@ -101,7 +130,9 @@ pub fn output_elements(
         .iter()
         .filter(|win| window::is_floating(win) && !window::is_fullscreen(win))
     {
-        elements.extend(window_elements(renderer, win, origin, scale, alpha));
+        elements.extend(masked_window(
+            renderer, corners, win, origin, scale, alpha, radius,
+        ));
     }
 
     for win in workspace.windows.iter().filter(|win| window::is_tiled(win)) {
@@ -113,7 +144,9 @@ pub fn output_elements(
         {
             continue; // hidden by solo
         }
-        elements.extend(window_elements(renderer, win, origin, scale, alpha));
+        elements.extend(masked_window(
+            renderer, corners, win, origin, scale, alpha, radius,
+        ));
     }
 
     elements.extend(layer_elements(renderer, output, Layer::Bottom, scale));
@@ -147,6 +180,112 @@ fn solid(
         1.0,
         Kind::Unspecified,
     )
+}
+
+/// A window, rounded if `corner_radius` asks for it.
+///
+/// Falls back to drawing the window directly whenever masking isn't possible —
+/// no compiled program (the shader failed to build at startup) or an offscreen
+/// pass that failed — so a GPU quirk costs the rounding, never the window.
+fn masked_window(
+    renderer: &mut GlesRenderer,
+    corners: Option<&Corners>,
+    win: &Window,
+    origin: Point<i32, Logical>,
+    scale: Scale<f64>,
+    alpha: f32,
+    radius: i32,
+) -> Vec<OxinElement> {
+    if radius > 0 {
+        if let Some(corners) = corners {
+            if let Some(element) =
+                rounded_window(renderer, corners, win, origin, scale, alpha, radius)
+            {
+                return vec![OxinElement::Rounded(element)];
+            }
+        }
+    }
+    window_elements(renderer, win, origin, scale, alpha)
+}
+
+/// The offscreen texture a window is composited into before masking, kept on
+/// the window so it is allocated once per size rather than once per frame.
+struct CornerBuffer {
+    id: Id,
+    texture: GlesTexture,
+    size: Size<i32, Physical>,
+}
+
+fn rounded_window(
+    renderer: &mut GlesRenderer,
+    corners: &Corners,
+    win: &Window,
+    origin: Point<i32, Logical>,
+    scale: Scale<f64>,
+    alpha: f32,
+    radius: i32,
+) -> Option<RoundedElement> {
+    let geometry = window::rect(win);
+    let size: Size<i32, Physical> = geometry.size.to_physical_precise_round(scale);
+    if size.w <= 0 || size.h <= 0 {
+        return None;
+    }
+
+    // Composite the window at the texture's origin, not at its place on screen.
+    let elements = window_elements(renderer, win, geometry.loc, scale, alpha);
+
+    let cache = win
+        .user_data()
+        .get_or_insert(|| RefCell::new(Option::<CornerBuffer>::None));
+    let mut cache = cache.borrow_mut();
+    if cache.as_ref().map(|buffer| buffer.size) != Some(size) {
+        let texture = renderer
+            .create_buffer(Fourcc::Abgr8888, (size.w, size.h).into())
+            .ok()?;
+        *cache = Some(CornerBuffer {
+            id: Id::new(),
+            texture,
+            size,
+        });
+    }
+    let buffer = cache.as_mut()?;
+
+    let full = Rectangle::from_size(size);
+    let mut texture = buffer.texture.clone();
+    {
+        let mut framebuffer = renderer.bind(&mut texture).ok()?;
+        let mut frame = renderer
+            .render(&mut framebuffer, size, Transform::Normal)
+            .ok()?;
+        // Transparent, so the corners we mask away show whatever is behind the
+        // window rather than black.
+        frame
+            .clear(Color32F::new(0.0, 0.0, 0.0, 0.0), &[full])
+            .ok()?;
+        draw_render_elements::<GlesRenderer, _, _>(&mut frame, scale, &elements, &[full]).ok()?;
+        // The mask pass samples this texture immediately, so the offscreen
+        // render has to have landed before we hand it on.
+        frame.finish().ok()?.wait().ok()?;
+    }
+
+    let location: Point<i32, Physical> = (geometry.loc - origin).to_physical_precise_round(scale);
+    let element = TextureRenderElement::from_static_texture(
+        buffer.id.clone(),
+        renderer.context_id(),
+        location.to_f64(),
+        texture,
+        1,
+        Transform::Normal,
+        None,
+        None,
+        Some(geometry.size),
+        None,
+        Kind::Unspecified,
+    );
+    // The radius is configured in logical pixels, so it grows with the output
+    // scale like everything else.
+    let radius = (radius as f64 * scale.x) as f32;
+    Some(corners.mask(element, radius, (size.w as f32, size.h as f32)))
 }
 
 /// A window's own surface tree plus any popups it owns, positioned relative to
