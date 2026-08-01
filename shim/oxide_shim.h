@@ -315,7 +315,8 @@ void oxide_cursor_set_grab_callbacks(struct wlr_cursor *cursor,
 // their stable numeric IDs through one callback. Rust maps IDs to policy.
 void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
         struct wlr_output_layout *layout, uint32_t enabled_mask,
-        int keyboard_height, oxide_gesture_callback callback, void *userdata);
+        int keyboard_height, struct wl_event_loop *event_loop,
+        oxide_gesture_callback callback, void *userdata);
 void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor, bool visible);
 void oxide_cursor_set_keyboard_height(struct wlr_cursor *cursor, int height);
 // Disable compositor gestures and cancel active touch sequences while locked;

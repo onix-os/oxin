@@ -25,6 +25,10 @@
 #define OXIDE_TAP_DRAG_PX 24
 #define OXIDE_DOUBLE_TAP_MS 400
 #define OXIDE_DOUBLE_TAP_PX 100
+// How long a touch landing on the visible keyboard is held before being
+// forwarded as a real keypress, giving a swipe-down-to-hide gesture a
+// chance to claim it first instead — see keyboard_hide_candidate.
+#define OXIDE_KEYBOARD_HOLD_MS 120
 
 // --- seat & input ----------------------------------------------------------
 
@@ -180,6 +184,9 @@ struct oxide_pointer {
     // even after the finger moves over another one.
     struct wl_list touch_points;
     size_t touch_device_count;
+    // Needed to arm the keyboard-hide-swipe hold timer — see
+    // keyboard_hide_candidate/handle_keyboard_hold_timeout.
+    struct wl_event_loop *event_loop;
     struct wlr_output_layout *output_layout;
     uint32_t gesture_mask;
     uint32_t configured_gesture_mask;
@@ -214,10 +221,11 @@ struct oxide_touch_point {
     struct wlr_seat_client *client;
     struct wlr_touch *touch;
     // 0 = client touch, 1 = keyboard handle, 2 = workspace edge,
-    // 3 = top-edge gesture, 4 = bare-background multi-finger candidate.
+    // 3 = top-edge gesture, 4 = bare-background multi-finger candidate,
+    // 5 = keyboard-hide-swipe candidate (held, not yet forwarded to any
+    // client — see keyboard_hide_candidate).
     int gesture_kind;
     bool gesture_fired;
-    bool gesture_candidate;
     bool to_top_candidate;
     int gesture_steps;
     // -1 for the left edge and +1 for the right edge.
@@ -227,8 +235,18 @@ struct oxide_touch_point {
     // means left/right zone identity for this gesture kind (kind 2).
     int gesture_vlock;
     double start_lx, start_ly;
-    // Position last seen in handle_touch_motion.
+    // Position last seen in handle_touch_motion, and the time it was seen
+    // at (needed to give a real timestamp to the catch-up motion event a
+    // kind-5 point sends once released — see release_hold).
     double last_lx, last_ly;
+    uint32_t last_time_msec;
+    // kind 5 only: the owning pointer (needed inside the hold timer's
+    // callback, which only receives this point as userdata), the pending
+    // timer itself (NULL once fired/cancelled), and the touch's true
+    // down time (used to give the delayed notify_down a real timestamp).
+    struct oxide_pointer *owner;
+    void *hold_timer;
+    uint32_t hold_time_msec;
     struct wl_list link;
 };
 
@@ -448,6 +466,70 @@ static bool top_gesture_hit(struct oxide_pointer *p, double lx, double ly) {
     struct wlr_box box;
     wlr_output_layout_get_box(p->output_layout, output, &box);
     return ly <= box.y + 28;
+}
+
+// True for a touch-down landing on the visible keyboard while the
+// swipe-down-to-hide gesture is configured — see gesture_kind 5's doc
+// comment above and OXIDE_KEYBOARD_HOLD_MS.
+static bool keyboard_hide_candidate(struct oxide_pointer *p, double lx,
+        double ly) {
+    if (!p->keyboard_visible || (p->gesture_mask & (1u << 1)) == 0
+            || p->output_layout == NULL) {
+        return false;
+    }
+    struct wlr_output *output =
+            wlr_output_layout_output_at(p->output_layout, lx, ly);
+    if (output == NULL) {
+        return false;
+    }
+    struct wlr_box box;
+    wlr_output_layout_get_box(p->output_layout, output, &box);
+    return ly >= box.y + box.height - p->keyboard_height;
+}
+
+// Forwards the touch-down a kind-5 point held back (its original position
+// and true down time), then catches the client up to the current position
+// if the finger has already moved since. Transitions the point to an
+// ordinary gesture_kind == 0 client touch so all further motion/up events
+// forward normally from here — the caller must already have cancelled any
+// pending hold timer. A no-op (point left at kind 5) if no surface is
+// found where the touch originally landed, e.g. the keyboard was hidden by
+// something else mid-hold.
+static void release_hold(struct oxide_pointer *p,
+        struct oxide_touch_point *point) {
+    double sx, sy;
+    struct wlr_surface *surface = surface_at_coords(p, point->start_lx,
+            point->start_ly, &sx, &sy);
+    if (surface == NULL) {
+        return;
+    }
+    focus_surface(p, surface);
+    wlr_seat_touch_notify_down(p->seat, surface, point->hold_time_msec,
+            point->touch_id, sx, sy);
+    struct wlr_touch_point *seat_point =
+            wlr_seat_touch_get_point(p->seat, point->touch_id);
+    if (seat_point == NULL) {
+        return;
+    }
+    point->client = seat_point->client;
+    point->offset_x = point->start_lx - sx;
+    point->offset_y = point->start_ly - sy;
+    point->gesture_kind = 0;
+    if (point->last_lx != point->start_lx || point->last_ly != point->start_ly) {
+        wlr_seat_touch_notify_motion(p->seat, point->last_time_msec,
+                point->touch_id, point->last_lx - point->offset_x,
+                point->last_ly - point->offset_y);
+    }
+}
+
+// Fires once OXIDE_KEYBOARD_HOLD_MS elapses without the swipe-down gesture
+// committing or the touch lifting — release it as a (slightly delayed)
+// ordinary keypress.
+static void handle_keyboard_hold_timeout(void *userdata, void *data) {
+    struct oxide_touch_point *point = userdata;
+    oxide_event_source_remove(data);
+    point->hold_timer = NULL;
+    release_hold(point->owner, point);
 }
 
 static void touch_cancel_client(struct oxide_pointer *p,
@@ -704,6 +786,31 @@ static void handle_touch_down(void *userdata, void *data) {
         return;
     }
 
+    // Touches landing on the visible keyboard are ambiguous: a normal
+    // keypress, or the start of a swipe-down-to-hide gesture over the same
+    // surface. Forwarding immediately (as every other touch does, below)
+    // would let the keyboard register a keypress before we know which — a
+    // cancel arriving later can't un-type a character the client already
+    // committed. Hold these briefly instead; see keyboard_hide_candidate,
+    // release_hold, and handle_keyboard_hold_timeout.
+    if (keyboard_hide_candidate(p, lx, ly)) {
+        struct oxide_touch_point *point = calloc(1, sizeof(*point));
+        point->touch_id = e->touch_id;
+        point->touch = e->touch;
+        point->gesture_kind = 5;
+        point->owner = p;
+        point->start_lx = lx;
+        point->start_ly = ly;
+        point->last_lx = lx;
+        point->last_ly = ly;
+        point->hold_time_msec = e->time_msec;
+        point->last_time_msec = e->time_msec;
+        wl_list_insert(&p->touch_points, &point->link);
+        point->hold_timer = oxide_event_loop_add_timer(p->event_loop,
+                OXIDE_KEYBOARD_HOLD_MS, handle_keyboard_hold_timeout, point);
+        return;
+    }
+
     focus_surface(p, surface);
     wlr_seat_touch_notify_down(p->seat, surface, e->time_msec,
             e->touch_id, sx, sy);
@@ -732,16 +839,6 @@ static void handle_touch_down(void *userdata, void *data) {
             point->to_top_candidate = ly >= box.y + 70;
         }
     }
-    if (p->keyboard_visible && (p->gesture_mask & (1u << 1)) != 0) {
-        struct wlr_output *output =
-                wlr_output_layout_output_at(p->output_layout, lx, ly);
-        if (output != NULL) {
-            struct wlr_box box;
-            wlr_output_layout_get_box(p->output_layout, output, &box);
-            point->gesture_candidate =
-                    ly >= box.y + box.height - p->keyboard_height;
-        }
-    }
     wl_list_insert(&p->touch_points, &point->link);
 }
 
@@ -762,7 +859,10 @@ static void handle_touch_motion(void *userdata, void *data) {
     double lx, ly;
     wlr_cursor_absolute_to_layout_coords(p->cursor, &e->touch->base,
             e->x, e->y, &lx, &ly);
-    if (point->gesture_candidate) {
+    if (point->gesture_kind == 5) {
+        point->last_lx = lx;
+        point->last_ly = ly;
+        point->last_time_msec = e->time_msec;
         struct wlr_output *output =
                 wlr_output_layout_output_at(p->output_layout, lx, ly);
         if (output != NULL) {
@@ -770,14 +870,21 @@ static void handle_touch_motion(void *userdata, void *data) {
             wlr_output_layout_get_box(p->output_layout, output, &box);
             if (ly - point->start_ly >= 70
                     && ly >= box.y + box.height - 28) {
-                struct wlr_seat_client *client = point->client;
-                touch_cancel_client(p, client);
+                // Confirmed swipe. The touch was never forwarded to any
+                // client (that's the whole point of holding it), so
+                // there's nothing to cancel — just fire the gesture.
+                if (point->hold_timer != NULL) {
+                    oxide_event_source_remove(point->hold_timer);
+                    point->hold_timer = NULL;
+                }
                 if (p->gesture_callback != NULL) {
                     p->gesture_callback(p->gesture_userdata, 1);
                 }
-                return;
+                wl_list_remove(&point->link);
+                free(point);
             }
         }
+        return;
     }
     if (point->to_top_candidate) {
         struct wlr_output *output =
@@ -920,6 +1027,17 @@ static void handle_touch_up(void *userdata, void *data) {
     if (point == NULL) {
         return;
     }
+    if (point->gesture_kind == 5) {
+        // Lifted before the hold timer fired or the swipe committed — a
+        // quick tap. Release it (forwarding the held-back down, using its
+        // real down time) and, if that found a surface, immediately
+        // follow with the up too, completing the tap.
+        if (point->hold_timer != NULL) {
+            oxide_event_source_remove(point->hold_timer);
+            point->hold_timer = NULL;
+        }
+        release_hold(p, point);
+    }
     if (point->gesture_kind == 0) {
         wlr_seat_touch_notify_up(p->seat, e->time_msec, e->touch_id);
     }
@@ -939,6 +1057,9 @@ static void handle_touch_cancel(void *userdata, void *data) {
     if (seat_point == NULL) {
         struct oxide_touch_point *point = touch_point_find(p, e->touch_id);
         if (point != NULL && point->gesture_kind != 0) {
+            if (point->gesture_kind == 5 && point->hold_timer != NULL) {
+                oxide_event_source_remove(point->hold_timer);
+            }
             wl_list_remove(&point->link);
             free(point);
         }
@@ -982,6 +1103,9 @@ static void handle_touch_device_destroy(void *userdata, void *data) {
     struct oxide_touch_point *point, *tmp;
     wl_list_for_each_safe(point, tmp, &p->touch_points, link) {
         if (point->touch == td->touch && point->gesture_kind != 0) {
+            if (point->gesture_kind == 5 && point->hold_timer != NULL) {
+                oxide_event_source_remove(point->hold_timer);
+            }
             wl_list_remove(&point->link);
             free(point);
         }
@@ -1084,12 +1208,14 @@ void oxide_cursor_set_grab_callbacks(struct wlr_cursor *cursor,
 
 void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
         struct wlr_output_layout *layout, uint32_t enabled_mask,
-        int keyboard_height, oxide_gesture_callback callback, void *userdata) {
+        int keyboard_height, struct wl_event_loop *event_loop,
+        oxide_gesture_callback callback, void *userdata) {
     struct oxide_pointer *p = cursor->data;
     p->output_layout = layout;
     p->gesture_mask = enabled_mask;
     p->configured_gesture_mask = enabled_mask;
     p->keyboard_height = keyboard_height;
+    p->event_loop = event_loop;
     p->gesture_callback = callback;
     p->gesture_userdata = userdata;
 }
@@ -1107,6 +1233,9 @@ void oxide_cursor_set_locked(struct wlr_cursor *cursor, bool locked) {
         if (point->client != NULL) {
             touch_cancel_client(p, point->client);
         } else {
+            if (point->gesture_kind == 5 && point->hold_timer != NULL) {
+                oxide_event_source_remove(point->hold_timer);
+            }
             wl_list_remove(&point->link);
             free(point);
         }

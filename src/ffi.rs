@@ -250,6 +250,7 @@ extern "C" {
         layout: *mut wlr::wlr_output_layout,
         enabled_mask: u32,
         keyboard_height: i32,
+        event_loop: *mut wlr::wl_event_loop,
         callback: GestureCallback,
         userdata: *mut c_void,
     );

@@ -212,6 +212,7 @@ fn main() {
             output_layout,
             server.config.gesture_mask(),
             server.config.virtual_keyboard_height,
+            event_loop,
             handle_gesture,
             server_ptr,
         );
