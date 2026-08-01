@@ -22,13 +22,38 @@
           };
         };
 
-        # `use nvidia` in .envrc exports NVIDIA_VERSION from
-        # /proc/driver/nvidia/version, before `use flake`, so it is always set
-        # by the time this is read (hence --impure).
-        nvidiaVersion = let v = builtins.getEnv "NVIDIA_VERSION";
-        in if v != "" then v
-           else throw "0xin: NVIDIA_VERSION is unset — is direnv loaded and is the NVIDIA driver running?";
-        hasNvidia = true;
+        # The NVIDIA userspace nixGL builds has to match the running kernel
+        # module exactly, so we need its version — read straight out of /proc,
+        # with no environment variable and no cooperation from .envrc. Needs
+        # --impure; a pure evaluation falls back to the Mesa wrappers rather
+        # than failing.
+        #
+        # nixGL has this auto-detection built in, but its regex only matches
+        # the classic module string; a 595 *open* kernel module reports
+        # "Open Kernel Module for x86_64  595.71.05  Release Build", which it
+        # misses and then silently degrades to Mesa. Hence our own match.
+        #
+        # builtins.readFile cannot read /proc (files there report size 0), so
+        # the copy happens in a derivation — the same trick nixGL uses. The
+        # timestamp keeps it from being cached across driver updates.
+        nvidiaVersionFile = pkgs.runCommand "impure-nvidia-version" {
+          time = builtins.currentTime;
+          preferLocalBuild = true;
+          allowSubstitutes = false;
+        } "cp /proc/driver/nvidia/version $out 2>/dev/null || touch $out";
+
+        detectedNvidiaVersion =
+          let
+            data = builtins.readFile nvidiaVersionFile;
+            match = builtins.match ".*  ([0-9]+\\.[0-9.]+)  .*" data;
+          in if match == null then null else builtins.head match;
+
+        # A pure evaluation cannot read /proc at all; getEnv returning "" for
+        # a variable that always exists is how we spot it.
+        pureEval = builtins.getEnv "HOME" == "";
+
+        nvidiaVersion = if pureEval then null else detectedNvidiaVersion;
+        hasNvidia = nvidiaVersion != null;
 
         # nixGL packages the NVIDIA userspace itself, so it has to be evaluated
         # against the nixpkgs *it* pins: nixos-unstable changed the argument
@@ -128,6 +153,11 @@
             nixglPkgs.nixGLNvidia
             nixglPkgs.nixVulkanNvidia
           ];
+
+          # Marker for the Makefile: inside this shell it runs cargo directly,
+          # outside it re-enters through `nix develop`. IN_NIX_SHELL is no good
+          # for that — any unrelated nix shell sets it too.
+          OXIN_DEVSHELL = "1";
 
           # cargo-built binaries carry no RPATH for these, and the EGL/GLES
           # stack is loaded at run time.
