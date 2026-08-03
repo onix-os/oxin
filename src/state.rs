@@ -1,100 +1,53 @@
 //! Long-lived compositor state: the structs shared across every module.
+//!
+//! Smithay owns the Wayland plumbing (protocol globals, the surface tree, the
+//! seat, the desktop `Space`); everything in here is 0xin's own policy state —
+//! workspaces, the split trees, which output shows what, and the transient
+//! bookkeeping for pointer grabs and hold bindings.
 
-use crate::config::Action;
-use crate::config::Config;
-use crate::ffi::ShimListener;
-use crate::layout::Node;
-use crate::wlr;
-use std::os::raw::c_void;
-use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::time::Instant;
+
+use smithay::desktop::{PopupManager, Space, Window};
+use smithay::input::{Seat, SeatState};
+use smithay::output::Output;
+use smithay::reexports::calloop::LoopHandle;
+use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::DisplayHandle;
+use smithay::utils::{Clock, Logical, Monotonic, Point, Rectangle};
+use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::session_lock::{LockSurface, SessionLockManagerState, SessionLocker};
+use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
+use smithay::wayland::shell::xdg::XdgShellState;
+use smithay::wayland::shm::ShmState;
+use smithay::wayland::viewporter::ViewporterState;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+
+use crate::backend::Backend;
+use crate::config::{Action, Config};
+use crate::gestures::Recognizer;
+use crate::layout::Node;
+use crate::wallpaper::Wallpaper;
 
 /// Number of virtual workspaces.
-pub(crate) const WORKSPACE_COUNT: usize = 9;
+pub const WORKSPACE_COUNT: usize = 9;
 
 /// What an active pointer grab is doing to the grabbed floating window
 /// (Mod+left-drag moves, Mod+right-drag resizes).
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) enum GrabMode {
+pub enum GrabMode {
     None,
     Move,
     Resize,
-}
-
-/// How many frames to force-repaint after an output comes up or the VT resumes.
-pub(crate) const REPAINT_FRAMES: u32 = 3;
-
-/// Long-lived compositor state. We hand a pointer to this to the shim as the
-/// `userdata` for the new_output callback, so the handler can reach the scene
-/// and layout it needs to wire up each output.
-pub(crate) struct Server {
-    pub(crate) display: *mut wlr::wl_display,
-    /// The login session (DRM/libseat); NULL when running nested. Used for VT
-    /// switching.
-    pub(crate) session: *mut wlr::wlr_session,
-    pub(crate) scene: *mut wlr::wlr_scene,
-    pub(crate) output_layout: *mut wlr::wlr_output_layout,
-    pub(crate) scene_layout: *mut wlr::wlr_scene_output_layout,
-    pub(crate) seat: *mut wlr::wlr_seat,
-    pub(crate) cursor: *mut wlr::wlr_cursor,
-    pub(crate) renderer: *mut wlr::wlr_renderer,
-    pub(crate) allocator: *mut wlr::wlr_allocator,
-    /// Compositor-owned GLES2 program used to mask window corners (opaque —
-    /// see shim/gles2_corner.c); NULL if compilation failed at startup, in
-    /// which case corner-radius masking is silently unavailable.
-    pub(crate) corner_program: *mut c_void,
-    /// Ordered scene trees for z-layering. Creation order is paint order
-    /// (later = on top): the config background, then layer-shell background,
-    /// bottom, app windows (normal), layer-shell top, then overlay.
-    pub(crate) tree_bg_fallback: *mut wlr::wlr_scene_tree,
-    pub(crate) tree_layer_bg: *mut wlr::wlr_scene_tree,
-    pub(crate) tree_layer_bottom: *mut wlr::wlr_scene_tree,
-    pub(crate) tree_normal: *mut wlr::wlr_scene_tree,
-    /// Floating windows: above tiled windows but below layer-shell top (bars
-    /// stay visible over them). Windows are reparented in and out as they
-    /// float/tile.
-    pub(crate) tree_floating: *mut wlr::wlr_scene_tree,
-    pub(crate) tree_layer_top: *mut wlr::wlr_scene_tree,
-    /// Fullscreen windows: above layer-shell top (covers bars) but below
-    /// overlay (lock screens stay on top). Windows are reparented in and
-    /// out of here as they enter/leave fullscreen.
-    pub(crate) tree_fullscreen: *mut wlr::wlr_scene_tree,
-    pub(crate) tree_layer_overlay: *mut wlr::wlr_scene_tree,
-    pub(crate) tree_session_lock: *mut wlr::wlr_scene_tree,
-    /// Layer-shell surfaces (bars, panels, wallpaper) from any output.
-    pub(crate) layers: Vec<*mut LayerSurface>,
-    pub(crate) lock_surfaces: Vec<*mut LockSurface>,
-    pub(crate) locked: bool,
-    pub(crate) active_lock: *mut c_void,
-    pub(crate) lock_new_surface_listener: *mut ShimListener,
-    pub(crate) lock_unlock_listener: *mut ShimListener,
-    pub(crate) lock_destroy_listener: *mut ShimListener,
-    /// Virtual workspaces; each is shown on at most one output at a time.
-    pub(crate) workspaces: Vec<Workspace>,
-    /// Connected outputs (monitors), each displaying one workspace.
-    pub(crate) outputs: Vec<Output>,
-    /// User configuration: modifier, gap, background, keybindings.
-    pub(crate) config: Config,
-    pub(crate) event_loop: *mut wlr::wl_event_loop,
-    pub(crate) hold_source: *mut c_void,
-    pub(crate) held_keysym: u32,
-    pub(crate) held_modifiers: u32,
-    pub(crate) held_action: Option<Action>,
-    /// Nonblocking local IPC endpoint used by 0xinctl.
-    pub(crate) control_listener: Option<UnixListener>,
-    pub(crate) control_path: Option<PathBuf>,
-    pub(crate) keyboard_visible: bool,
-    /// Active pointer grab (Mod+drag on a floating window): what it does,
-    /// which window, and the cursor position + window rect when it started —
-    /// motion applies deltas against these, not against the previous event.
-    pub(crate) grab: GrabMode,
-    pub(crate) grab_tl: *mut Toplevel,
-    pub(crate) grab_cx: f64,
-    pub(crate) grab_cy: f64,
-    pub(crate) grab_x: i32,
-    pub(crate) grab_y: i32,
-    pub(crate) grab_w: i32,
-    pub(crate) grab_h: i32,
 }
 
 /// One workspace: an independent list of windows, its focused index, and the
@@ -102,116 +55,184 @@ pub(crate) struct Server {
 /// into. `tree`'s leaves correspond, in order, to `tiling::tiled_windows(self)`
 /// — kept in sync by `tiling::tree_track`/`tree_untrack` every time a window
 /// starts or stops tiling. `None` iff no window is currently tiled.
-pub(crate) struct Workspace {
-    pub(crate) windows: Vec<*mut Toplevel>,
-    pub(crate) focused: usize,
-    pub(crate) tree: Option<Node>,
-    pub(crate) first_split_vertical: bool,
+pub struct Workspace {
+    pub windows: Vec<Window>,
+    pub focused: usize,
+    pub tree: Option<Node>,
+    pub first_split_vertical: bool,
     /// The one window temporarily shown alone on this workspace (others
     /// hidden, not repositioned); `None` for normal tiled display. Never
     /// mutates `tree` — entering/exiting solo is purely a visibility and
     /// placement decision, so exiting restores the exact prior layout with
     /// no explicit restore step.
-    pub(crate) solo: Option<*mut Toplevel>,
+    pub solo: Option<Window>,
 }
 
-/// One connected output (monitor): its box in layout coordinates, the workspace
-/// it currently displays, and the resources to release when it's destroyed.
-pub(crate) struct Output {
-    pub(crate) wlr_output: *mut wlr::wlr_output,
-    pub(crate) x: i32,
-    pub(crate) y: i32,
-    pub(crate) w: i32,
-    pub(crate) h: i32,
-    /// Usable area left after layer-shell surfaces reserve their exclusive
-    /// zones (e.g. a bar strip). Starts equal to the full box; recomputed by
-    /// `arrange_layers`. App windows tile within this, not the full box.
-    pub(crate) ux: i32,
-    pub(crate) uy: i32,
-    pub(crate) uw: i32,
-    pub(crate) uh: i32,
-    pub(crate) workspace: usize,
-    /// Listeners + background node + frame context to tear down on destroy.
-    pub(crate) frame_listener: *mut ShimListener,
-    pub(crate) destroy_listener: *mut ShimListener,
-    pub(crate) background: *mut c_void,
-    /// Image scene-buffer above the solid fallback, or NULL.
-    pub(crate) wallpaper: *mut c_void,
-    /// Bottom gesture-handle rectangle, or NULL when the profile disables it.
-    pub(crate) gesture_handle: *mut c_void,
-    /// Opaque compositor-owned cover shown immediately while locked, including
-    /// when the lock client has not mapped yet or has crashed.
-    pub(crate) lock_fallback: *mut c_void,
-    pub(crate) frame_ctx: *mut FrameCtx,
-    /// Frames remaining to force a full repaint (after creation/VT resume). A
-    /// `frame` event only fires once the output is actually presenting, so doing
-    /// the full-output damage here lands *after* the async resume modeset.
-    pub(crate) repaint_frames: u32,
+impl Workspace {
+    pub fn new(first_split_vertical: bool) -> Self {
+        Workspace {
+            windows: Vec::new(),
+            focused: 0,
+            tree: None,
+            first_split_vertical,
+            solo: None,
+        }
+    }
 }
 
-/// Userdata for an output's `frame` callback: enough to render this output and
-/// find its `Output` entry (so handle_frame can honor `repaint_frames`).
-pub(crate) struct FrameCtx {
-    pub(crate) server: *mut Server,
-    pub(crate) scene_output: *mut wlr::wlr_scene_output,
-    pub(crate) wlr_output: *mut wlr::wlr_output,
+/// One connected output (monitor): the Smithay output, its box in layout
+/// coordinates, the workspace it displays, and its wallpaper.
+///
+/// `usable` is what is left after layer-shell surfaces reserve their exclusive
+/// zones (e.g. a bar strip) — app windows tile within it, not within the full
+/// box. Smithay's per-output layer map computes that zone for us; we mirror it
+/// here because the tiling code is pure geometry and shouldn't have to reach
+/// into the layer map.
+pub struct OutputEntry {
+    pub output: Output,
+    pub geometry: Rectangle<i32, Logical>,
+    pub usable: Rectangle<i32, Logical>,
+    pub workspace: usize,
+    pub wallpaper: Option<Wallpaper>,
+    /// The session-lock client's surface for this output, once it has one.
+    pub lock_surface: Option<LockSurface>,
 }
 
-/// One application window we track. Heap-allocated; a raw pointer to it is the
-/// `userdata` for that window's map/unmap/destroy listeners.
-pub(crate) struct Toplevel {
-    pub(crate) server: *mut Server,
-    pub(crate) xdg_toplevel: *mut wlr::wlr_xdg_toplevel,
-    pub(crate) scene_tree: *mut wlr::wlr_scene_tree,
-    /// This window's rect as of the last `tiling::refresh()` pass. Not
-    /// authoritative (the scene node / xdg_toplevel size are) — just a cache
-    /// for directional focus/move to compare windows against each other.
-    pub(crate) x: i32,
-    pub(crate) y: i32,
-    pub(crate) w: i32,
-    pub(crate) h: i32,
-    /// Whether this window is fullscreen (covers its output's full box,
-    /// scene tree parented under `Server.tree_fullscreen`).
-    pub(crate) fullscreen: bool,
-    /// Whether this window floats (keeps its own size, centered on map,
-    /// scene tree parented under `Server.tree_floating`, skipped by the
-    /// spiral). Fullscreen wins while both are set.
-    pub(crate) floating: bool,
-    // Listeners we registered; removed+freed on destroy so wlroots doesn't
-    // assert on a non-empty destroy list.
-    pub(crate) commit_listener: *mut ShimListener,
-    pub(crate) map_listener: *mut ShimListener,
-    pub(crate) unmap_listener: *mut ShimListener,
-    pub(crate) destroy_listener: *mut ShimListener,
-    pub(crate) fullscreen_listener: *mut ShimListener,
-    /// Per-window GPU buffer chain for corner-radius masking (opaque —
-    /// `struct wlr_swapchain*`, see shim/gles2_corner.c); NULL until the
-    /// first masked commit. Recreated when the surface's buffer size
-    /// changes, so `corner_swapchain_w`/`_h` track what size it currently
-    /// matches.
-    pub(crate) corner_swapchain: *mut c_void,
-    pub(crate) corner_swapchain_w: i32,
-    pub(crate) corner_swapchain_h: i32,
+/// A session lock in progress: the locker handle we must confirm or cancel,
+/// plus whether we have already confirmed it.
+pub struct LockState {
+    pub locker: Option<SessionLocker>,
 }
 
-/// One layer-shell surface (bar, panel, wallpaper — e.g. quickshell). Heap-
-/// allocated; a raw pointer to it is the `userdata` for its commit/map/unmap/
-/// destroy listeners. Modeled on `Toplevel`.
-pub(crate) struct LayerSurface {
-    pub(crate) server: *mut Server,
-    pub(crate) wlr_layer_surface: *mut c_void,
-    /// The `wlr_scene_layer_surface_v1` scene helper (opaque to Rust).
-    pub(crate) scene_ls: *mut c_void,
-    pub(crate) wlr_output: *mut wlr::wlr_output,
-    pub(crate) commit_listener: *mut ShimListener,
-    pub(crate) map_listener: *mut ShimListener,
-    pub(crate) unmap_listener: *mut ShimListener,
-    pub(crate) destroy_listener: *mut ShimListener,
+pub struct Oxin {
+    pub dh: DisplayHandle,
+    pub loop_handle: LoopHandle<'static, Oxin>,
+    #[allow(dead_code)] // kept for presentation-time work
+    pub clock: Clock<Monotonic>,
+    pub start_time: Instant,
+    pub running: Arc<AtomicBool>,
+    pub socket_name: String,
+
+    // Protocol globals, all owned by Smithay. Several are never read after
+    // construction — they exist to *own* their global, which is unregistered
+    // when the state is dropped, so they must stay alive for the whole run.
+    pub compositor_state: CompositorState,
+    pub xdg_shell_state: XdgShellState,
+    #[allow(dead_code)] // owns its global
+    pub xdg_decoration_state: XdgDecorationState,
+    pub layer_shell_state: WlrLayerShellState,
+    pub shm_state: ShmState,
+    #[allow(dead_code)] // owns its global
+    pub output_manager_state: OutputManagerState,
+    pub seat_state: SeatState<Oxin>,
+    pub data_device_state: DataDeviceState,
+    pub primary_selection_state: PrimarySelectionState,
+    #[allow(dead_code)] // owns its global
+    pub viewporter_state: ViewporterState,
+    #[allow(dead_code)] // owns its global
+    pub fractional_scale_manager_state: FractionalScaleManagerState,
+    pub session_lock_state: SessionLockManagerState,
+    #[allow(dead_code)] // owns its global
+    pub virtual_keyboard_state: VirtualKeyboardManagerState,
+    pub dmabuf_state: DmabufState,
+    #[allow(dead_code)] // owns its global
+    pub output_power_state: crate::protocols::output_power::OutputPowerManagerState,
+    /// Per-output DPMS state, by connector name. Absent means powered on.
+    pub powered: std::collections::HashMap<String, bool>,
+    #[allow(dead_code)] // owns its global
+    pub screencopy_state: crate::protocols::screencopy::ScreencopyManagerState,
+
+    pub seat: Seat<Oxin>,
+    /// Every mapped window and output. Placement is ours (see `tiling`); the
+    /// space is what turns that into damage tracking and render elements.
+    pub space: Space<Window>,
+    pub popups: PopupManager,
+    /// Windows that exist but are not on a workspace yet: created by
+    /// `new_toplevel`, waiting for their first configure to be acknowledged
+    /// with an actual buffer. Mapping one earlier would put a sizeless,
+    /// contentless window into the split tree.
+    pub pending_windows: Vec<Window>,
+
+    /// The backend actually driving pixels (nested winit window, or DRM/KMS).
+    /// Taken out of the state for the duration of a render pass, so backend
+    /// code can hold `&mut Oxin` while it draws — see `backend::with_backend`.
+    pub backend: Option<Backend>,
+
+    // --- 0xin policy state ---
+    pub config: Config,
+    pub workspaces: Vec<Workspace>,
+    pub outputs: Vec<OutputEntry>,
+    pub pointer_location: Point<f64, Logical>,
+
+    /// Active pointer grab (Mod+drag on a floating window): what it does,
+    /// which window, and the cursor position + window rect when it started —
+    /// motion applies deltas against these, not against the previous event.
+    pub grab: GrabMode,
+    pub grab_window: Option<Window>,
+    pub grab_cursor: Point<f64, Logical>,
+    pub grab_rect: Rectangle<i32, Logical>,
+
+    /// Hold bindings (`hold = MODS, KEY, MS, ACTION`): the chord being held,
+    /// what it will fire, and the timer token that will fire it.
+    pub held_keysym: u32,
+    pub held_modifiers: u32,
+    pub held_action: Option<Action>,
+    pub hold_timer: Option<smithay::reexports::calloop::RegistrationToken>,
+
+    /// Where 0xinctl's socket lives, so it can be removed on shutdown. The
+    /// listener itself is owned by its calloop source.
+    pub control_path: Option<PathBuf>,
+
+    /// The pointer image. Behind a `RefCell` because building its buffer needs
+    /// `&mut`, while element collection only has `&Oxin`.
+    pub cursor: std::cell::RefCell<crate::cursor::Cursor>,
+
+    pub keyboard_visible: bool,
+    /// Touch gesture recognizer state (the phone profile's edge swipes).
+    pub gestures: Recognizer,
+
+    /// ext-session-lock-v1: a locker owns all input and paints above
+    /// everything while this is set.
+    pub locked: bool,
+    pub lock: Option<LockState>,
 }
 
-pub(crate) struct LockSurface {
-    pub(crate) server: *mut Server,
-    pub(crate) lock_surface: *mut c_void,
-    pub(crate) map_listener: *mut ShimListener,
-    pub(crate) destroy_listener: *mut ShimListener,
+impl Oxin {
+    /// The window whose root surface is `surface`, if we track one.
+    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+        self.workspaces
+            .iter()
+            .flat_map(|ws| ws.windows.iter())
+            .find(|window| {
+                window
+                    .toplevel()
+                    .map(|toplevel| toplevel.wl_surface() == surface)
+                    .unwrap_or(false)
+            })
+            .cloned()
+    }
+
+    /// Which workspace currently holds `window`, if any.
+    pub fn workspace_of(&self, window: &Window) -> Option<usize> {
+        self.workspaces
+            .iter()
+            .position(|ws| ws.windows.contains(window))
+    }
+
+    /// The output entry for a Smithay output.
+    pub fn output_entry(&self, output: &Output) -> Option<&OutputEntry> {
+        self.outputs.iter().find(|entry| &entry.output == output)
+    }
+}
+
+/// Per-client data. Smithay hands this back to us for every request, and the
+/// compositor state inside it is where surface state for that client lives.
+#[derive(Default)]
+pub struct ClientState {
+    pub compositor_state: CompositorClientState,
+}
+
+impl ClientData for ClientState {
+    fn initialized(&self, _client_id: ClientId) {}
+    fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }

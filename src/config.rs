@@ -11,13 +11,15 @@
 //! just a couple of `bind =` lines still has working workspace switches,
 //! etc. If no config file exists at all, the defaults apply unchanged.
 
+use smithay::input::keyboard::xkb;
 use std::env;
-use std::ffi::CString;
 use std::fs;
-use std::os::raw::c_char;
 use std::path::PathBuf;
 
-/// Modifier bits (mirror the WLR_MODIFIER_* enum).
+/// Modifier bits. These kept the WLR_MODIFIER_* numbering when the compositor
+/// moved off wlroots: they are what the config file's `bind` lines are matched
+/// against, so changing them would silently change every user's keybindings.
+/// `input::modifier_bits` converts Smithay's `ModifiersState` into this shape.
 pub const MOD_SHIFT: u32 = 1 << 0; // Shift
 pub const MOD_CTRL: u32 = 1 << 2; // Control
 pub const MOD_ALT: u32 = 1 << 3; // Alt
@@ -26,10 +28,6 @@ pub const MOD_LOGO: u32 = 1 << 6; // Super / Logo
 /// The modifier bits we consider when matching binds. Excludes Caps Lock (1<<1)
 /// and Num Lock (Mod2, 1<<4) so they never break a binding.
 pub const MOD_MASK: u32 = MOD_SHIFT | MOD_CTRL | MOD_ALT | MOD_LOGO;
-
-extern "C" {
-    fn oxide_keysym_from_name(name: *const c_char) -> u32;
-}
 
 /// A screen-relative direction, for directional focus/move (`Mod+hjkl`).
 #[derive(Clone, Copy)]
@@ -738,10 +736,11 @@ fn direction_from_arg(arg: &str) -> Option<Direction> {
     }
 }
 
-/// Resolve a key name to a keysym, or None if xkb doesn't know it.
+/// Resolve a key name to a keysym, or None if xkb doesn't know it. Case
+/// insensitive, so `bind = MOD, q, close` and `bind = MOD, Q, close` are the
+/// same chord — the behaviour the C shim's `xkb_keysym_from_name` had.
 fn keysym_from_name(name: &str) -> Option<u32> {
-    let c = CString::new(name).ok()?;
-    let sym = unsafe { oxide_keysym_from_name(c.as_ptr()) };
+    let sym = xkb::keysym_from_name(name, xkb::KEYSYM_CASE_INSENSITIVE).raw();
     (sym != 0).then_some(sym)
 }
 
