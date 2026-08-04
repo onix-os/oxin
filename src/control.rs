@@ -83,8 +83,19 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
         wlr::wl_display_terminate(server.display);
         return "ok\n".into();
     }
+    if let Some(argument) = request.strip_prefix("rotate ") {
+        return match parse_rotate(argument) {
+            Some((name, transform)) => match crate::output::rotate(server, name, transform) {
+                Ok(()) => "ok\n".into(),
+                Err(error) => format!("error {error}\n"),
+            },
+            None => "error expected `rotate NAME normal|90|180|270`\n".into(),
+        };
+    }
     let Some(argument) = request.strip_prefix("wallpaper ") else {
-        return "error expected `quit`, `wallpaper PATH`, or `wallpaper clear`\n".into();
+        return "error expected `quit`, `wallpaper PATH`, `wallpaper clear`, or \
+                `rotate NAME normal|90|180|270`\n"
+            .into();
     };
     let result = if argument == "clear" {
         wallpaper::set(server, None)
@@ -97,4 +108,22 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
         Ok(()) => "ok\n".into(),
         Err(error) => format!("error {error}\n"),
     }
+}
+
+/// `NAME normal|90|180|270` -> (name, WL_OUTPUT_TRANSFORM_* value). Only the
+/// four unflipped rotations are exposed here — that's all the accelerometer
+/// watcher and manual testing need.
+fn parse_rotate(argument: &str) -> Option<(&str, u32)> {
+    let (name, transform) = argument.rsplit_once(' ')?;
+    let transform = match transform {
+        "normal" => 0,
+        "90" => 1,
+        "180" => 2,
+        "270" => 3,
+        _ => return None,
+    };
+    if name.is_empty() {
+        return None;
+    }
+    Some((name, transform))
 }

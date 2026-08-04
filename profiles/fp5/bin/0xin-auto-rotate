@@ -1,0 +1,62 @@
+#!/bin/sh
+# Rotates the FP5 output to match the phone's physical orientation, using
+# iio-sensor-proxy's AccelerometerOrientation over the system D-Bus.
+#
+# This device's SSC/QMI accelerometer backend (Fairphone 5's DSP-hosted
+# sensor hub) does not stream continuously once claimed — verified with
+# `iio-sensor-proxy --verbose`: each ClaimAccelerometer call triggers
+# exactly one enable -> single sample -> disable cycle (~100ms), then the
+# sensor powers back down. So AccelerometerOrientation only reflects the
+# phone's current position at the moment of the most recent claim, not
+# continuously — this claims on every poll iteration (1s) rather than
+# claiming once and expecting readings to keep arriving on their own,
+# which is what caused ~20-60s of staleness before (only re-claiming every
+# 60s to "keep the claim alive").
+#
+# Also polls rather than subscribing to PropertiesChanged: this system's
+# D-Bus policy silently rejects the unprivileged eavesdrop fallback
+# dbus-monitor needs for broadcast signals (confirmed empty across a 30s
+# unfiltered capture while the property visibly changed), so polling is
+# the only unprivileged option that actually works. A 0.2s interval keeps
+# the two lightweight D-Bus calls per iteration well under the ~100ms
+# enable/sample/disable cycle observed in the verbose log.
+
+OUTPUT="DSI-1"
+OXINCTL="$HOME/.local/bin/0xinctl"
+LOG="$HOME/.local/state/0xin-auto-rotate.log"
+mkdir -p "$(dirname "$LOG")"
+
+get_orientation() {
+    busctl --system call net.hadess.SensorProxy /net/hadess/SensorProxy \
+            net.hadess.SensorProxy ClaimAccelerometer >/dev/null 2>&1
+    busctl --system get-property net.hadess.SensorProxy /net/hadess/SensorProxy \
+            net.hadess.SensorProxy AccelerometerOrientation 2>/dev/null |
+        sed -n 's/^s "\(.*\)"$/\1/p'
+}
+
+# Always call rotate (0xin's own idempotent fast-path makes a no-op call
+# cheap), rather than only calling when this script's own `last` differs
+# from the new reading. `rotate` calls silently fail while the session is
+# locked (0xin forces portrait for the lock screen and rejects rotate
+# requests until unlock) — always calling means the very next successful
+# poll after unlock naturally resyncs to the phone's actual orientation,
+# with no lock-awareness needed here. `last` is kept purely to avoid
+# repeating log lines, not to gate the call.
+last=""
+while true; do
+    orientation=$(get_orientation)
+    case "$orientation" in
+        normal)    transform=normal ;;
+        bottom-up) transform=180 ;;
+        left-up)   transform=90 ;;
+        right-up)  transform=270 ;;
+        *) sleep 0.2; continue ;;
+    esac
+    if "$OXINCTL" rotate "$OUTPUT" "$transform" >/dev/null 2>&1; then
+        if [ "$orientation" != "$last" ]; then
+            echo "$(date -Iseconds) orientation=$orientation" >>"$LOG"
+            last="$orientation"
+        fi
+    fi
+    sleep 0.2
+done

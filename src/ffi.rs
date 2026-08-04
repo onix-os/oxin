@@ -101,6 +101,7 @@ extern "C" {
     pub(crate) fn oxide_scene_rect_destroy(rect: *mut c_void);
     pub(crate) fn oxide_scene_rect_set_enabled(rect: *mut c_void, enabled: bool);
     pub(crate) fn oxide_scene_rect_set_position(rect: *mut c_void, x: i32, y: i32);
+    pub(crate) fn oxide_scene_rect_set_size(rect: *mut c_void, width: i32, height: i32);
     pub(crate) fn oxide_scene_add_wallpaper(
         tree: *mut wlr::wlr_scene_tree,
         x: i32,
@@ -376,6 +377,10 @@ extern "C" {
     ) -> *mut wlr::wlr_output;
     pub(crate) fn oxide_output_power_set_mode_event_is_on(event: *mut c_void) -> bool;
     pub(crate) fn oxide_output_set_powered(output: *mut wlr::wlr_output, enabled: bool);
+    // `transform` is a raw WL_OUTPUT_TRANSFORM_* value (0=normal, 1=90,
+    // 2=180, 3=270, 4-7=flipped variants) rather than the wayland enum, so we
+    // don't need to bindgen it.
+    pub(crate) fn oxide_output_set_transform(output: *mut wlr::wlr_output, transform: u32);
 
     // Rounded-corner GLES2 masking: a compositor-owned shader program,
     // compiled once at startup, living for the process's lifetime (no

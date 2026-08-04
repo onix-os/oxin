@@ -96,6 +96,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         y,
         w,
         h,
+        transform: 0,
         // No layer surfaces yet; usable area starts as the full box.
         ux: x,
         uy: y,
@@ -253,4 +254,93 @@ unsafe extern "C" fn handle_frame(userdata: *mut c_void, _data: *mut c_void) {
         }
     }
     oxide_scene_output_render(ctx.scene_output);
+}
+
+/// Rotate/flip an output at runtime — driven by `0xinctl rotate NAME
+/// TRANSFORM` (`control.rs`), in turn driven by the phone's accelerometer
+/// watcher script. `transform` is a raw WL_OUTPUT_TRANSFORM_* value.
+pub(crate) unsafe fn rotate(server: &mut Server, name: &str, transform: u32) -> Result<(), String> {
+    let idx = server
+        .outputs
+        .iter()
+        .position(|o| {
+            CStr::from_ptr(oxide_output_name(o.wlr_output)).to_string_lossy() == name
+        })
+        .ok_or_else(|| format!("no output named {name}"))?;
+
+    if server.outputs[idx].transform == transform {
+        return Ok(());
+    }
+
+    let wlr_output = server.outputs[idx].wlr_output;
+    oxide_output_set_transform(wlr_output, transform);
+
+    // wlroots recomputes the layout box from the output's new effective
+    // (transform-swapped, for 90/270) size once the commit above lands.
+    let (mut x, mut y, mut w, mut h) = (0, 0, 0, 0);
+    oxide_output_layout_get_box(server.output_layout, wlr_output, &mut x, &mut y, &mut w, &mut h);
+
+    {
+        let o = &mut server.outputs[idx];
+        o.x = x;
+        o.y = y;
+        o.w = w;
+        o.h = h;
+        o.transform = transform;
+        oxide_scene_rect_set_size(o.background, w, h);
+        oxide_scene_rect_set_position(o.background, x, y);
+        if !o.gesture_handle.is_null() {
+            // Same offset formula as the handle's creation in handle_new_output.
+            oxide_scene_rect_set_position(o.gesture_handle, x + (w - 120) / 2, y + h - 10);
+        }
+    }
+
+    // Re-derive exclusive-zone usable area against the new box.
+    arrange_layers(server, idx);
+
+    // Re-decode the wallpaper at the new size for every output (reuses the
+    // same per-output sizing `wallpaper::set` already does).
+    if let Some(path) = server.config.wallpaper.clone() {
+        wallpaper::set(server, Some(&path))?;
+    }
+
+    // Re-tile every window into the new box.
+    refresh(server);
+
+    let o = &mut server.outputs[idx];
+    o.repaint_frames = REPAINT_FRAMES;
+    oxide_output_schedule_frame(o.wlr_output);
+
+    eprintln!("0xin: output {name} rotated (transform {transform}) — now {w}x{h}");
+    Ok(())
+}
+
+/// Minimal transform-only update for use while the session is locked: the
+/// lock's opaque fallback already covers the whole output, so none of
+/// `rotate`'s wallpaper-reload/re-tile/repaint-forcing work is visible or
+/// needed — this only updates the output's transform/box and (if present)
+/// the lock fallback rect's size/position, so a lock surface created
+/// afterward is sized correctly. No synchronous wallpaper decode, no
+/// re-tile, so no risk of stalling the lock handshake.
+pub(crate) unsafe fn set_transform_for_lock(server: &mut Server, idx: usize, transform: u32) {
+    if server.outputs[idx].transform == transform {
+        return;
+    }
+
+    let wlr_output = server.outputs[idx].wlr_output;
+    oxide_output_set_transform(wlr_output, transform);
+
+    let (mut x, mut y, mut w, mut h) = (0, 0, 0, 0);
+    oxide_output_layout_get_box(server.output_layout, wlr_output, &mut x, &mut y, &mut w, &mut h);
+
+    let o = &mut server.outputs[idx];
+    o.x = x;
+    o.y = y;
+    o.w = w;
+    o.h = h;
+    o.transform = transform;
+    if !o.lock_fallback.is_null() {
+        oxide_scene_rect_set_size(o.lock_fallback, w, h);
+        oxide_scene_rect_set_position(o.lock_fallback, x, y);
+    }
 }

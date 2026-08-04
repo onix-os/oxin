@@ -59,6 +59,19 @@ void oxide_output_set_powered(struct wlr_output *output, bool enabled) {
     wlr_output_state_finish(&state);
 }
 
+// Rotate/flip the output. `transform` is a raw WL_OUTPUT_TRANSFORM_* value
+// (0=normal, 1=90, 2=180, 3=270, 4-7=flipped variants) — passed as a plain
+// uint32_t across the Rust FFI boundary rather than binding the wayland enum.
+// Swaps the output's effective width/height for 90/270, which
+// wlr_output_layout_get_box picks up on the next call so Rust can re-tile.
+void oxide_output_set_transform(struct wlr_output *output, uint32_t transform) {
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_transform(&state, (enum wl_output_transform)transform);
+    wlr_output_commit_state(output, &state);
+    wlr_output_state_finish(&state);
+}
+
 // The connector name (e.g. "eDP-1", "HDMI-A-1") — read once by Rust and
 // converted to an owned String immediately, so there's no pointer lifetime to
 // worry about on the Rust side.
@@ -108,6 +121,10 @@ void oxide_scene_rect_set_enabled(struct wlr_scene_rect *rect, bool enabled) {
 
 void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y) {
     wlr_scene_node_set_position(&rect->node, x, y);
+}
+
+void oxide_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int height) {
+    wlr_scene_rect_set_size(rect, width, height);
 }
 
 struct oxide_pixel_buffer {

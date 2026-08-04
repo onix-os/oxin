@@ -144,6 +144,13 @@ void oxide_output_schedule_frame(struct wlr_output *output);
 // wlr_output_state commit dance, same shape as oxide_output_enable but
 // without touching mode/scale.
 void oxide_output_set_powered(struct wlr_output *output, bool enabled);
+// Rotate/flip the output. `transform` is a raw WL_OUTPUT_TRANSFORM_* value
+// (0=normal, 1=90, 2=180, 3=270, 4-7=flipped variants) rather than the
+// wayland enum, so Rust can pass a plain u32 without binding it. Owns the
+// wlr_output_state commit dance, same shape as oxide_output_set_powered.
+void oxide_output_set_transform(struct wlr_output *output, uint32_t transform);
+// Resize a rect created above (e.g. the per-output background) in place.
+void oxide_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int height);
 
 // --- xdg-shell (app windows) ----------------------------------------------
 struct oxide_listener *oxide_xdg_shell_add_new_toplevel(

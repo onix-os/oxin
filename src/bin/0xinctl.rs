@@ -12,7 +12,9 @@ fn socket_path() -> Result<PathBuf, String> {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: 0xinctl quit\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear");
+    eprintln!(
+        "usage: 0xinctl quit\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270"
+    );
     std::process::exit(2);
 }
 
@@ -27,6 +29,11 @@ fn main() {
             "wallpaper clear\n".to_string()
         }
         ("wallpaper", Some(argument), None) => format!("wallpaper {argument}\n"),
+        ("rotate", Some(name), Some(transform))
+            if matches!(transform.as_str(), "normal" | "90" | "180" | "270") =>
+        {
+            format!("rotate {name} {transform}\n")
+        }
         _ => usage(),
     };
     let path = socket_path().unwrap_or_else(|error| {

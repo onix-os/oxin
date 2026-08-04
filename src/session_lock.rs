@@ -41,6 +41,22 @@ unsafe fn cover_all_outputs(server: &mut Server) {
     }
 }
 
+/// Force every output to its normal (unrotated) transform while locked — the
+/// lock surface should always render right-side-up regardless of whatever
+/// the phone's auto-rotate watcher last set. Uses the minimal
+/// `output::set_transform_for_lock` (not the full `output::rotate`): while
+/// locked the desktop is fully hidden behind the opaque fallback, so there's
+/// no need to reload the wallpaper, resize the background, or re-tile
+/// anything — none of that is visible. Idempotent, so this is free when
+/// nothing needs to change (e.g. on desktop profiles, which never rotate at
+/// all). Called before `cover_all_outputs` so the fallback rect it creates
+/// is already sized against the correctly-rotated box.
+unsafe fn force_portrait(server: &mut Server) {
+    for idx in 0..server.outputs.len() {
+        crate::output::set_transform_for_lock(server, idx, 0);
+    }
+}
+
 unsafe fn clear_fallbacks(server: &mut Server) {
     for output in &mut server.outputs {
         if !output.lock_fallback.is_null() {
@@ -62,6 +78,7 @@ unsafe extern "C" fn handle_new_lock(userdata: *mut c_void, data: *mut c_void) {
 
     server.active_lock = lock;
     server.locked = true;
+    force_portrait(server);
     cover_all_outputs(server);
     oxide_seat_clear_keyboard_focus(server.seat);
     oxide_cursor_set_locked(server.cursor, true);

@@ -1134,6 +1134,20 @@ static void pointer_add_touch(struct oxide_pointer *p,
             handle_touch_device_destroy, td);
 
     wlr_cursor_attach_input_device(p->cursor, device);
+
+    // Map the touchscreen to the sole output when there's exactly one (the
+    // phone profile). This is what makes wlr_cursor_absolute_to_layout_coords
+    // account for the output's transform — without an explicit mapping it
+    // falls back to scaling raw touch fractions against the whole layout's
+    // box, which isn't transform-aware. Multi-output desktop profiles are
+    // left unmapped and unaffected.
+    if (p->output_layout != NULL
+            && wl_list_length(&p->output_layout->outputs) == 1) {
+        struct wlr_output_layout_output *lo = wl_container_of(
+                p->output_layout->outputs.next, lo, link);
+        wlr_cursor_map_input_to_output(p->cursor, device, lo->output);
+    }
+
     p->touch_device_count++;
     wlr_seat_set_capabilities(p->seat,
             p->seat->capabilities | WL_SEAT_CAPABILITY_TOUCH);

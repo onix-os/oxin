@@ -32,6 +32,27 @@ install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
 The live command does not rewrite the configuration. The configured image
 returns after the next login unless its `wallpaper =` line is changed too.
 
+## Auto-rotate
+
+`0xinctl rotate NAME normal|90|180|270` rotates a live output without
+restarting 0xin — it re-commits the output's transform, re-tiles every
+window, and resizes the background/wallpaper/gesture handle to match. On the
+FP5, `profiles/fp5/bin/0xin-auto-rotate` drives this automatically: it claims
+the accelerometer from `iio-sensor-proxy` (`net.hadess.SensorProxy` on the
+system D-Bus) and calls `0xinctl rotate DSI-1 ...` whenever
+`AccelerometerOrientation` changes. It is launched by the profile's
+`exec_once = ~/.local/bin/0xin-auto-rotate` line, so install it alongside the
+other helpers:
+
+```sh
+install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-auto-rotate ~/.local/bin/
+install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
+```
+
+Touch input is mapped to the output (`wlr_cursor_map_input_to_output`) so it
+tracks the rotation too — this only happens automatically when a profile has
+exactly one output, so desktop/multi-monitor setups are unaffected.
+
 ## Window opacity
 
 The FP5 profile sets `window_opacity = 0.8`, so application windows reveal

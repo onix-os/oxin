@@ -123,6 +123,9 @@ pub(crate) struct Output {
     pub(crate) y: i32,
     pub(crate) w: i32,
     pub(crate) h: i32,
+    /// Current WL_OUTPUT_TRANSFORM_* value (0 = normal). Set at creation and
+    /// by `output::rotate`.
+    pub(crate) transform: u32,
     /// Usable area left after layer-shell surfaces reserve their exclusive
     /// zones (e.g. a bar strip). Starts equal to the full box; recomputed by
     /// `arrange_layers`. App windows tile within this, not the full box.
