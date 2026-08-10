@@ -56,6 +56,12 @@ extern "C" {
         display: *mut wlr::wl_display,
         seat: *mut wlr::wlr_seat,
     );
+    pub(crate) fn oxide_text_input_setup(
+        display: *mut wlr::wl_display,
+        seat: *mut wlr::wlr_seat,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    );
     pub(crate) fn oxide_session_change_vt(session: *mut wlr::wlr_session, vt: u32);
     pub(crate) fn oxide_session_add_active(
         session: *mut wlr::wlr_session,

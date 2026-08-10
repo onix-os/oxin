@@ -40,6 +40,7 @@ use input::{
     handle_click_focus, handle_double_tap, handle_gesture, handle_grab_button, handle_grab_motion,
     handle_new_input,
 };
+use keybindings::handle_text_input_visibility;
 use layer_shell::handle_new_layer_surface;
 use output::{handle_new_output, handle_session_active};
 use state::{GrabMode, Server, Workspace, WORKSPACE_COUNT};
@@ -198,6 +199,9 @@ fn main() {
             grab_h: 0,
         };
         let server_ptr = &mut server as *mut Server as *mut c_void;
+        // Focused clients use the standard text-input-v3 protocol to request
+        // whichever OSK the profile configured (wvkbd today, replaceable later).
+        oxide_text_input_setup(display, seat, handle_text_input_visibility, server_ptr);
         oxide_backend_add_new_output(backend, handle_new_output, server_ptr);
         oxide_backend_add_new_input(backend, handle_new_input, server_ptr);
         // Keep Rust's focused-window bookkeeping in sync with click-to-focus.

@@ -81,6 +81,10 @@ void oxide_reset_child_signals(void);
 // keyboard to `seat`. Virtual keys bypass compositor keybindings.
 void oxide_virtual_keyboard_setup(struct wl_display *display,
         struct wlr_seat *seat);
+// Publish text-input-v3 and report whether the focused client has enabled a
+// text field. The callback data is 1 for visible and 0 for hidden.
+void oxide_text_input_setup(struct wl_display *display, struct wlr_seat *seat,
+        oxide_callback visibility_callback, void *userdata);
 
 // Switch to virtual terminal `vt` (1-based); no-op if `session` is NULL.
 void oxide_session_change_vt(struct wlr_session *session, unsigned vt);

@@ -172,6 +172,9 @@ virtual_keyboard_height = 125
 # visible (default) or hidden; this changes only the visual pill.
 gesture_handle = hidden
 
+# Focused clients using Wayland text-input-v3 automatically invoke the same
+# provider-neutral show/hide commands. Gestures remain a manual override.
+
 gesture = bottom-up, keyboardshow
 gesture = bottom-down, keyboardhide
 gesture = edge-left-in, workspaceprev

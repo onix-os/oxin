@@ -73,9 +73,8 @@ pixel portrait height (`300 / 2.4`). This is a reference hardware profile, not
 device-specific compositor behavior; another mobile profile can select a
 different process, scale, and height.
 
-Text-input and input-method protocols remain future work. They can eventually
-show the keyboard automatically when a text field gains focus, while this
-explicit gesture remains useful as a user override and recovery path.
+Stage 27 later adds text-input-v3-driven automatic show/hide. This explicit
+gesture remains useful as a user override and recovery path.
 
 ## Client library isolation
 

@@ -112,6 +112,7 @@ fn main() {
         "shim/output_power.c",
         "shim/decoration.c",
         "shim/input.c",
+        "shim/text_input.c",
         "shim/gles2_corner.c",
     ];
     let mut shim = cc::Build::new();

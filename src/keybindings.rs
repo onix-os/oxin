@@ -132,7 +132,7 @@ pub(crate) fn spawn(cmd: &str) {
     }
 }
 
-unsafe fn set_keyboard_visible(server: &mut Server, visible: bool) {
+pub(crate) unsafe fn set_keyboard_visible(server: &mut Server, visible: bool) {
     if server.keyboard_visible == visible {
         return;
     }
@@ -166,6 +166,17 @@ unsafe fn set_keyboard_visible(server: &mut Server, visible: bool) {
             );
         }
     }
+}
+
+/// Standard text-input-v3 clients reach the same provider-neutral keyboard
+/// controller as manual gestures. `data` is the boolean encoded by the shim.
+pub(crate) unsafe extern "C" fn handle_text_input_visibility(
+    userdata: *mut c_void,
+    data: *mut c_void,
+) {
+    let server = &mut *(userdata as *mut Server);
+    let visible = data as usize != 0 && !server.locked;
+    set_keyboard_visible(server, visible);
 }
 
 /// Arrange for a spawned client to start with clean process state. The
