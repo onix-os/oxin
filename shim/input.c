@@ -27,8 +27,11 @@
 #define OXIDE_DOUBLE_TAP_PX 100
 // How long a touch landing on the visible keyboard is held before being
 // forwarded as a real keypress, giving a swipe-down-to-hide gesture a
-// chance to claim it first instead — see keyboard_hide_candidate.
-#define OXIDE_KEYBOARD_HOLD_MS 120
+// chance to claim it first instead — see keyboard_hide_candidate. Long
+// enough for an unhurried swipe (the keyboard itself is only ~125 logical
+// px tall, so a fast flick isn't required) without making ordinary taps
+// feel delayed.
+#define OXIDE_KEYBOARD_HOLD_MS 220
 
 // --- seat & input ----------------------------------------------------------
 
@@ -866,10 +869,13 @@ static void handle_touch_motion(void *userdata, void *data) {
         struct wlr_output *output =
                 wlr_output_layout_output_at(p->output_layout, lx, ly);
         if (output != NULL) {
-            struct wlr_box box;
-            wlr_output_layout_get_box(p->output_layout, output, &box);
-            if (ly - point->start_ly >= 70
-                    && ly >= box.y + box.height - 28) {
+            // Downward travel alone is enough to commit — the keyboard is
+            // only ~125 logical px tall, so also requiring the touch to
+            // reach within 28px of the physical bottom edge (on top of 70px
+            // of travel) demanded a swipe covering nearly the whole
+            // keyboard, which reads as unreliable/"hard to close" in
+            // practice.
+            if (ly - point->start_ly >= 45) {
                 // Confirmed swipe. The touch was never forwarded to any
                 // client (that's the whole point of holding it), so
                 // there's nothing to cancel — just fire the gesture.
