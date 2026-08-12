@@ -1,0 +1,9 @@
+#!/bin/sh
+
+current=$(brightnessctl --device white:flash get)
+
+if [ "$current" -gt 0 ]; then
+    brightnessctl --device white:flash set 0
+else
+    brightnessctl --device white:flash set 255
+fi
