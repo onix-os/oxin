@@ -226,6 +226,14 @@ pub(crate) unsafe fn arrange_layers(server: &mut Server, output_idx: usize) {
             {
                 continue;
             }
+            // A surface mid-unmap (or not yet role-initialized) isn't ready
+            // for a configure — wlr_layer_surface_v1_configure() asserts on
+            // surface->initialized, and this loop runs for every layer
+            // surface on the output on every commit/map/unmap/destroy,
+            // including the one that's currently unmapping.
+            if !oxide_layer_surface_initialized(l.wlr_layer_surface) {
+                continue;
+            }
             oxide_scene_layer_surface_configure(
                 l.scene_ls, fx, fy, fw, fh, &mut ux, &mut uy, &mut uw, &mut uh,
             );

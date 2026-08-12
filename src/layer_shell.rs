@@ -77,9 +77,18 @@ unsafe extern "C" fn handle_layer_map(userdata: *mut c_void, _data: *mut c_void)
     rearrange_layer_output(&*(userdata as *mut LayerSurface));
 }
 
-unsafe extern "C" fn handle_layer_unmap(userdata: *mut c_void, _data: *mut c_void) {
-    rearrange_layer_output(&*(userdata as *mut LayerSurface));
-}
+// Deliberately not rearranging here (unlike commit/map): at the moment unmap
+// fires, initialized/configured are still true — wlroots hasn't finished
+// tearing the surface down yet, that happens a beat later once the generic
+// commit signal fires. A configure sent from here reaches the client, gets
+// legitimately ack'd, but by the time the ack arrives wlroots has already
+// invalidated it as part of finishing the unmap — a fatal "wrong configure
+// serial" protocol error that kills the client's connection outright.
+// Confirmed via a live traced repro (initialized/configured were true at
+// unmap, false three events later at the next commit). A surface that's
+// disappearing doesn't need a fresh configure anyway — the next real state
+// change (a future commit/map on reshow) already triggers one.
+unsafe extern "C" fn handle_layer_unmap(_userdata: *mut c_void, _data: *mut c_void) {}
 
 /// The layer surface was destroyed: unregister its listeners, drop it from
 /// tracking, and re-arrange the output it was on.

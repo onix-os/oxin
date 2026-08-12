@@ -322,6 +322,7 @@ extern "C" {
     pub(crate) fn oxide_layer_surface_output(ls: *mut c_void) -> *mut wlr::wlr_output;
     pub(crate) fn oxide_layer_surface_set_output(ls: *mut c_void, output: *mut wlr::wlr_output);
     pub(crate) fn oxide_layer_surface_layer(ls: *mut c_void) -> u32;
+    pub(crate) fn oxide_layer_surface_initialized(ls: *mut c_void) -> bool;
     pub(crate) fn oxide_scene_layer_surface_create(
         tree: *mut wlr::wlr_scene_tree,
         ls: *mut c_void,

@@ -249,6 +249,10 @@ void oxide_layer_surface_set_output(struct wlr_layer_surface_v1 *ls,
 // Requested z-layer: 0=background, 1=bottom, 2=top, 3=overlay
 // (zwlr_layer_shell_v1_layer).
 uint32_t oxide_layer_surface_layer(struct wlr_layer_surface_v1 *ls);
+// False while the surface is mid-unmap (or before its role is fully set up) —
+// wlr_layer_surface_v1_configure() asserts on surface->initialized, so callers
+// must skip configuring it until this is true again.
+bool oxide_layer_surface_initialized(struct wlr_layer_surface_v1 *ls);
 
 // Add the layer surface (and its sub-surfaces/popups) to the scene, under the
 // tree matching its layer.

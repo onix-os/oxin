@@ -33,6 +33,10 @@ uint32_t oxide_layer_surface_layer(struct wlr_layer_surface_v1 *ls) {
     return ls->pending.layer;
 }
 
+bool oxide_layer_surface_initialized(struct wlr_layer_surface_v1 *ls) {
+    return ls->initialized;
+}
+
 struct wlr_scene_layer_surface_v1 *oxide_scene_layer_surface_create(
         struct wlr_scene_tree *tree, struct wlr_layer_surface_v1 *ls) {
     return wlr_scene_layer_surface_v1_create(tree, ls);
