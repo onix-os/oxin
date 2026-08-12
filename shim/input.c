@@ -230,6 +230,16 @@ struct oxide_pointer {
     bool multi_down[3];
     double multi_start_x[3], multi_start_y[3];
     double multi_x[3], multi_y[3];
+    // Undecided two-finger state: the first finger is still a live,
+    // undisturbed client touch (pending_first, gesture_kind 0 or 4) while the
+    // second is held back (pending_second, gesture_kind 6) until motion shows
+    // whether this is a swipe (promote to multi_active, same as before), a
+    // pinch (release pending_second to the client — see multi_pending_motion),
+    // or a tap (falls through to the existing double-tap check unchanged).
+    // Mutually exclusive with multi_active.
+    bool multi_pending;
+    struct oxide_touch_point *pending_first;
+    struct oxide_touch_point *pending_second;
     // Double-tap: a compositor-owned window-identity gesture, requiring two
     // fingers (promoted through the multi_* tracking above, same as a
     // swipe) tapped together twice in roughly the same spot. See
@@ -249,7 +259,9 @@ struct oxide_touch_point {
     // 0 = client touch, 1 = keyboard handle, 2 = workspace edge,
     // 3 = top-edge gesture, 4 = bare-background multi-finger candidate,
     // 5 = keyboard-hide-swipe candidate (held, not yet forwarded to any
-    // client — see keyboard_hide_candidate).
+    // client — see keyboard_hide_candidate), 6 = pending second finger of an
+    // undecided two-finger gesture (held, not yet forwarded — see
+    // multi_pending_begin/multi_pending_motion).
     int gesture_kind;
     bool gesture_fired;
     bool to_top_candidate;
@@ -612,27 +624,131 @@ static void multi_add(struct oxide_pointer *p, int32_t touch_id,
     p->multi_active_count++;
 }
 
-static void multi_begin(struct oxide_pointer *p,
-        struct oxide_touch_point *first, int32_t second_id,
+// Starts the undecided window: the first finger (already a live client touch,
+// or a bare-background candidate) is left completely undisturbed, and the
+// second is tracked here but held back — not yet forwarded to any client —
+// via a new gesture_kind-6 point. See multi_pending_motion for how this
+// resolves into a swipe, a pinch, or a tap.
+static void multi_pending_begin(struct oxide_pointer *p,
+        struct oxide_touch_point *first, struct wlr_touch_down_event *e,
         double second_lx, double second_ly) {
-    int32_t first_id = first->touch_id;
-    double first_lx = first->start_lx;
-    double first_ly = first->start_ly;
-    struct wlr_seat_client *client = first->client;
+    struct oxide_touch_point *second = calloc(1, sizeof(*second));
+    second->touch_id = e->touch_id;
+    second->touch = e->touch;
+    second->gesture_kind = 6;
+    second->start_lx = second->last_lx = second_lx;
+    second->start_ly = second->last_ly = second_ly;
+    second->hold_time_msec = e->time_msec;
+    second->last_time_msec = e->time_msec;
+    wl_list_insert(&p->touch_points, &second->link);
 
-    // The application saw the first finger. Once a second finger makes this a
-    // compositor gesture, cancel that client sequence before consuming it.
+    multi_reset(p);
+    p->multi_pending = true;
+    p->pending_first = first;
+    p->pending_second = second;
+    multi_add(p, first->touch_id, first->start_lx, first->start_ly);
+    multi_add(p, e->touch_id, second_lx, second_ly);
+}
+
+// Commits the pending pair to a compositor gesture: cancels the first
+// finger's client sequence (mirroring the old, always-immediate multi_begin),
+// drops the held second finger (it was never delivered, so nothing to
+// cancel), and hands off to the existing multi_active tracking. Leaves
+// multi_x/y/count untouched — multi_pending_begin already populated them
+// with both fingers' positions.
+static void multi_promote_to_active(struct oxide_pointer *p) {
+    struct wlr_seat_client *client = p->pending_first->client;
     if (client != NULL) {
         touch_cancel_client(p, client);
     } else {
-        wl_list_remove(&first->link);
-        free(first);
+        wl_list_remove(&p->pending_first->link);
+        free(p->pending_first);
+    }
+    wl_list_remove(&p->pending_second->link);
+    free(p->pending_second);
+    p->pending_first = NULL;
+    p->pending_second = NULL;
+    p->multi_pending = false;
+    p->multi_active = true;
+}
+
+// Ends the pending window without ever having decided on a gesture: drops
+// both tracked points without disturbing whichever is still a live client
+// touch (the caller is responsible for that finger's own up/cancel — this
+// just clears bookkeeping). Used when to-top or a stray teardown needs to
+// abandon an in-progress pending pair.
+static void multi_pending_abandon(struct oxide_pointer *p) {
+    if (p->pending_second != NULL) {
+        wl_list_remove(&p->pending_second->link);
+        free(p->pending_second);
+    }
+    p->pending_first = NULL;
+    p->pending_second = NULL;
+    p->multi_pending = false;
+    multi_reset(p);
+}
+
+// Re-checks a pending pair's shape after one finger moved. Three outcomes:
+// a pinch (the fingers' separation has changed by PINCH_PX or more) releases
+// the held second finger to the client via release_hold, so real multitouch
+// — e.g. an app's own pinch-to-zoom — takes over from here; a swipe (same
+// centroid-direction test as multi_motion below) promotes to the existing
+// compositor gesture; neither yet just keeps waiting. Only runs once both
+// fingers are down (mirrors multi_motion's own active_count guard).
+#define OXIDE_PINCH_PX 40
+static void multi_pending_motion(struct oxide_pointer *p) {
+    if (p->multi_active_count != p->multi_count || p->multi_count != 2) {
+        return;
+    }
+    double start_dist = hypot(p->multi_start_x[1] - p->multi_start_x[0],
+            p->multi_start_y[1] - p->multi_start_y[0]);
+    double cur_dist = hypot(p->multi_x[1] - p->multi_x[0],
+            p->multi_y[1] - p->multi_y[0]);
+    if (fabs(cur_dist - start_dist) >= OXIDE_PINCH_PX) {
+        struct oxide_touch_point *second = p->pending_second;
+        p->pending_first = NULL;
+        p->pending_second = NULL;
+        p->multi_pending = false;
+        multi_reset(p);
+        release_hold(p, second);
+        return;
     }
 
-    multi_reset(p);
-    p->multi_active = true;
-    multi_add(p, first_id, first_lx, first_ly);
-    multi_add(p, second_id, second_lx, second_ly);
+    double dx = (p->multi_x[0] - p->multi_start_x[0]
+                + p->multi_x[1] - p->multi_start_x[1]) / 2;
+    double dy = (p->multi_y[0] - p->multi_start_y[0]
+                + p->multi_y[1] - p->multi_start_y[1]) / 2;
+    int direction;
+    double distance;
+    if (fabs(dx) > fabs(dy)) {
+        direction = dx < 0 ? 2 : 3; // left, right
+        distance = fabs(dx);
+    } else {
+        direction = dy < 0 ? 0 : 1; // up, down
+        distance = fabs(dy);
+    }
+    if (distance < 70) {
+        return;
+    }
+    for (int i = 0; i < 2; i++) {
+        double finger_dx = p->multi_x[i] - p->multi_start_x[i];
+        double finger_dy = p->multi_y[i] - p->multi_start_y[i];
+        double projected = direction == 0 ? -finger_dy
+                : direction == 1 ? finger_dy
+                : direction == 2 ? -finger_dx : finger_dx;
+        if (projected < 35) {
+            return;
+        }
+    }
+    uint32_t trigger = 8 + direction;
+    if ((p->gesture_mask & (1u << trigger)) == 0) {
+        return;
+    }
+    multi_promote_to_active(p);
+    p->multi_fired = true;
+    if (p->gesture_callback != NULL) {
+        p->gesture_callback(p->gesture_userdata, trigger);
+    }
 }
 
 static void multi_motion(struct oxide_pointer *p, int32_t touch_id,
@@ -756,6 +872,16 @@ static void handle_touch_down(void *userdata, void *data) {
         multi_add(p, e->touch_id, lx, ly);
         return;
     }
+    if (p->multi_pending) {
+        // A third finger arrives before the pending pair resolved — this is
+        // unambiguously the three-finger gesture, not a pinch (that's a
+        // strictly two-finger shape). Commit now: promote_to_active cancels
+        // the first finger and drops the held second, then this finger joins
+        // as the third, same end state the old always-immediate design had.
+        multi_promote_to_active(p);
+        multi_add(p, e->touch_id, lx, ly);
+        return;
+    }
     if (multi_gestures_enabled(p)) {
         struct oxide_touch_point *candidate = NULL;
         int candidates = 0;
@@ -767,7 +893,7 @@ static void handle_touch_down(void *userdata, void *data) {
             }
         }
         if (candidates == 1) {
-            multi_begin(p, candidate, e->touch_id, lx, ly);
+            multi_pending_begin(p, candidate, e, lx, ly);
             return;
         }
     }
@@ -921,6 +1047,26 @@ static void handle_touch_motion(void *userdata, void *data) {
         }
         return;
     }
+    if (point->gesture_kind == 6) {
+        // The held second finger of an undecided pair. Update the position
+        // multi_pending_motion classifies against and its own last-seen
+        // fields (needed if it turns out to be a pinch — release_hold uses
+        // them for the catch-up motion), then re-run classification. Never
+        // forwarded directly from here: a swipe frees this point entirely
+        // (multi_promote_to_active), a pinch delivers it via release_hold
+        // inside multi_pending_motion, and "still undecided" means it stays
+        // held. All three outcomes are handled there.
+        point->last_lx = lx;
+        point->last_ly = ly;
+        point->last_time_msec = e->time_msec;
+        int i = multi_index(p, e->touch_id);
+        if (i >= 0) {
+            p->multi_x[i] = lx;
+            p->multi_y[i] = ly;
+            multi_pending_motion(p);
+        }
+        return;
+    }
     if (point->to_top_candidate) {
         struct wlr_output *output =
                 wlr_output_layout_output_at(p->output_layout, lx, ly);
@@ -929,6 +1075,9 @@ static void handle_touch_motion(void *userdata, void *data) {
             wlr_output_layout_get_box(p->output_layout, output, &box);
             if (point->start_ly - ly >= 70 && ly <= box.y + 28) {
                 struct wlr_seat_client *client = point->client;
+                if (p->pending_first == point) {
+                    multi_pending_abandon(p);
+                }
                 touch_cancel_client(p, client);
                 if (p->gesture_callback != NULL) {
                     p->gesture_callback(p->gesture_userdata, 7);
@@ -1037,6 +1186,22 @@ static void handle_touch_motion(void *userdata, void *data) {
         }
         return;
     }
+    // The first finger of an undecided pair: still an entirely ordinary
+    // client touch (forwarded below, same as always), but also feeds
+    // classification so a swipe or pinch can still be recognized against the
+    // held second finger. A swipe frees this point via multi_promote_to_active
+    // — bail out immediately rather than touch it again.
+    if (p->multi_pending && p->pending_first == point) {
+        int i = multi_index(p, e->touch_id);
+        if (i >= 0) {
+            p->multi_x[i] = lx;
+            p->multi_y[i] = ly;
+            multi_pending_motion(p);
+            if (p->multi_active) {
+                return;
+            }
+        }
+    }
     point->last_lx = lx;
     point->last_ly = ly;
     wlr_seat_touch_notify_motion(p->seat, e->time_msec, e->touch_id,
@@ -1053,6 +1218,48 @@ static void handle_touch_up(void *userdata, void *data) {
             p->multi_active_count--;
             if (p->multi_active_count == 0) {
                 multi_two_finger_tap_check(p, e->time_msec);
+                multi_reset(p);
+            }
+            return;
+        }
+    }
+    if (p->multi_pending) {
+        int i = multi_index(p, e->touch_id);
+        if (i >= 0) {
+            p->multi_down[i] = false;
+            p->multi_active_count--;
+            if (p->pending_first != NULL
+                    && p->pending_first->touch_id == e->touch_id) {
+                // Was a live client touch the whole time — it needs its own
+                // real up, same as any ordinary gesture_kind-0 point.
+                wlr_seat_touch_notify_up(p->seat, e->time_msec, e->touch_id);
+                wl_list_remove(&p->pending_first->link);
+                free(p->pending_first);
+                p->pending_first = NULL;
+            } else if (p->pending_second != NULL
+                    && p->pending_second->touch_id == e->touch_id) {
+                // Never delivered — nothing to notify.
+                wl_list_remove(&p->pending_second->link);
+                free(p->pending_second);
+                p->pending_second = NULL;
+            }
+            // Mirrors the multi_active branch above: only act once *both*
+            // fingers are up. Fingers essentially never lift at the same
+            // instant, so acting on the first one alone would tear down the
+            // pair (and skip the tap check below) before the second finger's
+            // up event — which is the ordinary shape of every two-finger tap
+            // — even arrives. Whichever finger is still down after this one
+            // lifts is simply left as-is (pending_first, if it's the one
+            // remaining, keeps running as an ordinary live touch;
+            // pending_second, if it's the one remaining, just sits held
+            // until it too lifts).
+            if (p->multi_active_count == 0) {
+                // Both lifted without ever resolving to a swipe or a pinch —
+                // check for a two-finger tap exactly as the promoted path
+                // does; neither finger reached the client, so there's
+                // nothing else this sequence could still become.
+                multi_two_finger_tap_check(p, e->time_msec);
+                p->multi_pending = false;
                 multi_reset(p);
             }
             return;
@@ -1087,6 +1294,26 @@ static void handle_touch_cancel(void *userdata, void *data) {
         multi_reset(p);
         return;
     }
+    if (p->multi_pending && multi_index(p, e->touch_id) >= 0) {
+        bool cancelled_first = p->pending_first != NULL
+                && p->pending_first->touch_id == e->touch_id;
+        if (cancelled_first) {
+            // pending_first has a real seat-side touch point (it was
+            // delivered normally) — stop tracking the pair first, then let
+            // the ordinary per-client cancel path free it, exactly as an
+            // ordinary gesture_kind-0 touch would.
+            struct wlr_seat_client *client = p->pending_first->client;
+            multi_pending_abandon(p);
+            if (client != NULL) {
+                touch_cancel_client(p, client);
+            }
+        } else {
+            // pending_second was never delivered to any client — nothing
+            // else needs to run for it.
+            multi_pending_abandon(p);
+        }
+        return;
+    }
     struct wlr_touch_point *seat_point =
             wlr_seat_touch_get_point(p->seat, e->touch_id);
     if (seat_point == NULL) {
@@ -1115,8 +1342,14 @@ static void handle_touch_device_destroy(void *userdata, void *data) {
     struct oxide_touch_device *td = userdata;
     struct oxide_pointer *p = td->pointer;
     // A group can span only the currently attached touchscreen in practice;
-    // abandon it if that device disappears mid-gesture.
+    // abandon it if that device disappears mid-gesture. The loops below free
+    // the underlying points as usual (pending_first via the kind-0 client
+    // cancel, pending_second via the kind-!=0 sweep) — this just clears the
+    // bookkeeping pointers so nothing is left dangling.
     multi_reset(p);
+    p->multi_pending = false;
+    p->pending_first = NULL;
+    p->pending_second = NULL;
 
     // Device destruction is allowed without a preceding cancel (notably while
     // a session is paused). Cancel each affected client once; canceling a
