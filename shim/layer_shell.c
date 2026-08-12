@@ -37,6 +37,26 @@ bool oxide_layer_surface_initialized(struct wlr_layer_surface_v1 *ls) {
     return ls->initialized;
 }
 
+// Whether this surface's most recent commit actually needs a rearrange:
+// either its very first commit (which must get its first configure to map
+// at all), or one that set a layout-relevant property (size, anchor,
+// exclusive zone, margin, layer, or exclusive edge). A commit that's just a
+// content redraw (a new buffer, nothing else) sets none of these bits, and
+// re-arranging for it anyway sends every layer surface on the output a
+// fresh, entirely redundant configure — a burst of these racing a client's
+// ack against an already-superseded serial produces a fatal "wrong
+// configure serial" protocol error. Skipping the rearrange for redraw-only
+// commits avoids the storm at its source.
+bool oxide_layer_surface_commit_needs_rearrange(struct wlr_layer_surface_v1 *ls) {
+    const uint32_t layout_relevant = WLR_LAYER_SURFACE_V1_STATE_DESIRED_SIZE
+        | WLR_LAYER_SURFACE_V1_STATE_ANCHOR
+        | WLR_LAYER_SURFACE_V1_STATE_EXCLUSIVE_ZONE
+        | WLR_LAYER_SURFACE_V1_STATE_MARGIN
+        | WLR_LAYER_SURFACE_V1_STATE_LAYER
+        | WLR_LAYER_SURFACE_V1_STATE_EXCLUSIVE_EDGE;
+    return ls->initial_commit || (ls->current.committed & layout_relevant) != 0;
+}
+
 struct wlr_scene_layer_surface_v1 *oxide_scene_layer_surface_create(
         struct wlr_scene_tree *tree, struct wlr_layer_surface_v1 *ls) {
     return wlr_scene_layer_surface_v1_create(tree, ls);

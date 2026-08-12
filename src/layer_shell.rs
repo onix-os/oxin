@@ -70,7 +70,18 @@ unsafe fn rearrange_layer_output(l: &LayerSurface) {
 }
 
 unsafe extern "C" fn handle_layer_commit(userdata: *mut c_void, _data: *mut c_void) {
-    rearrange_layer_output(&*(userdata as *mut LayerSurface));
+    let l = &*(userdata as *mut LayerSurface);
+    // Most commits are just a redraw (a new buffer, nothing else) — no
+    // layout-relevant property changed, so there's nothing for a rearrange
+    // to do. Rearranging anyway sends *every* layer surface on the output a
+    // fresh, redundant configure on every single redraw (e.g. a bar redrawn
+    // on a poll timer), and a burst of those can race a client's ack against
+    // an already-superseded serial, producing a fatal protocol error. Only
+    // rearrange when this commit actually changed something that affects
+    // placement, or is the surface's first (which must configure to map).
+    if oxide_layer_surface_commit_needs_rearrange(l.wlr_layer_surface) {
+        rearrange_layer_output(l);
+    }
 }
 
 unsafe extern "C" fn handle_layer_map(userdata: *mut c_void, _data: *mut c_void) {
