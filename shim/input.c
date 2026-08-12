@@ -5,10 +5,12 @@
 #include <wlr/backend.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_pointer.h>
+#include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_session_lock_v1.h>
@@ -35,11 +37,32 @@
 
 // --- seat & input ----------------------------------------------------------
 
+// A client sets the seat's clipboard/primary selection by asking for it
+// (request_set_*_selection); nothing actually holds the selection until the
+// compositor confirms it back with wlr_seat_set_*_selection(). Without these,
+// every copy is silently accepted and then goes nowhere — paste has nothing
+// to receive.
+static void handle_request_set_selection(void *userdata, void *data) {
+    struct wlr_seat *seat = userdata;
+    struct wlr_seat_request_set_selection_event *event = data;
+    wlr_seat_set_selection(seat, event->source, event->serial);
+}
+
+static void handle_request_set_primary_selection(void *userdata, void *data) {
+    struct wlr_seat *seat = userdata;
+    struct wlr_seat_request_set_primary_selection_event *event = data;
+    wlr_seat_set_primary_selection(seat, event->source, event->serial);
+}
+
 struct wlr_seat *oxide_seat_create(struct wl_display *display, const char *name) {
     struct wlr_seat *seat = wlr_seat_create(display, name);
     // Advertise input capabilities so clients (e.g. foot) will start.
     wlr_seat_set_capabilities(seat,
             WL_SEAT_CAPABILITY_KEYBOARD | WL_SEAT_CAPABILITY_POINTER);
+    signal_add(&seat->events.request_set_selection,
+            handle_request_set_selection, seat);
+    signal_add(&seat->events.request_set_primary_selection,
+            handle_request_set_primary_selection, seat);
     return seat;
 }
 
@@ -296,10 +319,16 @@ static void focus_surface(struct oxide_pointer *p, struct wlr_surface *surface) 
         return;
     }
 
+    // Focus must transfer even with no currently-active keyboard device (e.g.
+    // right after the seat's last one was destroyed and nothing has claimed
+    // active status since) — otherwise a click/tap can never move keyboard
+    // focus again until some keyboard device happens to send a key first.
     struct wlr_keyboard *kb = wlr_seat_get_keyboard(p->seat);
     if (kb != NULL) {
         wlr_seat_keyboard_notify_enter(p->seat, root, kb->keycodes,
                 kb->num_keycodes, &kb->modifiers);
+    } else {
+        wlr_seat_keyboard_notify_enter(p->seat, root, NULL, 0, NULL);
     }
     if (root != NULL && p->focus_callback != NULL) {
         p->focus_callback(p->focus_userdata, root);
