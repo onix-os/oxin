@@ -270,12 +270,20 @@ struct oxide_touch_point {
     // reaches close to a physical left or right edge. See to_top_candidate's
     // handling in handle_touch_motion for the shared pattern.
     bool to_edge_candidate;
+    // Signed running step count for kind 2's stepped gestures (vertical
+    // volume/workspace, horizontal back/forward) — see step_toward. Can go
+    // negative: reversing direction mid-touch fires the paired trigger to
+    // walk this back down, rather than a one-way commit that can only ever
+    // advance. Kind 3 (top-edge brightness) still only ever increases, since
+    // it has no reverse pairing of its own.
     int gesture_steps;
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
-    // Left-edge-only vertical volume swipe: 0 = undetermined, -1 = locked
-    // up, +1 = locked down. Separate from gesture_edge, which already
-    // means left/right zone identity for this gesture kind (kind 2).
+    // Kind 2 only: 0 until the touch commits to vertical (volume/workspace)
+    // rather than horizontal (back/forward) — see the fabs(dy) >= 30 check
+    // below. Once nonzero, stays that way for the rest of the touch; the
+    // stepping itself is bidirectional (see gesture_steps), only this
+    // vertical-vs-horizontal decision is a one-way commit.
     int gesture_vlock;
     double start_lx, start_ly;
     // Position last seen in handle_touch_motion, and the time it was seen
@@ -518,6 +526,37 @@ static bool top_gesture_hit(struct oxide_pointer *p, double lx, double ly) {
     struct wlr_box box;
     wlr_output_layout_get_box(p->output_layout, output, &box);
     return ly <= box.y + 28;
+}
+
+// Fires `increase_trigger`/`decrease_trigger` enough times to walk
+// point->gesture_steps to `target` (clamped to [-20, 20]) — one call per
+// step, regardless of direction. Used by kind 2's stepped gestures so a
+// single continuous touch can move freely back and forth without lifting:
+// reversing direction mid-swipe compensates already-fired steps via the
+// paired trigger (e.g. a "forward" step undoing a "back" one), rather than a
+// one-way commit that can only ever advance further in whichever direction
+// was moved first.
+static void step_toward(struct oxide_pointer *p, struct oxide_touch_point *point,
+        int target, uint32_t increase_trigger, uint32_t decrease_trigger) {
+    if (target > 20) {
+        target = 20;
+    } else if (target < -20) {
+        target = -20;
+    }
+    while (point->gesture_steps < target) {
+        point->gesture_steps++;
+        if ((p->gesture_mask & (1u << increase_trigger)) != 0
+                && p->gesture_callback != NULL) {
+            p->gesture_callback(p->gesture_userdata, increase_trigger);
+        }
+    }
+    while (point->gesture_steps > target) {
+        point->gesture_steps--;
+        if ((p->gesture_mask & (1u << decrease_trigger)) != 0
+                && p->gesture_callback != NULL) {
+            p->gesture_callback(p->gesture_userdata, decrease_trigger);
+        }
+    }
 }
 
 // True for a touch-down landing on the visible keyboard while the
@@ -1142,14 +1181,15 @@ static void handle_touch_motion(void *userdata, void *data) {
     if (point->gesture_kind == 2) {
         double dx = lx - point->start_lx;
         double dy = ly - point->start_ly;
-        // Lock vertical direction after a small deliberate movement, same
-        // pattern as the top-edge brightness gesture (kind 3 below) just
-        // rotated 90° — each 5% of output height crossed emits one step, so
-        // a full top-to-bottom (or reverse) swipe spans 0-100%. Uses
-        // gesture_vlock rather than gesture_edge for the lock, since
-        // gesture_edge already carries left/right zone identity for this
-        // kind. Left and right each have their own trigger pair and purpose
-        // (volume, workspace step) but share this same mechanic.
+        // Commit to vertical (volume/workspace) after a small deliberate
+        // movement, same pattern as the top-edge brightness gesture (kind 3
+        // below) just rotated 90°. Uses gesture_vlock rather than
+        // gesture_edge for the commit, since gesture_edge already carries
+        // left/right zone identity for this kind. Left and right each have
+        // their own trigger pair and purpose (volume, workspace step) but
+        // share this same mechanic. Unlike the old one-way lock, this is
+        // only a commit to *an axis* — direction within it stays fully
+        // reversible (see step_toward).
         bool vlock_eligible =
                 (point->gesture_edge == -1
                         && (p->gesture_mask & ((1u << 17) | (1u << 18))) != 0)
@@ -1158,7 +1198,7 @@ static void handle_touch_motion(void *userdata, void *data) {
                                 != 0);
         if (vlock_eligible && point->gesture_vlock == 0
                 && fabs(dy) >= 30 && fabs(dy) > fabs(dx)) {
-            point->gesture_vlock = dy > 0 ? 1 : -1;
+            point->gesture_vlock = 1;
         }
         if (point->gesture_vlock != 0) {
             struct wlr_output *output =
@@ -1166,31 +1206,34 @@ static void handle_touch_motion(void *userdata, void *data) {
             if (output != NULL) {
                 struct wlr_box box;
                 wlr_output_layout_get_box(p->output_layout, output, &box);
-                double travel = point->gesture_vlock * dy;
-                int steps = box.height > 0
-                        ? (int)(travel * 20.0 / box.height) : 0;
-                if (steps > 20) {
-                    steps = 20;
-                }
-                uint32_t trigger = point->gesture_edge == -1
-                        ? (point->gesture_vlock > 0 ? 18 : 17)
-                        : (point->gesture_vlock > 0 ? 22 : 21);
-                while (steps > point->gesture_steps
-                        && (p->gesture_mask & (1u << trigger)) != 0) {
-                    point->gesture_steps++;
-                    if (p->gesture_callback != NULL) {
-                        p->gesture_callback(p->gesture_userdata, trigger);
-                    }
-                }
+                // Each 5% of output height crossed is one step; downward is
+                // positive (matches the *Down triggers), upward negative.
+                int target = box.height > 0
+                        ? (int)(dy * 20.0 / box.height) : 0;
+                uint32_t down_trigger = point->gesture_edge == -1 ? 18 : 22;
+                uint32_t up_trigger = point->gesture_edge == -1 ? 17 : 21;
+                step_toward(p, point, target, down_trigger, up_trigger);
             }
             return;
         }
-        bool previous = point->gesture_edge == -1 && dx >= 70;
-        bool next = point->gesture_edge == 1 && dx <= -70;
-        if (!point->gesture_fired && (previous || next)) {
-            point->gesture_fired = true;
-            if (p->gesture_callback != NULL) {
-                p->gesture_callback(p->gesture_userdata, previous ? 2 : 3);
+        // Horizontal edge-in: back (left edge, swipe right/inward) or
+        // forward (right edge, swipe left/inward). Each 5% of output width
+        // crossed is one step; "inward" is positive so reversing back
+        // toward the edge — even past the start, into the other edge's
+        // territory — fires the paired action to compensate, letting a
+        // single touch dial back and forth between the two without lifting.
+        if (point->gesture_edge == -1 || point->gesture_edge == 1) {
+            struct wlr_output *output =
+                    wlr_output_layout_output_at(p->output_layout, lx, ly);
+            if (output != NULL) {
+                struct wlr_box box;
+                wlr_output_layout_get_box(p->output_layout, output, &box);
+                double inward = point->gesture_edge == -1 ? dx : -dx;
+                int target = box.width > 0
+                        ? (int)(inward * 20.0 / box.width) : 0;
+                uint32_t in_trigger = point->gesture_edge == -1 ? 2 : 3;
+                uint32_t out_trigger = point->gesture_edge == -1 ? 3 : 2;
+                step_toward(p, point, target, in_trigger, out_trigger);
             }
         }
         return;
