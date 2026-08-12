@@ -265,6 +265,11 @@ struct oxide_touch_point {
     int gesture_kind;
     bool gesture_fired;
     bool to_top_candidate;
+    // Same idea, sideways: eligible to become a to-left/to-right edge
+    // gesture (browser-style back/forward) if it travels far enough and
+    // reaches close to a physical left or right edge. See to_top_candidate's
+    // handling in handle_touch_motion for the shared pattern.
+    bool to_edge_candidate;
     int gesture_steps;
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
@@ -462,11 +467,13 @@ static bool keyboard_gesture_hit(struct oxide_pointer *p, double lx, double ly) 
 
 static int workspace_gesture_edge(struct oxide_pointer *p,
         double lx, double ly) {
-    // Bits 2/3: horizontal workspace-switch swipes. Bits 17/18: left-edge
-    // vertical volume swipes — same 28px left strip, so the zone must claim
-    // touches for those too even if edge-left-in itself isn't configured.
+    // Bits 2/3: horizontal edge-in swipes. Bits 17/18: left-edge vertical
+    // volume swipes. Bits 21/22: right-edge vertical workspace-step swipes.
+    // Each vertical pair claims its 28px strip even if the horizontal
+    // edge-in trigger on that same side isn't configured.
     if ((p->gesture_mask
-                    & ((1u << 2) | (1u << 3) | (1u << 17) | (1u << 18)))
+                    & ((1u << 2) | (1u << 3) | (1u << 17) | (1u << 18)
+                            | (1u << 21) | (1u << 22)))
                     == 0
             || p->output_layout == NULL) {
         return 0;
@@ -491,7 +498,8 @@ static int workspace_gesture_edge(struct oxide_pointer *p,
         return -1;
     }
     if (lx >= box.x + box.width - 28
-            && (p->gesture_mask & (1u << 3)) != 0) {
+            && (p->gesture_mask & ((1u << 3) | (1u << 21) | (1u << 22)))
+                    != 0) {
         return 1;
     }
     return 0;
@@ -997,6 +1005,17 @@ static void handle_touch_down(void *userdata, void *data) {
             point->to_top_candidate = ly >= box.y + 70;
         }
     }
+    if ((p->gesture_mask & ((1u << 19) | (1u << 20))) != 0
+            && p->output_layout != NULL) {
+        struct wlr_output *output =
+                wlr_output_layout_output_at(p->output_layout, lx, ly);
+        if (output != NULL) {
+            struct wlr_box box;
+            wlr_output_layout_get_box(p->output_layout, output, &box);
+            point->to_edge_candidate =
+                    lx >= box.x + 70 && lx <= box.x + box.width - 70;
+        }
+    }
     wl_list_insert(&p->touch_points, &point->link);
 }
 
@@ -1086,6 +1105,30 @@ static void handle_touch_motion(void *userdata, void *data) {
             }
         }
     }
+    if (point->to_edge_candidate) {
+        struct wlr_output *output =
+                wlr_output_layout_output_at(p->output_layout, lx, ly);
+        if (output != NULL) {
+            struct wlr_box box;
+            wlr_output_layout_get_box(p->output_layout, output, &box);
+            double dx = lx - point->start_lx;
+            bool left = dx <= -70 && lx <= box.x + 28
+                    && (p->gesture_mask & (1u << 19)) != 0;
+            bool right = dx >= 70 && lx >= box.x + box.width - 28
+                    && (p->gesture_mask & (1u << 20)) != 0;
+            if (left || right) {
+                struct wlr_seat_client *client = point->client;
+                if (p->pending_first == point) {
+                    multi_pending_abandon(p);
+                }
+                touch_cancel_client(p, client);
+                if (p->gesture_callback != NULL) {
+                    p->gesture_callback(p->gesture_userdata, left ? 19 : 20);
+                }
+                return;
+            }
+        }
+    }
     if (point->gesture_kind == 1) {
         double dy = ly - point->start_ly;
         if (!point->gesture_fired && dy <= -60) {
@@ -1099,15 +1142,21 @@ static void handle_touch_motion(void *userdata, void *data) {
     if (point->gesture_kind == 2) {
         double dx = lx - point->start_lx;
         double dy = ly - point->start_ly;
-        // Left-edge-only: lock vertical direction after a small deliberate
-        // movement, same pattern as the top-edge brightness gesture (kind
-        // 3 below) just rotated 90° — each 5% of output height crossed
-        // emits one volume step, so a full top-to-bottom (or reverse)
-        // swipe spans 0-100%. Uses gesture_vlock rather than gesture_edge
-        // for the lock, since gesture_edge already carries left/right zone
-        // identity for this kind.
-        if (point->gesture_edge == -1 && point->gesture_vlock == 0
-                && (p->gesture_mask & ((1u << 17) | (1u << 18))) != 0
+        // Lock vertical direction after a small deliberate movement, same
+        // pattern as the top-edge brightness gesture (kind 3 below) just
+        // rotated 90° — each 5% of output height crossed emits one step, so
+        // a full top-to-bottom (or reverse) swipe spans 0-100%. Uses
+        // gesture_vlock rather than gesture_edge for the lock, since
+        // gesture_edge already carries left/right zone identity for this
+        // kind. Left and right each have their own trigger pair and purpose
+        // (volume, workspace step) but share this same mechanic.
+        bool vlock_eligible =
+                (point->gesture_edge == -1
+                        && (p->gesture_mask & ((1u << 17) | (1u << 18))) != 0)
+                || (point->gesture_edge == 1
+                        && (p->gesture_mask & ((1u << 21) | (1u << 22)))
+                                != 0);
+        if (vlock_eligible && point->gesture_vlock == 0
                 && fabs(dy) >= 30 && fabs(dy) > fabs(dx)) {
             point->gesture_vlock = dy > 0 ? 1 : -1;
         }
@@ -1123,7 +1172,9 @@ static void handle_touch_motion(void *userdata, void *data) {
                 if (steps > 20) {
                     steps = 20;
                 }
-                uint32_t trigger = point->gesture_vlock > 0 ? 18 : 17;
+                uint32_t trigger = point->gesture_edge == -1
+                        ? (point->gesture_vlock > 0 ? 18 : 17)
+                        : (point->gesture_vlock > 0 ? 22 : 21);
                 while (steps > point->gesture_steps
                         && (p->gesture_mask & (1u << trigger)) != 0) {
                     point->gesture_steps++;

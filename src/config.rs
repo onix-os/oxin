@@ -117,6 +117,18 @@ pub enum GestureTrigger {
     DoubleTap = 16,
     EdgeLeftUp = 17,
     EdgeLeftDown = 18,
+    /// A single finger starting anywhere ordinary (not already claimed by
+    /// another edge zone) that travels far enough sideways to reach close to
+    /// a physical edge — browser-style back/forward, distinct from
+    /// EdgeLeftIn/EdgeRightIn which only fire for touches starting at the
+    /// edge. See to_edge_candidate in shim/input.c.
+    ToLeft = 19,
+    ToRight = 20,
+    /// Right-edge counterpart to EdgeLeftUp/EdgeLeftDown — same 28px-strip,
+    /// stepped vertical swipe, just on the other side and for a different
+    /// purpose (workspace switching rather than volume).
+    EdgeRightUp = 21,
+    EdgeRightDown = 22,
 }
 
 #[derive(Clone)]
@@ -697,10 +709,14 @@ fn parse_gesture(val: &str) -> Option<GestureBind> {
         "edge-right-in" => GestureTrigger::EdgeRightIn,
         "edge-left-up" => GestureTrigger::EdgeLeftUp,
         "edge-left-down" => GestureTrigger::EdgeLeftDown,
+        "edge-right-up" => GestureTrigger::EdgeRightUp,
+        "edge-right-down" => GestureTrigger::EdgeRightDown,
         "top-right" => GestureTrigger::TopRight,
         "top-left" => GestureTrigger::TopLeft,
         "top-down" => GestureTrigger::TopDown,
         "to-top" => GestureTrigger::ToTop,
+        "to-left" => GestureTrigger::ToLeft,
+        "to-right" => GestureTrigger::ToRight,
         "two-up" => GestureTrigger::TwoUp,
         "two-down" => GestureTrigger::TwoDown,
         "two-left" => GestureTrigger::TwoLeft,
