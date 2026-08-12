@@ -234,24 +234,9 @@ pub(crate) unsafe fn arrange_layers(server: &mut Server, output_idx: usize) {
             if !oxide_layer_surface_initialized(l.wlr_layer_surface) {
                 continue;
             }
-            let input = (fx, fy, fw, fh, ux, uy, uw, uh);
-            let cached = l.last_configure.get();
-            if cached.is_some_and(|(cached_input, _)| cached_input == input) {
-                // Same full box and same usable box in as last time, and
-                // this surface's own client-set properties can't have
-                // changed without firing a commit that would have reached
-                // this loop through a fresh arrange_layers call — so the
-                // configure would be a no-op. Skip sending it (see the
-                // `last_configure` doc comment for why that matters), but
-                // still fold in the usable box it produced last time so the
-                // running box stays correct for the rest of this pass.
-                (ux, uy, uw, uh) = cached.unwrap().1;
-                continue;
-            }
             oxide_scene_layer_surface_configure(
                 l.scene_ls, fx, fy, fw, fh, &mut ux, &mut uy, &mut uw, &mut uh,
             );
-            l.last_configure.set(Some((input, (ux, uy, uw, uh))));
         }
     }
 

@@ -210,21 +210,6 @@ pub(crate) struct LayerSurface {
     pub(crate) map_listener: *mut ShimListener,
     pub(crate) unmap_listener: *mut ShimListener,
     pub(crate) destroy_listener: *mut ShimListener,
-    /// The (full box, usable box in) `arrange_layers` last actually sent a
-    /// configure for, paired with the usable box it produced. `configure`
-    /// is a pure function of those two boxes plus this surface's own
-    /// client-set anchor/exclusive-zone/margin/size (constant between
-    /// arrange passes unless the client itself changes them, which fires a
-    /// new commit and hence a fresh arrange anyway) — so an unchanged input
-    /// pair means an unchanged, safely-skippable output. Skipping redundant
-    /// no-op configures avoids flooding surfaces like the OSK with a burst
-    /// of freshly-serialed but identical configures every time an unrelated
-    /// layer surface on the same output merely commits (e.g. a bar redrawing
-    /// on every workspace-state poll), which raced its ack against a
-    /// superseded serial and produced a fatal "wrong configure serial"
-    /// protocol error.
-    pub(crate) last_configure:
-        std::cell::Cell<Option<((i32, i32, i32, i32, i32, i32, i32, i32), (i32, i32, i32, i32))>>,
 }
 
 pub(crate) struct LockSurface {

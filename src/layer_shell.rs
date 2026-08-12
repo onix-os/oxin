@@ -45,7 +45,6 @@ pub(crate) unsafe extern "C" fn handle_new_layer_surface(userdata: *mut c_void, 
         map_listener: ptr::null_mut(),
         unmap_listener: ptr::null_mut(),
         destroy_listener: ptr::null_mut(),
-        last_configure: std::cell::Cell::new(None),
     }));
     let ud = lsurf as *mut c_void;
     (*lsurf).commit_listener = oxide_layer_surface_add_commit(ls, handle_layer_commit, ud);
