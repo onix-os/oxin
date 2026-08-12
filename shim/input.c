@@ -270,12 +270,11 @@ struct oxide_touch_point {
     // reaches close to a physical left or right edge. See to_top_candidate's
     // handling in handle_touch_motion for the shared pattern.
     bool to_edge_candidate;
-    // Signed running step count for kind 2's stepped gestures (vertical
-    // volume/workspace, horizontal back/forward) — see step_toward. Can go
-    // negative: reversing direction mid-touch fires the paired trigger to
+    // Signed running step count for kind 2 and kind 3's stepped gestures
+    // (volume, workspace, back/forward, brightness) — see step_toward. Can
+    // go negative: reversing direction mid-touch fires the paired trigger to
     // walk this back down, rather than a one-way commit that can only ever
-    // advance. Kind 3 (top-edge brightness) still only ever increases, since
-    // it has no reverse pairing of its own.
+    // advance.
     int gesture_steps;
     // -1 for the left edge and +1 for the right edge.
     int gesture_edge;
@@ -1241,12 +1240,17 @@ static void handle_touch_motion(void *userdata, void *data) {
     if (point->gesture_kind == 3) {
         double dx = lx - point->start_lx;
         double dy = ly - point->start_ly;
-        // Lock horizontal direction after a small deliberate movement. Each
-        // 5% of output width crossed emits one configured brightness step;
-        // the FP5 maps a step to 5%, making an edge-to-edge swipe span 100%.
+        // Commit to horizontal (brightness) after a small deliberate
+        // movement. Each 5% of output width crossed is one step; the FP5
+        // maps a step to 5%, making an edge-to-edge swipe span 100%.
+        // gesture_edge here just marks the commit (not a locked direction,
+        // unlike kind 2's reuse of the same field) — direction stays
+        // reversible, same as kind 2's stepped gestures (see step_toward):
+        // reversing mid-swipe fires the paired trigger to walk brightness
+        // back down rather than only ever advancing.
         if (point->gesture_edge == 0 && fabs(dx) >= 30
                 && fabs(dx) > fabs(dy)) {
-            point->gesture_edge = dx > 0 ? 1 : -1;
+            point->gesture_edge = 1;
         }
         if (point->gesture_edge != 0) {
             struct wlr_output *output =
@@ -1254,20 +1258,10 @@ static void handle_touch_motion(void *userdata, void *data) {
             if (output != NULL) {
                 struct wlr_box box;
                 wlr_output_layout_get_box(p->output_layout, output, &box);
-                double travel = point->gesture_edge * dx;
-                int steps = box.width > 0
-                        ? (int)(travel * 20.0 / box.width) : 0;
-                if (steps > 20) {
-                    steps = 20;
-                }
-                uint32_t trigger = point->gesture_edge > 0 ? 4 : 5;
-                while (steps > point->gesture_steps
-                        && (p->gesture_mask & (1u << trigger)) != 0) {
-                    point->gesture_steps++;
-                    if (p->gesture_callback != NULL) {
-                        p->gesture_callback(p->gesture_userdata, trigger);
-                    }
-                }
+                // Rightward is positive (matches top-right/brightness+).
+                int target = box.width > 0
+                        ? (int)(dx * 20.0 / box.width) : 0;
+                step_toward(p, point, target, 4, 5);
             }
             return;
         }
