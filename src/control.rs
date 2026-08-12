@@ -1,10 +1,11 @@
 //! Tiny line-based local control socket used by the bundled `0xinctl`.
 
-use crate::ffi::oxide_event_loop_add_readable;
+use crate::ffi::{oxide_event_loop_add_readable, oxide_output_name};
 use crate::state::Server;
 use crate::wallpaper;
 use crate::wlr;
 use std::env;
+use std::ffi::CStr;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -76,6 +77,9 @@ unsafe extern "C" fn handle_readable(userdata: *mut c_void, _data: *mut c_void) 
 }
 
 unsafe fn dispatch(server: &mut Server, request: &str) -> String {
+    if request == "workspaces" {
+        return query_workspaces(server);
+    }
     if server.locked {
         return "error session is locked\n".into();
     }
@@ -108,6 +112,28 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
         Ok(()) => "ok\n".into(),
         Err(error) => format!("error {error}\n"),
     }
+}
+
+/// One `output NAME WORKSPACE` line per connected monitor, then one
+/// `workspace N occupied|empty` line per workspace (both 1-indexed to match
+/// the user-facing `bind = MOD, N, workspace, N` convention). Exempt from the
+/// lock check above: unlike the mutating commands, showing workspace state
+/// isn't a lock-screen security concern.
+unsafe fn query_workspaces(server: &Server) -> String {
+    let mut out = String::from("ok\n");
+    for output in &server.outputs {
+        let name = CStr::from_ptr(oxide_output_name(output.wlr_output)).to_string_lossy();
+        out.push_str(&format!("output {name} {}\n", output.workspace + 1));
+    }
+    for (index, workspace) in server.workspaces.iter().enumerate() {
+        let state = if workspace.windows.is_empty() {
+            "empty"
+        } else {
+            "occupied"
+        };
+        out.push_str(&format!("workspace {} {state}\n", index + 1));
+    }
+    out
 }
 
 /// `NAME normal|90|180|270` -> (name, WL_OUTPUT_TRANSFORM_* value). Only the

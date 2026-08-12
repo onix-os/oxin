@@ -16,5 +16,8 @@ switches workspaces without touching a keybinding.*
 
 **Partially implemented.** Stage 20 introduces the first plain-text Unix
 control socket and bundled `0xinctl` client for live wallpaper replacement.
-The original deliverable—querying windows and switching workspaces—remains
-open, as do broader state subscriptions and config reload.
+A later addition adds `0xinctl workspaces`, a read-only query returning each
+output's current workspace and every workspace's occupied/empty state — the
+"querying" half of the original deliverable, intended for status bars such
+as Patin's. Switching workspaces from outside the compositor, broader state
+subscriptions, and config reload remain open.

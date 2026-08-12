@@ -13,7 +13,7 @@ fn socket_path() -> Result<PathBuf, String> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: 0xinctl quit\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270"
+        "usage: 0xinctl quit\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270\n       0xinctl workspaces"
     );
     std::process::exit(2);
 }
@@ -25,6 +25,7 @@ fn main() {
     };
     let request = match (command.as_str(), args.next(), args.next()) {
         ("quit", None, None) => "quit\n".to_string(),
+        ("workspaces", None, None) => "workspaces\n".to_string(),
         ("wallpaper", Some(argument), None) if argument == "clear" => {
             "wallpaper clear\n".to_string()
         }

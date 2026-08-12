@@ -226,6 +226,21 @@ with:
 0xinctl quit
 ```
 
+Query workspace state — which workspace each output is showing, and which
+workspaces have at least one window — for building status bars and scripts:
+
+```sh
+0xinctl workspaces
+```
+
+```
+ok
+output DSI-1 1
+workspace 1 occupied
+workspace 2 empty
+...
+```
+
 0xin implements `ext-session-lock-v1` for secure lock clients such as Patin's
 touch-capable `patin-lock` or `swaylock`. Accepting a lock immediately covers
 every output with an opaque
