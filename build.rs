@@ -111,7 +111,11 @@ fn main() {
         "shim/session_lock.c",
         "shim/output_power.c",
         "shim/decoration.c",
-        "shim/input.c",
+        "shim/keyboard_seat.c",
+        "shim/pointer.c",
+        "shim/touch_gestures.c",
+        "shim/touch_multi.c",
+        "shim/touch_events.c",
         "shim/text_input.c",
         "shim/gles2_corner.c",
     ];
@@ -195,6 +199,7 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=shim/oxide_shim.h");
     println!("cargo:rerun-if-changed=shim/oxide_shim_internal.h");
+    println!("cargo:rerun-if-changed=shim/input_internal.h");
     println!("cargo:rerun-if-changed=protocols/wlr-layer-shell-unstable-v1.xml");
     println!(
         "cargo:rerun-if-changed=protocols/wlr-output-power-management-unstable-v1.xml"
