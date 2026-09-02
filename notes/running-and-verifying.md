@@ -27,22 +27,29 @@
 - Nested keyboard caveat: the Wayland backend only receives keys when the host
   (Hyprland) gives the 0xin window focus.
 
-## Config file (Stage 5d)
-- Parsed in Rust (`src/config.rs`), no extra crates. Path:
-  `$XDG_CONFIG_HOME/0xin/0xin.conf` (else `~/.config/0xin/0xin.conf`).
-  No file → built-in defaults (Super, gap 10, the original keymap); a config with
-  zero `bind=` lines also falls back to the default binds.
-- Format `key = value`, `#` comments. Scalars: `modifier`, `gap`, `background`.
-  Binds: `bind = MODS, KEY, ACTION[, ARG]` (Hyprland-ish). `MOD`/`$mod` in a bind
-  expands to the primary `modifier`. KEY names resolve via xkb
-  (`oxide_keysym_from_name` shim → `xkb_keysym_from_name`, case-insensitive →
-  level-0 keysym, matching how `handle_key` reports presses).
-- `OXIN_MOD=alt` still overrides the modifier (applied *before* binds are
-  parsed, so `MOD` resolves to Alt) — keep using it for nested dev.
-- An unparseable line warns on stderr (`config line N: …`) and is skipped; it
-  never stops startup. See `0xin.conf.example` in the repo root.
-- Verify without a window: `XDG_CONFIG_HOME=/tmp/cfg WLR_BACKENDS=headless \
-  target/debug/0xin >log 2>&1 &` then grep `0xin: (loaded|no config|modifier|config line)`.
+## Config file (Lua)
+
+- The config is `$XDG_CONFIG_HOME/0xin/init.lua` (else `~/.config/0xin/init.lua`),
+  run by an embedded luna interpreter. `$OXIN_CONFIG` overrides with an exact
+  path, for testing a config from the repo without touching `~/.config`.
+- No file → built-in defaults. A config that raises → reported with file and line,
+  then built-in defaults; 0xin always starts. `0xinctl config-error` repeats it.
+- Assignments are staged and only adopted if the chunk reaches its end, so there is
+  no half-applied config.
+- Bindings are keyed by chord and merge with the built-in keymap; `= nil` removes
+  one, including a default. `oxin.modifier` must be set before any `MOD+` chord —
+  chords resolve `MOD` as they are written.
+- `OXIN_MOD=alt` still overrides the modifier for nested dev (it is applied after
+  the config, and the built-in keymap is generated against the final modifier).
+- A runaway config (`while true do end`) is stopped by a fuel budget and a
+  wall-clock deadline; it costs a stutter and a log line, not the session.
+- Verify without a window: see `docs/running.md`. `print()` in a config lands on
+  stderr as `0xin: lua: …`.
+- Plugins: an ordered runtimepath (`/etc/xdg/0xin`, then the config dir), each with
+  `plugin/` (auto-run, alphabetical), `lua/` (require only) and `after/plugin/`
+  (last). `OXIN_NOPLUGIN=1` or `--noplugin` starts without them — the first thing to
+  try when something misbehaves.
+- See `init.lua.example` in the repo root for the full annotated example.
 
 ## Multi-output (Stage 6a)
 - Each output (monitor) is tracked in Rust (`Server.outputs: Vec<Output>` with its

@@ -65,7 +65,8 @@ The shim itself is split one file per protocol/concern (`shim/output.c`,
 | ------------------------ | ------------------------------------------------------------------ |
 | `src/main.rs`            | Orchestration: builds the compositor, runs the event loop          |
 | `src/state.rs`           | `Server`, `Output`, `Toplevel`, `Workspace` — the Rust-owned state  |
-| `src/config.rs`          | Dependency-free config-file parser                                 |
+| `src/config/`            | Config vocabulary, built-in keymap, modifier/key name resolution    |
+| `src/lua/`               | The embedded Lua layer: VM, `oxin` module, registrars, events, plugins |
 | `src/layout.rs`          | The split tree (`Node`) and its pure operations — insert/remove/resize |
 | `src/tiling.rs`          | Tiling orchestration: syncs the tree to live state, directional focus/move, layer arrangement |
 | `src/output.rs`, `input.rs`, `toplevel.rs`, `layer_shell.rs`, `decoration.rs`, `keybindings.rs` | Per-concern policy modules |

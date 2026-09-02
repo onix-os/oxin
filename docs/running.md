@@ -57,16 +57,30 @@ by focusing the nested window on the host and typing.
 
 ## Config, without a window
 
-The config parser (`src/config.rs`) doesn't need a display to verify at all:
+The Lua config doesn't need a display to verify at all. Point
+`XDG_CONFIG_HOME` at a directory holding `0xin/init.lua` and run headless:
 
 ```sh
+mkdir -p /tmp/cfg/0xin && cp init.lua.example /tmp/cfg/0xin/init.lua
 XDG_CONFIG_HOME=/tmp/cfg WLR_BACKENDS=headless target/debug/0xin >log 2>&1 &
-grep -E '0xin: (loaded|no config|modifier|config line)' log
+grep -E '^0xin:' log
 ```
 
-An unparseable config line warns on stderr and is skipped — startup never
-fails on a bad config line — so the grep above is also the fastest way to
-confirm a hand-edited `0xin.conf` actually parsed the way you intended.
+A config that raises is reported with its file and line and 0xin starts on the
+built-in defaults, so the grep above is the fastest way to confirm a
+hand-edited `init.lua` did what you meant. `0xinctl config-error` asks the
+running compositor the same question — useful when the log has scrolled away,
+and the only way to tell a session that silently fell back to defaults from
+one that loaded fine.
+
+`print()` from a config goes to stderr as `0xin: lua: …`, which is usually
+quicker than reasoning about what a setting resolved to.
+
+To check whether a problem is yours or a plugin's, start without them:
+
+```sh
+OXIN_NOPLUGIN=1 target/debug/0xin      # or: target/debug/0xin --noplugin
+```
 
 ## Multi-output, nested
 

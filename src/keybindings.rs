@@ -63,6 +63,7 @@ pub(crate) unsafe fn switch_workspace(server: &mut Server, target: usize) {
     let f = server.workspaces[target].focused;
     focus_index(server, f);
     eprintln!("0xin: output {} -> workspace {}", fo, target + 1);
+    crate::lua::run_workspace(server, current, target);
 }
 
 /// Move the focused output's focused window to another workspace.
@@ -322,6 +323,10 @@ pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
         server.workspaces[active_workspace(server)].windows.len()
     };
     match action {
+        // Bound to a Lua function by the config. The keyboard handler runs it
+        // before it ever reaches here, so this arm only catches an action
+        // routed from somewhere that has not learned to yet (a gesture, say).
+        Action::Lua(id) => crate::lua::run_bind(server, id),
         Action::Spawn(cmd) => spawn(&cmd),
         Action::Close => close_focused(server),
         Action::Quit => wlr::wl_display_terminate(server.display),

@@ -80,6 +80,17 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
     if request == "workspaces" {
         return query_workspaces(server);
     }
+    // Read-only, and exempt from the lock check for the same reason
+    // `workspaces` is: it only reports. Worth having at all because a config
+    // that failed to load leaves a *working* compositor on defaults, which is
+    // otherwise indistinguishable from one that loaded fine — the message
+    // went to a log the user may never see.
+    if request == "config-error" {
+        return match config_error(server) {
+            Some(message) => format!("ok\n{}\n", message.trim_end()),
+            None => "ok\nconfig loaded without error\n".into(),
+        };
+    }
     if server.locked {
         return "error session is locked\n".into();
     }
@@ -97,8 +108,8 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
         };
     }
     let Some(argument) = request.strip_prefix("wallpaper ") else {
-        return "error expected `quit`, `wallpaper PATH`, `wallpaper clear`, or \
-                `rotate NAME normal|90|180|270`\n"
+        return "error expected `quit`, `config-error`, `wallpaper PATH`, \
+                `wallpaper clear`, or `rotate NAME normal|90|180|270`\n"
             .into();
     };
     let result = if argument == "clear" {
@@ -152,4 +163,13 @@ fn parse_rotate(argument: &str) -> Option<(&str, u32)> {
         return None;
     }
     Some((name, transform))
+}
+
+/// The message from a config that failed to load, if there was one.
+unsafe fn config_error(server: &Server) -> Option<String> {
+    let link = server.lua;
+    // SAFETY: the registry is a `main` local held for the run, and nothing
+    // else borrows it here.
+    let (_, registry) = link.get()?;
+    registry.config_error.clone()
 }

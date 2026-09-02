@@ -56,6 +56,10 @@ pub enum Action {
     KeyboardShow,
     KeyboardHide,
     KeyboardToggle,
+    /// Run a Lua function from the config. The payload indexes the function
+    /// table on the Lua registry — `Action` stays free of interpreter types so
+    /// that the rest of the compositor never sees one.
+    Lua(u32),
 }
 
 /// One key combination mapped to an action.
@@ -148,15 +152,9 @@ pub struct Config {
     pub corner_radius: i32,
     pub binds: Vec<Bind>,
     pub hold_binds: Vec<HoldBind>,
-    /// Shell commands launched once, in declaration order, after the Wayland
-    /// socket is ready on each compositor start.
-    pub exec_once: Vec<String>,
     /// Per-output explicit position/scale (`monitor =` lines); empty means
     /// every output uses auto-placement.
     pub monitors: Vec<MonitorConfig>,
-    /// App ids that always float (`float = <app_id>` lines), matched
-    /// case-insensitively and exactly against each new window's app id.
-    pub float_rules: Vec<String>,
     /// Default floating window size (`float_size = W x H`), as percentages
     /// of the output's usable area. Applies to the manual float toggle and
     /// to `float =` rule windows; dialogs and fixed-size windows keep their
@@ -185,9 +183,7 @@ impl Default for Config {
             corner_radius: 0,
             binds: Vec::new(),
             hold_binds: Vec::new(),
-            exec_once: Vec::new(),
             monitors: Vec::new(),
-            float_rules: Vec::new(),
             float_size: (60, 60),
             gestures: Vec::new(),
             virtual_keyboard_show: None,
@@ -195,5 +191,27 @@ impl Default for Config {
             virtual_keyboard_height: 300,
             gesture_handle_visible: true,
         }
+    }
+}
+
+impl Config {
+    /// Bitmask of the gesture triggers the config actually binds, handed to
+    /// the C touch recognizer so it only reports the ones we care about.
+    pub fn gesture_mask(&self) -> u32 {
+        self.gestures
+            .iter()
+            .fold(0, |mask, binding| mask | 1 << binding.trigger as u32)
+    }
+
+    /// Whether the bottom edge gets a visible compositor-drawn handle: only
+    /// when something is actually bound there and the hint is not turned off.
+    pub fn has_keyboard_handle(&self) -> bool {
+        self.gesture_handle_visible
+            && self.gestures.iter().any(|binding| {
+                matches!(
+                    binding.trigger,
+                    GestureTrigger::BottomUp | GestureTrigger::BottomDown
+                )
+            })
     }
 }

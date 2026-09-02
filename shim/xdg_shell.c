@@ -113,6 +113,13 @@ const char *oxide_xdg_toplevel_app_id(struct wlr_xdg_toplevel *toplevel) {
     return toplevel->app_id;
 }
 
+// The client's window title; NULL if it never set one. Offered to config
+// window rules, which often want to match a document or page rather than the
+// application that opened it.
+const char *oxide_xdg_toplevel_title(struct wlr_xdg_toplevel *toplevel) {
+    return toplevel->title;
+}
+
 // True when the client committed equal, nonzero min and max sizes on both
 // axes — a window that declares it cannot be resized, so tiling it would
 // only stretch or letterbox it.

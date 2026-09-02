@@ -165,6 +165,9 @@ extern "C" {
     pub(crate) fn oxide_xdg_toplevel_app_id(
         toplevel: *mut wlr::wlr_xdg_toplevel,
     ) -> *const std::os::raw::c_char;
+    pub(crate) fn oxide_xdg_toplevel_title(
+        toplevel: *mut wlr::wlr_xdg_toplevel,
+    ) -> *const std::os::raw::c_char;
     pub(crate) fn oxide_xdg_toplevel_fixed_size(toplevel: *mut wlr::wlr_xdg_toplevel) -> bool;
     pub(crate) fn oxide_xdg_toplevel_geometry(
         toplevel: *mut wlr::wlr_xdg_toplevel,
@@ -200,7 +203,11 @@ extern "C" {
         new_parent: *mut wlr::wlr_scene_tree,
     );
     pub(crate) fn oxide_scene_tree_set_position(tree: *mut wlr::wlr_scene_tree, x: i32, y: i32);
-    pub(crate) fn oxide_scene_tree_set_clip(tree: *mut wlr::wlr_scene_tree, width: i32, height: i32);
+    pub(crate) fn oxide_scene_tree_set_clip(
+        tree: *mut wlr::wlr_scene_tree,
+        width: i32,
+        height: i32,
+    );
     pub(crate) fn oxide_scene_tree_set_enabled(tree: *mut wlr::wlr_scene_tree, enabled: bool);
     pub(crate) fn oxide_scene_tree_set_opacity(tree: *mut wlr::wlr_scene_tree, opacity: f32);
     pub(crate) fn oxide_scene_tree_destroy(tree: *mut wlr::wlr_scene_tree);

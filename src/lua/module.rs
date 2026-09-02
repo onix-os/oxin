@@ -18,10 +18,10 @@
 
 use luna::{Callback, CallbackReturn, Context, Error, Execution, IntoValue, Table, Value};
 
-use crate::config::parse::{mod_name, parse_mods};
+use crate::config::names::{mod_name, parse_mods};
 use crate::config::{Config, MOD_LOGO};
 
-use super::park::with_parked;
+use super::host::with_setting_target;
 
 /// Every setting name the config may assign, in the order they appear in the
 /// docs. Used for the guard's "did you mean" and to seed the table.
@@ -44,6 +44,18 @@ pub(crate) fn build<'gc>(ctx: Context<'gc>, defaults: &Config) -> Result<Table<'
     let oxin = Table::new(&ctx);
 
     seed(ctx, oxin, defaults)?;
+    oxin.set_raw(
+        &ctx,
+        "action".into_value(ctx),
+        super::action::build(ctx)?.into_value(ctx),
+    )?;
+    super::registrars::install(ctx, oxin)?;
+    oxin.set_raw(
+        &ctx,
+        "on".into_value(ctx),
+        super::events::build(ctx)?.into_value(ctx),
+    )?;
+    super::api::install(ctx, oxin)?;
 
     let meta = Table::new(&ctx);
     meta.set_field(
@@ -68,7 +80,7 @@ pub(crate) fn build<'gc>(ctx: Context<'gc>, defaults: &Config) -> Result<Table<'
 
             // Apply first: if the value is wrong the table keeps the old one,
             // so a failed assignment leaves nothing half-set behind.
-            match with_parked::<Config, _>(|cfg| apply(ctx, cfg, &name, value)) {
+            match with_setting_target(|cfg, mod_used| apply(ctx, cfg, mod_used, &name, value)) {
                 Ok(Ok(())) => {}
                 Ok(Err(message)) => return Err(err(ctx, &at, message)),
                 Err(park) => return Err(err(ctx, &at, park.message().to_owned())),
@@ -164,14 +176,24 @@ fn seed<'gc>(ctx: Context<'gc>, oxin: Table<'gc>, cfg: &Config) -> Result<(), Er
 fn apply<'gc>(
     ctx: Context<'gc>,
     cfg: &mut Config,
+    mod_already_used: bool,
     name: &str,
     value: Value<'gc>,
 ) -> Result<(), String> {
     match name {
         "modifier" => {
             let s = want_string(name, value)?;
-            cfg.modifier = parse_mods(&s, MOD_LOGO)
+            let m = parse_mods(&s, MOD_LOGO)
                 .ok_or_else(|| format!("oxin.modifier: unknown modifier {s:?}"))?;
+            if m != cfg.modifier && mod_already_used {
+                return Err(
+                    "oxin.modifier must be set before any binding that uses MOD — \
+                     those chords resolve MOD as they are written, so moving it \
+                     afterwards would leave them on the old modifier"
+                        .into(),
+                );
+            }
+            cfg.modifier = m;
         }
         "gap" => {
             let g = want_integer(name, value)?;
@@ -259,6 +281,13 @@ fn apply<'gc>(
                 }
             }
         }
+        "keys" | "hold" | "gestures" | "monitors" | "action" | "on" | "spawn" | "workspace"
+        | "workspaces" => {
+            return Err(format!(
+                "oxin.{name} is a table you index, not a value you assign — \
+                 e.g. `oxin.keys[\"MOD+Return\"] = ...`, not `oxin.keys = {{ ... }}`"
+            ))
+        }
         unknown => return Err(unknown_setting(unknown)),
     }
     Ok(())
@@ -305,7 +334,7 @@ fn clamp_i32(v: i64) -> i32 {
 /// native callback returns, and a config error with no line number is the one
 /// thing a config author most needs. The calling frame knows both, so we
 /// prefix it ourselves and the two kinds read alike.
-fn position(exec: &Execution<'_, '_>) -> Option<String> {
+pub(crate) fn position(exec: &Execution<'_, '_>) -> Option<String> {
     let frame = exec.upper_lua_frame()?;
 
     // `current_line` is attributed to the instruction about to run. luna steps
@@ -333,7 +362,7 @@ fn position(exec: &Execution<'_, '_>) -> Option<String> {
     Some(format!("{}:{}", frame.chunk_name.display_lossy(), line))
 }
 
-fn err<'gc>(ctx: Context<'gc>, at: &Option<String>, message: String) -> Error<'gc> {
+pub(crate) fn err<'gc>(ctx: Context<'gc>, at: &Option<String>, message: String) -> Error<'gc> {
     let text = match at {
         Some(at) => format!("{at}: {message}"),
         None => message,

@@ -104,9 +104,3 @@ pub(crate) fn with_parked<T: 'static, R>(f: impl FnOnce(&mut T) -> R) -> Result<
     // `&mut T` derived from it is currently outstanding.
     Ok(f(unsafe { &mut *p.cast::<T>() }))
 }
-
-/// True while a drive is in progress. Used by the deferred-event queue to
-/// decide whether it is safe to dispatch now or must wait for the unwind.
-pub(crate) fn is_parked() -> bool {
-    !PARKED.with(|c| c.get()).is_null()
-}

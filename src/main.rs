@@ -34,7 +34,6 @@ mod tiling;
 mod toplevel;
 mod wallpaper;
 
-use config::Config;
 use decoration::handle_new_decoration;
 use ffi::*;
 use input::{
@@ -142,18 +141,14 @@ fn main() {
         // Load user config (modifier, gap, background, keybindings). Falls back
         // to built-in defaults; `OXIN_MOD=alt` overrides the modifier for
         // nested dev (a nesting host like Hyprland grabs Super-chords before us).
-        // `OXIN_LUA=1` swaps the line-based `0xin.conf` parser for an
-        // `init.lua` run through the embedded interpreter. Both produce the
-        // same `Config`; the Lua path is opt-in until it has replaced the
-        // other outright.
-        let use_lua = matches!(env::var("OXIN_LUA").as_deref(), Ok("1"));
-        let (config, mut lua_session) = if use_lua {
-            let session = lua::session::start();
-            (session.config, Some((session.vm, session.registry)))
-        } else {
-            (Config::load(), None)
-        };
+        // Read `init.lua`. A config that cannot be loaded is reported and the
+        // built-in defaults are used instead — 0xin always starts, because a
+        // compositor that refuses to is a black screen with nowhere to read
+        // the error.
+        let lua_session = lua::session::start();
+        let config = lua_session.config;
         let first_split_vertical = config.first_split_vertical;
+        let (mut lua_vm, mut lua_registry) = (lua_session.vm, lua_session.registry);
 
         // `server` lives for the whole of main(), which blocks in wl_display_run
         // below, so the pointer we hand the shim stays valid for the run.
@@ -218,11 +213,9 @@ fn main() {
         // rebuilds `&mut Server` from it, so a `lua.enter(...)` borrow through
         // a field would invalidate that pointer's provenance. Three disjoint
         // allocations, and `Server` holds only raw pointers to two of them.
-        if let Some((vm, registry)) = lua_session.as_mut() {
-            // SAFETY: both live in `lua_session`, which is a `main` local held
-            // across `wl_display_run` below, so they outlive every use.
-            server.lua = LuaLink::new(vm as *mut _, registry as *mut _);
-        }
+        // SAFETY: both are `main` locals held across `wl_display_run` below,
+        // so they outlive every use of the link.
+        server.lua = LuaLink::new(&mut lua_vm as *mut _, &mut lua_registry as *mut _);
 
         let server_ptr = &mut server as *mut Server as *mut c_void;
         // Focused clients use the standard text-input-v3 protocol to request
@@ -309,13 +302,10 @@ fn main() {
             eprintln!("0xin: control socket disabled: {error}");
         }
 
-        // Declarative session startup. Commands run separately through the
-        // same shell/client-environment path as configured key and gesture
-        // actions, in the order they appear in 0xin.conf.
-        for command in server.config.exec_once.clone() {
-            println!("0xin: exec_once `{command}`");
-            keybindings::spawn(&command);
-        }
+        // Declarative session startup: the config's `on.startup` handlers,
+        // run after the socket exists and the control socket is up, so
+        // anything they launch can connect to us.
+        lua::run_startup(&mut server);
 
         // `cargo nested -- <cmd> [args…]` auto-spawns a test client against us.
         let mut args = env::args().skip(1);

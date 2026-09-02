@@ -10,28 +10,36 @@
 //! discipline: there is no path on which a partly-applied config reaches the
 //! compositor.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use luna::{Lua, Table};
 
-use crate::config::Config;
-
 use super::drive::{drive, Outcome, CONFIG_DEADLINE, FUEL_FOR_CONFIG};
+use super::host::HostRef;
 use super::load::start_chunk;
 use super::module;
 use super::park::park;
+use super::staging::{Finished, Staged};
 
-/// Run `source` as the config, returning the settings it asked for.
+/// Run the config and then the plugins, all against one staged config.
 ///
-/// `path` is used for the chunk name, so errors carry `file:line`.
-pub(crate) fn load(vm: &mut Lua, path: &Path, source: &[u8]) -> Result<Config, String> {
-    let mut staged = Config::default();
+/// The two have deliberately different failure policies. `init.lua` failing is
+/// fatal to the load — carrying on would silently apply settings the user did
+/// not ask for. A *plugin* failing is one of several, and taking the rest down
+/// with it is worse than doing without it, so it is reported and the others
+/// still load.
+pub(crate) fn load_all(
+    vm: &mut Lua,
+    config: Option<(&Path, Vec<u8>)>,
+    plugin_files: &[PathBuf],
+) -> Result<Finished, String> {
+    let mut staged = Staged::new();
 
     // The module has to exist before the chunk runs: it is what the config
     // assigns onto, and `package.loaded` is what makes `require("oxin")` find
     // it without going near the filesystem.
     vm.try_enter(|ctx| {
-        let oxin = module::build(ctx, &staged)?;
+        let oxin = module::build(ctx, &staged.config)?;
         let package: Table = ctx.get_global("package")?;
         let loaded: Table = package.get(ctx, "loaded")?;
         loaded.set(ctx, "oxin", oxin)?;
@@ -39,15 +47,41 @@ pub(crate) fn load(vm: &mut Lua, path: &Path, source: &[u8]) -> Result<Config, S
         ctx.set_global("oxin", oxin);
         Ok(())
     })
-    .map_err(|e| format!("{}: preparing the oxin module: {e}", path.display()))?;
+    .map_err(|e| format!("preparing the oxin module: {e}"))?;
 
+    if let Some((path, source)) = &config {
+        run_chunk(vm, &mut staged, path, source)?;
+    }
+
+    // Plugins run after init.lua and before the `after/` roots, the same order
+    // neovim uses — which is why `after/plugin/` is where you override what a
+    // plugin did.
+    for path in plugin_files {
+        let source = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("0xin: plugin {}: cannot read: {e}", path.display());
+                continue;
+            }
+        };
+        if let Err(message) = run_chunk(vm, &mut staged, path, &source) {
+            eprintln!("0xin: plugin failed, skipping it: {message}");
+        }
+    }
+
+    Ok(staged.finish())
+}
+
+/// Compile and run one chunk against `staged`.
+fn run_chunk(vm: &mut Lua, staged: &mut Staged, path: &Path, source: &[u8]) -> Result<(), String> {
     let ex = start_chunk(vm, path, source)?;
 
     // SAFETY: `staged` is a live local, borrowed uniquely for the drive — the
     // only thing that touches it inside is the module's `__newindex`, through
     // the parked pointer — and it is not moved or dropped until after.
+    let mut host = HostRef::Load(staged as *mut Staged);
     let outcome = unsafe {
-        park(&mut staged as *mut Config, || {
+        park(&mut host as *mut HostRef, || {
             drive(vm, &ex, FUEL_FOR_CONFIG, CONFIG_DEADLINE)
         })
     };
@@ -57,12 +91,15 @@ pub(crate) fn load(vm: &mut Lua, path: &Path, source: &[u8]) -> Result<Config, S
             // The chunk returns nothing, so this is only ever here to surface
             // an error it raised on the way out.
             vm.try_enter(|ctx| ctx.fetch(&ex).take_result::<()>(ctx)?)
-                .map_err(|e| format!("{e}"))?;
-            Ok(staged)
+                .map_err(|e| {
+                    let text = e.to_string();
+                    text.strip_prefix("lua error: ").unwrap_or(&text).to_owned()
+                })?;
+            Ok(())
         }
         Outcome::Killed(why) => Err(format!(
-            "{}: config did not finish ({why}). A loop with no exit, or work \
-             far beyond what a config should do at startup.",
+            "{}: did not finish ({why}). A loop with no exit, or work far \
+             beyond what a config should do at startup.",
             path.display()
         )),
         Outcome::Broken(msg) => Err(format!("{}: internal error: {msg}", path.display())),

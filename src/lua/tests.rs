@@ -333,7 +333,12 @@ mod settings {
 
     fn load(source: &str) -> Result<Config, String> {
         let mut lua = vm::build();
-        config::load(&mut lua, Path::new("init.lua"), source.as_bytes())
+        config::load_all(
+            &mut lua,
+            Some((Path::new("init.lua"), source.as_bytes().to_vec())),
+            &[],
+        )
+        .map(|f| f.config)
     }
 
     #[test]
@@ -488,100 +493,6 @@ mod settings {
 }
 
 // ---------------------------------------------------------------------------
-// The conversion fixture
-// ---------------------------------------------------------------------------
-
-/// `profiles/fp5/config/0xin/0xin.conf` is the most complete config in the
-/// tree, so it is what the Lua path has to reproduce. Until the registrars
-/// land this covers the settings half; the binds, gestures and autostarts it
-/// also exercises follow in the next increment.
-mod fixture {
-    use std::path::Path;
-
-    use crate::config::Config;
-    use crate::lua::{config, vm};
-
-    /// The settings from the fp5 profile, written the way the Lua config
-    /// expresses them.
-    const FP5_LUA: &str = r#"
-        local oxin = require("oxin")
-
-        oxin.modifier       = "super"
-        oxin.gap            = 5
-        oxin.first_split    = "horizontal"
-        oxin.background     = { 0.04, 0.04, 0.06 }
-        oxin.wallpaper      = "~/pics/286257.jpg"
-        oxin.window_opacity = 0.95
-        oxin.corner_radius  = 40
-        oxin.gesture_handle = "hidden"
-
-        oxin.keyboard = {
-          show   = "pkill -USR2 -x patin-osk",
-          hide   = "pkill -USR1 -x patin-osk",
-          height = 262,
-        }
-    "#;
-
-    #[test]
-    fn the_lua_path_reproduces_the_fp5_settings() {
-        let mut lua = vm::build();
-        let got = config::load(&mut lua, Path::new("init.lua"), FP5_LUA.as_bytes())
-            .expect("the fp5 settings should load");
-
-        // Expected values read straight off profiles/fp5/config/0xin/0xin.conf.
-        let want = Config {
-            modifier: crate::config::MOD_LOGO,
-            gap: 5,
-            first_split_vertical: false,
-            background: (0.04, 0.04, 0.06),
-            wallpaper: Some("~/pics/286257.jpg".into()),
-            window_opacity: 0.95,
-            corner_radius: 40,
-            gesture_handle_visible: false,
-            virtual_keyboard_show: Some("pkill -USR2 -x patin-osk".into()),
-            virtual_keyboard_hide: Some("pkill -USR1 -x patin-osk".into()),
-            virtual_keyboard_height: 262,
-            ..Config::default()
-        };
-
-        assert_eq!(got.modifier, want.modifier);
-        assert_eq!(got.gap, want.gap);
-        assert_eq!(got.first_split_vertical, want.first_split_vertical);
-        assert_eq!(got.background, want.background);
-        assert_eq!(got.wallpaper, want.wallpaper);
-        assert_eq!(got.window_opacity, want.window_opacity);
-        assert_eq!(got.corner_radius, want.corner_radius);
-        assert_eq!(got.gesture_handle_visible, want.gesture_handle_visible);
-        assert_eq!(got.virtual_keyboard_show, want.virtual_keyboard_show);
-        assert_eq!(got.virtual_keyboard_hide, want.virtual_keyboard_hide);
-        assert_eq!(got.virtual_keyboard_height, want.virtual_keyboard_height);
-    }
-
-    #[test]
-    fn the_checked_in_fp5_conf_still_says_what_this_fixture_claims() {
-        // Guards against the fixture drifting from the profile it mirrors: if
-        // someone edits the .conf, this fails rather than the comparison above
-        // quietly testing nothing.
-        let conf = include_str!("../../profiles/fp5/config/0xin/0xin.conf");
-        for expected in [
-            "gap = 5",
-            "first_split = horizontal",
-            "background = 0.04 0.04 0.06",
-            "wallpaper = ~/pics/286257.jpg",
-            "window_opacity = 0.95",
-            "corner_radius = 40",
-            "gesture_handle = hidden",
-            "virtual_keyboard_height = 262",
-        ] {
-            assert!(
-                conf.lines().any(|l| l.trim() == expected),
-                "fp5 profile no longer contains {expected:?}; update FP5_LUA to match",
-            );
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Session startup: what the compositor actually calls
 // ---------------------------------------------------------------------------
 
@@ -598,7 +509,7 @@ fn session_startup_loads_a_config_and_survives_a_broken_one() {
 
     // A config that loads.
     std::fs::write(&path, b"oxin.gap = 11\n").unwrap();
-    std::env::set_var("OXIN_LUA_CONFIG", &path);
+    std::env::set_var("OXIN_CONFIG", &path);
     assert_eq!(session::start().config.gap, 11);
 
     // A config that raises: defaults, and the reason is kept for 0xinctl.
@@ -622,6 +533,540 @@ fn session_startup_loads_a_config_and_survives_a_broken_one() {
     assert_eq!(missing.config.gap, Config::default().gap);
     assert!(missing.registry.config_error.is_none());
 
-    std::env::remove_var("OXIN_LUA_CONFIG");
+    std::env::remove_var("OXIN_CONFIG");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// Registrars: keys, hold, gestures, monitors
+// ---------------------------------------------------------------------------
+
+mod registrars {
+    use std::path::Path;
+
+    use crate::config::names::keysym_from_name;
+    use crate::config::{Action, Config, Direction, GestureTrigger, MOD_ALT, MOD_LOGO, MOD_SHIFT};
+    use crate::lua::{config, vm};
+
+    fn load(source: &str) -> Result<Config, String> {
+        let mut lua = vm::build();
+        config::load_all(
+            &mut lua,
+            Some((Path::new("init.lua"), source.as_bytes().to_vec())),
+            &[],
+        )
+        .map(|f| f.config)
+    }
+
+    fn key(name: &str) -> u32 {
+        keysym_from_name(name).expect("xkb should know this key")
+    }
+
+    fn bind_for<'a>(cfg: &'a Config, mods: u32, name: &str) -> Option<&'a Action> {
+        let sym = key(name);
+        cfg.binds
+            .iter()
+            .find(|b| b.mods == mods && b.keysym == sym)
+            .map(|b| &b.action)
+    }
+
+    #[test]
+    fn a_chord_binds_a_built_in_action() {
+        let cfg = load(r#"oxin.keys["MOD+Return"] = oxin.action.spawn("kitty")"#).unwrap();
+        assert_eq!(
+            bind_for(&cfg, MOD_LOGO, "Return"),
+            Some(&Action::Spawn("kitty".into())),
+        );
+    }
+
+    #[test]
+    fn modifier_order_does_not_matter() {
+        // If the two spellings landed on different entries the table would not
+        // really be keyed, and one would silently shadow the other.
+        let a = load(r#"oxin.keys["MOD+SHIFT+q"] = oxin.action.quit"#).unwrap();
+        let b = load(r#"oxin.keys["SHIFT+MOD+q"] = oxin.action.quit"#).unwrap();
+        let mods = MOD_LOGO | MOD_SHIFT;
+        assert_eq!(bind_for(&a, mods, "q"), Some(&Action::Quit));
+        assert_eq!(bind_for(&a, mods, "q"), bind_for(&b, mods, "q"));
+    }
+
+    #[test]
+    fn binding_the_same_chord_twice_replaces_rather_than_duplicates() {
+        let cfg = load(
+            r#"
+                oxin.keys["MOD+t"] = oxin.action.spawn("one")
+                oxin.keys["MOD+t"] = oxin.action.spawn("two")
+            "#,
+        )
+        .unwrap();
+        let sym = key("t");
+        let hits = cfg
+            .binds
+            .iter()
+            .filter(|b| b.mods == MOD_LOGO && b.keysym == sym)
+            .count();
+        assert_eq!(hits, 1, "a keyed registrar must replace, not append");
+        assert_eq!(
+            bind_for(&cfg, MOD_LOGO, "t"),
+            Some(&Action::Spawn("two".into())),
+        );
+    }
+
+    #[test]
+    fn defaults_fill_in_around_the_config() {
+        // docs/design.md: user config merges, never replaces. A one-line config
+        // still has the whole built-in keymap.
+        let cfg = load(r#"oxin.keys["MOD+t"] = oxin.action.spawn("x")"#).unwrap();
+        assert!(
+            cfg.binds.len() > 20,
+            "expected the built-in keymap alongside the one override, got {}",
+            cfg.binds.len(),
+        );
+        assert_eq!(
+            bind_for(&cfg, MOD_LOGO, "Return"),
+            Some(&Action::Spawn("kitty".into()))
+        );
+    }
+
+    #[test]
+    fn nil_unbinds_a_default_and_it_stays_unbound() {
+        // The .conf format had no way to say this at all.
+        let with = load("").unwrap();
+        assert!(bind_for(&with, MOD_LOGO, "Return").is_some());
+
+        let without = load(r#"oxin.keys["MOD+Return"] = nil"#).unwrap();
+        assert!(
+            bind_for(&without, MOD_LOGO, "Return").is_none(),
+            "an unbound default must not be restored when the built-ins are filled in",
+        );
+    }
+
+    #[test]
+    fn a_chord_with_no_modifier_works() {
+        let cfg = load(r#"oxin.keys["XF86AudioRaiseVolume"] = oxin.action.spawn("up")"#).unwrap();
+        assert_eq!(
+            bind_for(&cfg, 0, "XF86AudioRaiseVolume"),
+            Some(&Action::Spawn("up".into()))
+        );
+    }
+
+    #[test]
+    fn a_lua_function_can_be_bound() {
+        let mut lua = vm::build();
+        let finished = config::load_all(
+            &mut lua,
+            Some((
+                Path::new("init.lua"),
+                br#"oxin.keys["MOD+g"] = function() end"#.to_vec(),
+            )),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            bind_for(&finished.config, MOD_LOGO, "g"),
+            Some(&Action::Lua(0))
+        );
+        assert_eq!(
+            finished.functions.len(),
+            1,
+            "the function must be kept for dispatch",
+        );
+    }
+
+    #[test]
+    fn an_unknown_key_name_is_refused() {
+        let err = load(r#"oxin.keys["MOD+Retrun"] = oxin.action.quit"#).unwrap_err();
+        assert!(err.contains("Retrun"), "{err}");
+        assert!(err.contains("xkb"), "{err}");
+    }
+
+    #[test]
+    fn a_mistyped_action_is_refused_rather_than_silently_unbinding() {
+        // The whole reason oxin.action raises on __index: `nil` is how a config
+        // *removes* a binding, so a typo would quietly delete one.
+        let err = load(r#"oxin.keys["MOD+q"] = oxin.action.clsoe"#).unwrap_err();
+        assert!(err.contains("clsoe"), "{err}");
+    }
+
+    #[test]
+    fn the_modifier_must_be_set_before_any_mod_chord() {
+        let err = load(
+            r#"
+                oxin.keys["MOD+t"] = oxin.action.quit
+                oxin.modifier = "alt"
+            "#,
+        )
+        .unwrap_err();
+        assert!(err.contains("before any binding"), "{err}");
+
+        // The other order is fine, and the built-ins follow the new modifier.
+        let cfg = load(
+            r#"
+                oxin.modifier = "alt"
+                oxin.keys["MOD+t"] = oxin.action.quit
+            "#,
+        )
+        .unwrap();
+        assert_eq!(bind_for(&cfg, MOD_ALT, "t"), Some(&Action::Quit));
+        assert_eq!(
+            bind_for(&cfg, MOD_ALT, "Return"),
+            Some(&Action::Spawn("kitty".into()))
+        );
+    }
+
+    #[test]
+    fn directional_and_workspace_actions_carry_their_argument() {
+        let cfg = load(
+            r#"
+                oxin.keys["MOD+h"] = oxin.action.focus("left")
+                oxin.keys["MOD+j"] = oxin.action.move("down")
+                oxin.keys["MOD+k"] = oxin.action.resize("up")
+                oxin.keys["MOD+3"] = oxin.action.workspace(3)
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            bind_for(&cfg, MOD_LOGO, "h"),
+            Some(&Action::MoveFocus(Direction::Left))
+        );
+        assert_eq!(
+            bind_for(&cfg, MOD_LOGO, "j"),
+            Some(&Action::MoveWindow(Direction::Down))
+        );
+        assert_eq!(
+            bind_for(&cfg, MOD_LOGO, "k"),
+            Some(&Action::ResizeWindow(Direction::Up))
+        );
+        // Workspaces are 1-based in a config and 0-based in the enum.
+        assert_eq!(bind_for(&cfg, MOD_LOGO, "3"), Some(&Action::Workspace(2)));
+    }
+
+    #[test]
+    fn workspace_numbers_are_range_checked() {
+        assert!(load("oxin.keys['MOD+z'] = oxin.action.workspace(0)").is_err());
+        assert!(load("oxin.keys['MOD+z'] = oxin.action.workspace(99)").is_err());
+    }
+
+    #[test]
+    fn hold_binds_take_a_duration() {
+        let cfg = load(r#"oxin.hold["XF86PowerOff"] = { ms = 2000, action = oxin.action.quit }"#)
+            .unwrap();
+        assert_eq!(cfg.hold_binds.len(), 1);
+        let h = &cfg.hold_binds[0];
+        assert_eq!(h.duration_ms, 2000);
+        assert_eq!(h.action, Action::Quit);
+        assert_eq!(h.keysym, key("XF86PowerOff"));
+    }
+
+    #[test]
+    fn a_chord_can_have_both_a_press_and_a_hold() {
+        // keys and hold are separate tables, so the same chord in both is not
+        // a conflict — it is a short press and a long press.
+        let cfg = load(
+            r#"
+                oxin.keys["XF86PowerOff"] = oxin.action.spawn("lock")
+                oxin.hold["XF86PowerOff"] = { ms = 2000, action = oxin.action.spawn("menu") }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            bind_for(&cfg, 0, "XF86PowerOff"),
+            Some(&Action::Spawn("lock".into()))
+        );
+        assert_eq!(cfg.hold_binds.len(), 1);
+    }
+
+    #[test]
+    fn gestures_bind_by_trigger_name() {
+        let cfg = load(
+            r#"
+                oxin.gestures["bottom-up"]   = oxin.action.keyboard_show
+                oxin.gestures["three-left"]  = oxin.action.move_to_workspace_prev
+                oxin.gestures["double-tap"]  = oxin.action.solo
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.gestures.len(), 3);
+        let find = |t| {
+            cfg.gestures
+                .iter()
+                .find(|g| g.trigger == t)
+                .map(|g| &g.action)
+        };
+        assert_eq!(find(GestureTrigger::BottomUp), Some(&Action::KeyboardShow));
+        assert_eq!(
+            find(GestureTrigger::ThreeLeft),
+            Some(&Action::MoveToWorkspacePrevious)
+        );
+        assert_eq!(find(GestureTrigger::DoubleTap), Some(&Action::ToggleSolo));
+    }
+
+    #[test]
+    fn an_unknown_gesture_is_refused() {
+        let err = load(r#"oxin.gestures["sideways-wiggle"] = oxin.action.quit"#).unwrap_err();
+        assert!(err.contains("sideways-wiggle"), "{err}");
+    }
+
+    #[test]
+    fn monitors_are_keyed_by_connector_name() {
+        let cfg = load(
+            r#"
+                oxin.monitors["DP-1"]  = { x = 0, y = 0, scale = 1.0 }
+                oxin.monitors["DP-2"]  = { x = 1920, y = 0 }
+                oxin.monitors["DP-1"]  = { x = 0, y = -1080, scale = 2.0 }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.monitors.len(),
+            2,
+            "the repeat must replace, not duplicate"
+        );
+        let dp1 = cfg.monitors.iter().find(|m| m.name == "DP-1").unwrap();
+        assert_eq!((dp1.x, dp1.y, dp1.scale), (0, -1080, 2.0));
+        // Omitted members take sensible defaults rather than failing.
+        let dp2 = cfg.monitors.iter().find(|m| m.name == "DP-2").unwrap();
+        assert_eq!((dp2.x, dp2.y, dp2.scale), (1920, 0, 1.0));
+    }
+
+    #[test]
+    fn a_registrar_cannot_be_assigned_over() {
+        let err = load("oxin.keys = {}").unwrap_err();
+        assert!(err.contains("index"), "{err}");
+    }
+
+    #[test]
+    fn a_config_can_loop_over_the_workspaces() {
+        // This is what the .conf format could never do: nine bindings from two
+        // lines, because the config is statements rather than a returned table.
+        let cfg = load(
+            r#"
+                for i = 1, 9 do
+                  oxin.keys["MOD+" .. i]       = oxin.action.workspace(i)
+                  oxin.keys["MOD+SHIFT+" .. i] = oxin.action.move_to_workspace(i)
+                end
+            "#,
+        )
+        .unwrap();
+        for i in 1..=9 {
+            let name = i.to_string();
+            assert_eq!(
+                bind_for(&cfg, MOD_LOGO, &name),
+                Some(&Action::Workspace(i - 1)),
+                "workspace {i}",
+            );
+            assert_eq!(
+                bind_for(&cfg, MOD_LOGO | MOD_SHIFT, &name),
+                Some(&Action::MoveToWorkspace(i - 1)),
+                "move to workspace {i}",
+            );
+        }
+    }
+}
+
+#[test]
+fn the_module_exposes_its_functions_and_namespaces() {
+    // A missing entry here shows up in a config as "could not call a nil
+    // value", which says nothing about which name was wrong.
+    use crate::lua::{config, vm};
+    let mut lua = vm::build();
+    for name in [
+        "keys",
+        "hold",
+        "gestures",
+        "monitors",
+        "action",
+        "on",
+        "spawn",
+        "workspace",
+        "workspaces",
+    ] {
+        let src = format!("if oxin.{name} == nil then error('oxin.{name} is missing') end");
+        config::load_all(
+            &mut lua,
+            Some((std::path::Path::new("probe.lua"), src.as_bytes().to_vec())),
+            &[],
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+    }
+}
+
+#[test]
+fn the_shipped_example_config_loads() {
+    // A broken example is worse than none: it is the first thing anyone copies.
+    use crate::lua::{config, vm};
+    let source = include_bytes!("../../init.lua.example");
+    let mut lua = vm::build();
+    let finished = config::load_all(
+        &mut lua,
+        Some((std::path::Path::new("init.lua.example"), source.to_vec())),
+        &[],
+    )
+    .unwrap_or_else(|e| panic!("the shipped example must load: {e}"));
+    // It writes out the default keymap explicitly, so the result should match
+    // the built-ins rather than adding to them.
+    assert!(
+        finished.config.binds.len() >= 30,
+        "{}",
+        finished.config.binds.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Plugins
+// ---------------------------------------------------------------------------
+
+mod plugins {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use crate::config::names::keysym_from_name;
+    use crate::config::{Action, MOD_LOGO};
+    use crate::lua::{config, plugins, vm};
+
+    /// Build a runtimepath root on disk and return it.
+    fn root(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("0xin-plug-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for (rel, body) in files {
+            let path = dir.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
+        }
+        dir
+    }
+
+    fn bind(cfg: &crate::config::Config, name: &str) -> Option<Action> {
+        let sym = keysym_from_name(name)?;
+        cfg.binds
+            .iter()
+            .find(|b| b.mods == MOD_LOGO && b.keysym == sym)
+            .map(|b| b.action.clone())
+    }
+
+    #[test]
+    fn plugin_files_are_ordered_alphabetically_with_after_last() {
+        let dir = root(
+            "order",
+            &[
+                ("plugin/b.lua", ""),
+                ("plugin/a.lua", ""),
+                ("plugin/nested/z.lua", ""),
+                ("after/plugin/late.lua", ""),
+                ("pack/vendor/start/demo/plugin/p.lua", ""),
+                ("lua/helper.lua", "return {}"),
+            ],
+        );
+        let files = plugins::plugin_files(std::slice::from_ref(&dir));
+        let names: Vec<String> = files
+            .iter()
+            .map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                // Packages join the path before the root's own plugin dir.
+                "pack/vendor/start/demo/plugin/p.lua",
+                // Alphabetical within a directory, files before subdirectories.
+                "plugin/a.lua",
+                "plugin/b.lua",
+                "plugin/nested/z.lua",
+                // `after` is always last.
+                "after/plugin/late.lua",
+            ],
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lua_directories_join_the_require_path_but_do_not_auto_run() {
+        let dir = root(
+            "luadir",
+            &[("lua/helper.lua", "return {}"), ("plugin/p.lua", "")],
+        );
+        let path = plugins::lua_path(std::slice::from_ref(&dir));
+        assert!(path.contains("lua/?.lua"), "{path}");
+        assert!(path.contains("lua/?/init.lua"), "{path}");
+
+        // The split that matters: `plugin/` runs, `lua/` only answers require.
+        let files = plugins::plugin_files(std::slice::from_ref(&dir));
+        assert!(
+            files.iter().all(|f| !f.to_string_lossy().contains("/lua/")),
+            "a lua/ file must never be auto-run: {files:?}",
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_plugin_registers_and_after_overrides_it() {
+        let dir = root(
+            "override",
+            &[
+                (
+                    "plugin/a.lua",
+                    r#"oxin.keys["MOD+t"] = oxin.action.spawn("plugin")"#,
+                ),
+                (
+                    "after/plugin/z.lua",
+                    r#"oxin.keys["MOD+t"] = oxin.action.spawn("after")"#,
+                ),
+            ],
+        );
+        let files = plugins::plugin_files(std::slice::from_ref(&dir));
+        let mut lua = vm::build();
+        let finished = config::load_all(
+            &mut lua,
+            Some((
+                Path::new("init.lua"),
+                br#"oxin.keys["MOD+t"] = oxin.action.spawn("init")"#.to_vec(),
+            )),
+            &files,
+        )
+        .unwrap();
+
+        // neovim's order: init.lua, then plugin/, then after/. So `after` wins,
+        // which is exactly why it is the seam for overriding a plugin.
+        assert_eq!(
+            bind(&finished.config, "t"),
+            Some(Action::Spawn("after".into())),
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn one_broken_plugin_does_not_stop_the_others() {
+        // Deliberately unlike init.lua, where a raise is fatal to the load: a
+        // plugin failing is one of several, and taking the compositor's whole
+        // config down with it is worse than doing without it.
+        let dir = root(
+            "broken",
+            &[
+                ("plugin/a.lua", "oxin.gap = 11"),
+                ("plugin/b.lua", "error('broken on purpose')"),
+                ("plugin/c.lua", "oxin.corner_radius = 5"),
+            ],
+        );
+        let files = plugins::plugin_files(std::slice::from_ref(&dir));
+        let mut lua = vm::build();
+        let finished = config::load_all(&mut lua, None, &files).unwrap();
+        assert_eq!(finished.config.gap, 11, "the plugin before the failure");
+        assert_eq!(finished.config.corner_radius, 5, "the one after it");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_missing_root_is_not_an_error() {
+        let missing = PathBuf::from("/nonexistent/0xin");
+        assert!(plugins::plugin_files(std::slice::from_ref(&missing)).is_empty());
+        assert!(plugins::lua_path(std::slice::from_ref(&missing)).is_empty());
+    }
+
+    #[test]
+    fn the_runtimepath_is_a_list_not_a_single_directory() {
+        // A path with one element is still a path; growing one later would be
+        // a config break, so the shape is here from the start.
+        let roots = plugins::runtimepath();
+        assert!(roots.len() >= 2, "{roots:?}");
+        assert!(roots[0].starts_with("/etc"), "system root first: {roots:?}");
+    }
 }

@@ -217,19 +217,6 @@ unsafe fn floats_naturally(tl: *mut Toplevel) -> bool {
         || oxide_xdg_toplevel_fixed_size((*tl).xdg_toplevel)
 }
 
-/// Does a `float = <app_id>` config rule float this window? Rule windows are
-/// ordinary apps told to float, so they get the configured default size
-/// (`float_size`) rather than their own.
-unsafe fn floats_by_rule(server: &Server, tl: *mut Toplevel) -> bool {
-    let app_id = oxide_xdg_toplevel_app_id((*tl).xdg_toplevel);
-    if app_id.is_null() {
-        return false;
-    }
-    let app_id = CStr::from_ptr(app_id)
-        .to_string_lossy()
-        .to_ascii_lowercase();
-    server.config.float_rules.contains(&app_id)
-}
 
 /// The configured default floating size (`float_size`, percentages) applied
 /// to the active output's usable area. (0, 0) — "client decides" — when no
@@ -301,13 +288,6 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
         println!("0xin: new window — floating, initial configure 0x0");
         return;
     }
-    if floats_by_rule(server, tl) {
-        (*tl).floating = true;
-        let (w, h) = float_default_size(server);
-        wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
-        println!("0xin: new window — floating (rule), initial configure {w}x{h}");
-        return;
-    }
 
     let (mut w, mut h) = (0, 0); // 0,0 = client decides (no output to predict from)
     if !server.outputs.is_empty() {
@@ -347,13 +327,37 @@ unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
         oxide_xdg_toplevel_geometry((*tl).xdg_toplevel, &mut w, &mut h);
         place_floating(server, tl, w, h);
     }
-    let a = active_workspace(server);
+    let mut a = active_workspace(server);
+
+    // Ask the config what to do with this window, before it is placed. Ahead
+    // of `refresh` on purpose: a rule that sends it to another workspace would
+    // otherwise show up as a visible tile-then-move.
+    if let Some(rule) = crate::lua::run_window(server, &window_record(tl, a)) {
+        if let Some(float) = rule.float {
+            (*tl).floating = float;
+            if float {
+                oxide_scene_tree_reparent((*tl).scene_tree, server.tree_floating);
+                let (mut w, mut h) = (0, 0);
+                oxide_xdg_toplevel_geometry((*tl).xdg_toplevel, &mut w, &mut h);
+                place_floating(server, tl, w, h);
+            }
+        }
+        if let Some(ws) = rule.workspace {
+            // 1-based in a config, 0-based here.
+            a = (ws - 1).clamp(0, server.workspaces.len() as i64 - 1) as usize;
+        }
+    }
+
     server.workspaces[a].windows.push(tl);
     if !(*tl).floating {
         tree_track(&mut server.workspaces[a], tl);
     }
     refresh(server);
-    focus_index(server, server.workspaces[a].windows.len() - 1);
+    // Only focus it if it actually landed on the workspace we are looking at;
+    // a rule may have sent it elsewhere.
+    if a == active_workspace(server) {
+        focus_index(server, server.workspaces[a].windows.len() - 1);
+    }
     println!(
         "0xin: window mapped — ws {} now {} ({})",
         a + 1,
@@ -420,5 +424,19 @@ unsafe fn remove_window(server: &mut Server, tl: *mut Toplevel) {
             let f = server.workspaces[a].focused;
             focus_index(server, f);
         }
+    }
+}
+
+/// Describe a freshly-mapped window for `oxin.on.window`.
+unsafe fn window_record(tl: *mut Toplevel, workspace: usize) -> crate::lua::events::WindowRecord {
+    let text = |p: *const std::os::raw::c_char| {
+        (!p.is_null()).then(|| CStr::from_ptr(p).to_string_lossy().into_owned())
+    };
+    crate::lua::events::WindowRecord {
+        app_id: text(oxide_xdg_toplevel_app_id((*tl).xdg_toplevel)),
+        title: text(oxide_xdg_toplevel_title((*tl).xdg_toplevel)),
+        // 1-based, matching how a config numbers workspaces everywhere else.
+        workspace: workspace as i64 + 1,
+        floating: (*tl).floating,
     }
 }

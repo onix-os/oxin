@@ -26,18 +26,71 @@ the corner-touch ambiguity documented there is unchanged.
 
 ## Configuration
 
-Three rules, applied throughout `src/config.rs`:
+The config is `~/.config/0xin/init.lua`, real Lua run by an embedded
+interpreter ([luna](https://github.com/onix-os/luna) — stackless, pure Rust,
+no C). Its shape: **assign the settings, register the behaviour, return
+nothing.**
 
-1. **Nothing is fatal.** A line that doesn't parse warns on stderr and is
-   skipped. A missing config file means defaults. A config with zero `bind`
-   lines still has every default binding. 0xin always starts.
-2. **User config merges, never replaces.** A `bind` line overrides exactly
-   that key combination; every unmentioned default stays active. A two-line
-   config is a two-line diff, not a fork of the whole keymap.
-3. **Explicit over implicit.** Monitor placement is literal pixel
-   coordinates per named connector (`monitor = eDP-1, 0x0`) — no relative
-   keywords, no DPI auto-scale heuristics. The config states what happens;
-   nothing else does.
+```lua
+local oxin = require("oxin")
+
+oxin.gap = 4                                       -- settings assigned
+oxin.keys["MOD+Return"] = oxin.action.spawn("kitty")  -- behaviour registered
+
+oxin.on.window(function(w)                         -- and reacted to
+  if w.app_id == "pavucontrol" then return { float = true } end
+end)
+```
+
+Three rules, unchanged in substance from the line-based format that came
+before:
+
+1. **Nothing is fatal.** A config that raises is reported with its file and
+   line, and 0xin starts on the built-in defaults; `0xinctl config-error`
+   repeats the message. A missing config means defaults. A config with no
+   bindings still has every default binding. 0xin always starts — a
+   compositor that refuses to is a black screen with nowhere to read the
+   error.
+2. **User config merges, never replaces.** `oxin.keys["MOD+q"] = …` overrides
+   exactly that chord; every unmentioned default stays active. A two-line
+   config is a two-line diff, not a fork of the whole keymap. Assigning `nil`
+   removes a binding — including a built-in one, which the old format could
+   not express at all.
+3. **Explicit over implicit.** Monitor placement is literal pixel coordinates
+   per named connector (`oxin.monitors["DP-1"] = { x = 0, y = 0 }`) — no
+   relative keywords, no DPI auto-scale heuristics. The config states what
+   happens; nothing else does.
+
+Two properties fall out of the implementation rather than from discipline:
+
+- **All-or-nothing.** Assignments land on a staged `Config` that is only
+  adopted once the chunk reaches its end. There is no path on which a
+  half-applied config reaches the compositor.
+- **A runaway config cannot hang the session.** Lua runs on a fuel budget
+  under a wall-clock deadline the host owns, so `while true do end` in a
+  config costs one stutter and a log line rather than a wedged compositor.
+
+Everything interpreter-shaped lives under `src/lua/`; `src/config/` holds only
+the vocabulary, the built-in keymap and the name resolution the two share.
+That boundary is deliberate — luna is pre-1.0 and says so, and it is what
+keeps a breaking version bump a change to one directory.
+
+## Plugins
+
+A plugin is config somebody else wrote. 0xin follows neovim's model rather
+than inventing one: an ordered **runtimepath** of roots (`/etc/xdg/0xin`, then
+`~/.config/0xin`), each with `plugin/` (run at startup, alphabetically),
+`lua/` (only answers `require`, never auto-run) and `after/plugin/` (runs
+last, so overriding a plugin does not mean editing it). A package is a
+directory laid out the same way under `pack/*/start/*` — installing one is
+"put a directory here", with no registry and no manifest.
+
+Load order is `init.lua`, then `plugin/`, then `after/plugin/`, matching
+neovim. Failure policy differs by design: a raise in `init.lua` aborts the
+whole load, while a raise in a plugin is reported and the others still load —
+one plugin is not worth the rest of the session. `--noplugin` (or
+`OXIN_NOPLUGIN=1`) starts without any of them, because the first question
+when a compositor misbehaves is "is it me or a plugin?".
 
 ## Workspaces and outputs
 
@@ -51,7 +104,8 @@ stays predictable regardless of how many outputs are attached.
 
 Windows that shouldn't tile, don't: dialogs (a toplevel with a parent set —
 file pickers, "Save as…"), windows that declare a fixed size, and anything
-matched by a `float = <app_id>` config rule open floating instead — centered,
+matched by an `oxin.on.window` rule returning `{ float = true }` open
+floating instead — centered,
 painted above the tiled layer. Dialogs and fixed-size windows keep their own
 natural size (that's the point of floating them); rule windows and the
 manual float toggle use the configured default size (`float_size`, a
@@ -72,8 +126,10 @@ already visible from the arrangement.
 
 Under consideration, not committed:
 
-- **Runtime control** — a socket/IPC for querying and scripting the
-  compositor without keybindings.
+- **Runtime control** — the control socket exists (`0xinctl`), but its wire
+  is line-based and one-request-per-connection. Giving it length-prefixed
+  framing and exposing a named subset of the Lua API would let sibling tools
+  query 0xin directly.
 - **Exact tree-based directional navigation** — now that the split tree
   exists, `spatial_neighbor` could use its real adjacency instead of Stage
   5's geometric heuristic, fully resolving the corner-touch case. Not

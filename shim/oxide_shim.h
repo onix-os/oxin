@@ -188,6 +188,7 @@ void oxide_xdg_toplevel_set_tiled_none(struct wlr_xdg_toplevel *toplevel);
 struct wlr_xdg_toplevel *oxide_xdg_toplevel_parent(
         struct wlr_xdg_toplevel *toplevel);
 const char *oxide_xdg_toplevel_app_id(struct wlr_xdg_toplevel *toplevel);
+const char *oxide_xdg_toplevel_title(struct wlr_xdg_toplevel *toplevel);
 bool oxide_xdg_toplevel_fixed_size(struct wlr_xdg_toplevel *toplevel);
 void oxide_xdg_toplevel_geometry(struct wlr_xdg_toplevel *toplevel,
         int *width, int *height);

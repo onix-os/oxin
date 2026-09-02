@@ -3,10 +3,10 @@
 //! comment in `mod.rs` for how a config file's own `bind =` lines layer on
 //! top of this instead of replacing it.
 
-use super::parse::key;
+use super::names::key;
 use super::types::*;
 
-pub(super) fn default_binds(modifier: u32) -> Vec<Bind> {
+pub(crate) fn default_binds(modifier: u32) -> Vec<Bind> {
     let m = modifier;
     let ms = modifier | MOD_SHIFT;
     let mc = modifier | MOD_CTRL;

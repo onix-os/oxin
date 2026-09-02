@@ -5,20 +5,25 @@
 //! handles in `Server` or in `config::types`. luna is pre-1.0 and says so, and
 //! this boundary is what keeps a breaking bump a one-directory port.
 
-// The layer is built out in phases (see docs); the driver and parking helpers
-// land before the call sites that use them, so the pieces are proven in
-// isolation first. Drop this once Stage 2 wires the runtime layer in.
-#![allow(dead_code)]
-
+pub(crate) mod action;
+pub(crate) mod api;
 pub(crate) mod config;
 pub(crate) mod drive;
+pub(crate) mod events;
+pub(crate) mod host;
 pub(crate) mod link;
 pub(crate) mod load;
 pub(crate) mod module;
 pub(crate) mod park;
+pub(crate) mod plugins;
+pub(crate) mod registrars;
 pub(crate) mod registry;
+pub(crate) mod run;
 pub(crate) mod session;
+pub(crate) mod staging;
 pub(crate) mod vm;
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) use run::{run_bind, run_startup, run_window, run_workspace};

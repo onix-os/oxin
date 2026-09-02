@@ -18,8 +18,12 @@ automatically to fill the screen instead of floating and overlapping.
 - **Multi-monitor** with **focus-follows-monitor** — new windows open on the monitor
   your cursor is on; each monitor shows its own workspace. Position/scale per
   named output are configurable (`monitor =` lines), otherwise auto-placed.
-- **Keyboard-driven**, configured by a small **Rust-parsed config file** (modifier,
-  gaps, background colour, keybindings, terminal command).
+- **Keyboard-driven**, configured and scripted in **Lua** (`~/.config/0xin/init.lua`)
+  through an embedded pure-Rust interpreter: settings are assigned, keybindings and
+  behaviour are registered, and a binding can be a Lua function. A broken config is
+  reported with its line and 0xin starts on defaults anyway.
+- **Plugins** — a neovim-shaped runtimepath (`plugin/` runs, `lua/` is required,
+  `after/` last), so config somebody else wrote drops in as a directory.
 - **Pointer + cursor** with click-to-focus.
 - Runs real **xdg-shell apps** (terminals, browsers, …).
 - Runs on a **real TTY** via libseat/logind, and **survives VT switching**
@@ -53,7 +57,7 @@ mdbook serve
 The split is deliberate:
 
 - **Rust owns all policy** — the window list, tiling layout, workspaces, keybindings,
-  config parsing, and overall flow (`src/main.rs`, `src/config.rs`).
+  config, and overall flow (`src/main.rs`, `src/config/`, `src/lua/`).
 - **A thin C shim** (`shim/oxide_shim.{c,h}`) owns the parts that are awkward or
   unsafe to model through FFI: the wlroots `wl_listener`/`wl_signal` glue (intrusive
   linked lists) and anything that needs to read wlroots struct fields directly. It
@@ -131,81 +135,100 @@ main session. More detail and verification recipes are in
 
 ## Configuration
 
-0xin reads `~/.config/0xin/0xin.conf` (or `$XDG_CONFIG_HOME/0xin/0xin.conf`).
-With no config file it uses the built-in defaults above. The format is `key = value`
-with `#` comments, plus `bind` lines. Binds always start from the defaults above;
-each `bind` line in your config overrides just that key combination and leaves every
-other default bind in place — so a config with only a couple of `bind` lines still
-has working workspace switches, close/quit, etc:
+0xin reads `~/.config/0xin/init.lua` (or `$XDG_CONFIG_HOME/0xin/init.lua`), which
+is ordinary Lua run by an embedded interpreter. With no config file it uses the
+built-in defaults above.
 
+The shape is: **assign the settings, register the behaviour, return nothing.**
+Bindings are keyed by chord, so yours override the built-ins one at a time and
+every unmentioned default stays active — a two-line config still has working
+workspace switches, close and quit.
+
+```lua
+local oxin = require("oxin")
+
+-- Set the modifier before any MOD+ binding: chords resolve MOD as written.
+oxin.modifier       = "super"
+oxin.gap            = 10
+oxin.background     = { 0.0, 0.6, 0.6 }
+oxin.wallpaper      = "~/Pictures/wallpaper.jpg"
+oxin.window_opacity = 1.0
+oxin.corner_radius  = 0
+
+-- Explicit position for a named output (connector name, as logged:
+-- "output <name> online..."). Unlisted outputs keep auto-placement.
+oxin.monitors["HDMI-A-1"] = { x = 0, y = -1080, scale = 1.0 }
+
+oxin.keys["MOD+Return"]  = oxin.action.spawn("kitty")
+oxin.keys["MOD+q"]       = oxin.action.close
+oxin.keys["MOD+SHIFT+q"] = oxin.action.quit
+oxin.keys["MOD+h"]       = oxin.action.focus("left")
+oxin.keys["MOD+SHIFT+h"] = oxin.action.move("left")
+
+-- It is a real language, so nine workspaces take two lines.
+for i = 1, 9 do
+  oxin.keys["MOD+" .. i]       = oxin.action.workspace(i)
+  oxin.keys["MOD+SHIFT+" .. i] = oxin.action.move_to_workspace(i)
+end
+
+-- A chord can have both a tap and a hold; they are separate tables.
+oxin.keys["XF86PowerOff"] = oxin.action.spawn("swaylock")
+oxin.hold["XF86PowerOff"] = { ms = 2000, action = oxin.action.spawn("session-menu") }
+
+-- Assigning nil removes a binding, including a built-in one.
+oxin.keys["MOD+f"] = nil
+
+-- A binding can be a function, and then it can do anything Lua can.
+oxin.keys["MOD+g"] = function()
+  oxin.gap = (oxin.gap == 0) and 12 or 0
+end
+
+-- Optional virtual-keyboard controller. Focused clients using Wayland
+-- text-input-v3 invoke the same provider-neutral commands automatically.
+oxin.keyboard = {
+  show   = "pkill -USR2 -x wvkbd-mobintl",
+  hide   = "pkill -USR1 -x wvkbd-mobintl",
+  height = 125,
+}
+oxin.gesture_handle = "hidden"   -- visible (default) | hidden; the visual pill only
+
+-- Touch gestures reach the same actions.
+oxin.gestures["bottom-up"]     = oxin.action.keyboard_show
+oxin.gestures["edge-left-in"]  = oxin.action.workspace_prev
+oxin.gestures["edge-right-in"] = oxin.action.workspace_next
+oxin.gestures["top-right"]     = oxin.action.spawn("brightnessctl set +5%")
+oxin.gestures["three-left"]    = oxin.action.move_to_workspace_prev
+oxin.gestures["double-tap"]    = oxin.action.solo
+
+-- Behaviour: handlers can be registered repeatedly and run in order. If one
+-- raises it is reported and the rest still run.
+local function autostart(cmd)
+  oxin.on.startup(function() oxin.spawn(cmd) end)
+end
+autostart("patin")
+
+oxin.on.window(function(w)
+  -- nil = not mine, carry on. A table = do this instead.
+  if w.app_id == "pavucontrol" then return { float = true } end
+  if w.app_id == "firefox"     then return { workspace = 2 } end
+end)
 ```
-modifier   = super
-gap        = 10
-background = 0.0 0.6 0.6
-wallpaper = ~/Pictures/wallpaper.jpg
-window_opacity = 1.0
-corner_radius = 0
 
-# Commands are repeatable and launch once per compositor start.
-exec_once = patin
+A config that raises is reported with its file and line and 0xin starts on the
+built-in defaults — it never refuses to start. `0xinctl config-error` repeats the
+message once you are in. A config that loops forever is stopped by a fuel budget
+and a wall-clock deadline rather than hanging the session. See
+[`init.lua.example`](init.lua.example) for the full annotated example.
 
-bind = MOD, Return, spawn, kitty
-bind = MOD, Q, close
-bind = MOD SHIFT, Q, quit
-bind = MOD, H, movefocus, l
-bind = MOD SHIFT, H, movewindow, l
-bind = MOD, 1, workspace, 1
-bind = MOD SHIFT, 1, movetoworkspace, 1
-# Pairing the same chord gives it distinct short-press and hold actions.
-bind = , XF86PowerOff, spawn, swaylock
-hold = , XF86PowerOff, 2000, spawn, session-menu
+### Plugins
 
-# monitor = NAME, XxY[, SCALE] — explicit position for a named output
-# (connector name, as logged: "output <name> online..."). Unlisted outputs
-# keep the default auto-placement.
-monitor = HDMI-A-1, 0x-1080, 1.0
-
-# Optional virtual-keyboard controller. Actions can be mapped to keys or touch.
-virtual_keyboard_show = pkill -USR2 -x wvkbd-mobintl
-virtual_keyboard_hide = pkill -USR1 -x wvkbd-mobintl
-virtual_keyboard_height = 125
-# visible (default) or hidden; this changes only the visual pill.
-gesture_handle = hidden
-
-# Focused clients using Wayland text-input-v3 automatically invoke the same
-# provider-neutral show/hide commands. Gestures remain a manual override.
-
-gesture = bottom-up, keyboardshow
-gesture = bottom-down, keyboardhide
-gesture = edge-left-in, workspaceprev
-gesture = edge-right-in, workspacenext
-gesture = top-right, spawn, brightnessctl set +5%
-gesture = top-left, spawn, brightnessctl set 5%-
-gesture = top-down, spawn, pgrep -x fuzzel >/dev/null || fuzzel
-gesture = to-top, spawn, pkill -x fuzzel
-
-gesture = two-up, movewindow, u
-gesture = two-down, movewindow, d
-gesture = two-left, movewindow, l
-gesture = two-right, movewindow, r
-gesture = three-up, close
-gesture = three-down, close
-gesture = three-left, movetoworkspaceprev
-gesture = three-right, movetoworkspacenext
-gesture = double-tap, solo
-
-# The same actions are available on non-touch devices.
-bind = MOD, bracketleft, workspaceprev
-bind = MOD, bracketright, workspacenext
-bind = MOD, K, keyboardtoggle
-
-# Modifier-free media buttons are ordinary input mappings too.
-bind = , XF86AudioRaiseVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ +5%
-bind = , XF86AudioLowerVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ -5%
-```
-
-A line 0xin can't parse is warned about on stderr and skipped — never fatal. See
-[`0xin.conf.example`](0xin.conf.example) for the full annotated example.
+Config somebody else wrote drops in as a directory, following neovim's layout: an
+ordered runtimepath (`/etc/xdg/0xin`, then `~/.config/0xin`), each root with
+`plugin/` (run at startup, alphabetically), `lua/` (only answers `require`) and
+`after/plugin/` (runs last, so overriding a plugin is not editing it). Packages
+live at `pack/<any>/start/<name>/`. Load order is `init.lua`, then `plugin/`, then
+`after/`. One plugin raising does not stop the others, and `--noplugin` (or
+`OXIN_NOPLUGIN=1`) starts without any.
 
 PNG and JPEG wallpapers are decoded by 0xin itself and cover-scaled per output;
 no external wallpaper program is required. Change or clear the running
@@ -275,7 +298,8 @@ reappear correctly.
 | Path                      | What it is                                                |
 | ------------------------- | --------------------------------------------------------- |
 | `src/main.rs`             | Compositor orchestrator + all policy (layout, workspaces, input, keybindings) |
-| `src/config.rs`           | Dependency-free config-file parser                        |
+| `src/config/`             | Config vocabulary, built-in keymap, key/modifier name resolution |
+| `src/lua/`                | Embedded Lua: VM, the `oxin` module, registrars, events, plugins |
 | `src/wallpaper.rs`        | Internal PNG/JPEG decoder + wlroots wallpaper buffers      |
 | `src/control.rs`          | Local runtime-control socket                               |
 | `src/bin/0xinctl.rs`      | Runtime control command                                    |

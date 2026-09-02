@@ -1,0 +1,159 @@
+-- 0xin configuration.
+--
+-- Copy to ~/.config/0xin/init.lua and edit. With no config file at all, 0xin
+-- uses the built-in defaults shown below, so an empty file and a missing file
+-- behave the same.
+--
+-- The shape of this file is: assign the settings, register the behaviour,
+-- return nothing. It is ordinary Lua, so it can loop, branch, and ask the
+-- machine it is running on what is available.
+--
+-- If this file has an error, 0xin reports it with the line number and starts on
+-- the built-in defaults — it never refuses to start. `0xinctl config-error`
+-- repeats the message once you are in.
+
+local oxin = require("oxin")
+
+-- ---------------------------------------------------------------------------
+-- Settings
+-- ---------------------------------------------------------------------------
+-- A setting you do not mention keeps its default. A name that is not a setting
+-- is an error rather than a typo that silently does nothing.
+
+-- The primary modifier, written as MOD in bindings below.
+-- Set this BEFORE any MOD+ binding: chords resolve MOD as they are written.
+oxin.modifier = "super"                 -- super | alt | ctrl | shift
+
+oxin.gap = 2                            -- pixels between and around windows
+oxin.first_split = "vertical"           -- vertical (left/right) | horizontal
+oxin.background = { 0.0, 0.6, 0.6 }     -- r, g, b in 0..1
+-- oxin.wallpaper = "~/pictures/wall.png"  -- PNG or JPEG; colour stays the fallback
+
+oxin.window_opacity = 1.0               -- 0.0..1.0, applied to app windows
+oxin.corner_radius = 0                  -- logical pixels; 0 disables masking
+oxin.float_size = { 60, 60 }            -- default float size, % of usable area
+
+-- Touch: whether the bottom gesture target draws a visible pill.
+oxin.gesture_handle = "visible"         -- visible | hidden
+
+-- An optional virtual-keyboard controller, if you run one.
+-- oxin.keyboard = {
+--   show   = "pkill -USR2 -x my-osk",
+--   hide   = "pkill -USR1 -x my-osk",
+--   height = 300,                      -- its logical footprint height
+-- }
+
+-- ---------------------------------------------------------------------------
+-- Monitors
+-- ---------------------------------------------------------------------------
+-- Keyed by connector name (`wlr-randr` will tell you). A monitor with no entry
+-- is placed automatically, so this is opt-in.
+--
+-- oxin.monitors["DP-1"]  = { x = 0,    y = 0, scale = 1.0 }
+-- oxin.monitors["HDMI-A-1"] = { x = 1920, y = 0, scale = 1.0 }
+
+-- ---------------------------------------------------------------------------
+-- Keys
+-- ---------------------------------------------------------------------------
+-- Keyed by chord, so binding the same chord twice replaces rather than stacks,
+-- and the order of modifiers does not matter. Key names are xkb names
+-- (`xev` or `wev` will tell you). A chord with no modifier is just the key.
+--
+-- Every binding below is already a default; they are written out so you can see
+-- what you are overriding. Your bindings merge with the defaults rather than
+-- replacing them, so a two-line config still has a working keymap.
+
+oxin.keys["MOD+Return"]  = oxin.action.spawn("kitty")
+oxin.keys["MOD+q"]       = oxin.action.close
+oxin.keys["MOD+SHIFT+q"] = oxin.action.quit
+
+oxin.keys["MOD+h"] = oxin.action.focus("left")
+oxin.keys["MOD+j"] = oxin.action.focus("down")
+oxin.keys["MOD+k"] = oxin.action.focus("up")
+oxin.keys["MOD+l"] = oxin.action.focus("right")
+
+oxin.keys["MOD+SHIFT+h"] = oxin.action.move("left")
+oxin.keys["MOD+SHIFT+j"] = oxin.action.move("down")
+oxin.keys["MOD+SHIFT+k"] = oxin.action.move("up")
+oxin.keys["MOD+SHIFT+l"] = oxin.action.move("right")
+
+oxin.keys["MOD+CTRL+h"] = oxin.action.resize("left")
+oxin.keys["MOD+CTRL+j"] = oxin.action.resize("down")
+oxin.keys["MOD+CTRL+k"] = oxin.action.resize("up")
+oxin.keys["MOD+CTRL+l"] = oxin.action.resize("right")
+
+oxin.keys["MOD+f"] = oxin.action.fullscreen
+oxin.keys["MOD+s"] = oxin.action.solo
+oxin.keys["MOD+v"] = oxin.action.float
+
+-- Because this is a real language, nine workspaces take two lines.
+for i = 1, 9 do
+  oxin.keys["MOD+" .. i]       = oxin.action.workspace(i)
+  oxin.keys["MOD+SHIFT+" .. i] = oxin.action.move_to_workspace(i)
+end
+
+-- Assigning nil removes a binding, including a built-in one.
+-- oxin.keys["MOD+f"] = nil
+
+-- A binding can also be a function, and then it can do anything Lua can.
+-- oxin.keys["MOD+g"] = function()
+--   oxin.gap = (oxin.gap == 0) and 12 or 0
+-- end
+
+-- Hold the chord for `ms` to get a different action. Held and tapped are
+-- separate tables, so the same chord can have both.
+-- oxin.hold["XF86PowerOff"] = { ms = 2000, action = oxin.action.spawn("power-menu") }
+
+-- ---------------------------------------------------------------------------
+-- Touch gestures
+-- ---------------------------------------------------------------------------
+-- Only meaningful with a touchscreen. Keyed by trigger name; the full set is
+-- the edge swipes (bottom-up, bottom-down, edge-left-in, edge-right-in,
+-- edge-left-up/down, edge-right-up/down, top-left, top-right, top-down,
+-- to-top, to-left, to-right), the multi-finger swipes (two-/three- up, down,
+-- left, right) and double-tap.
+--
+-- oxin.gestures["edge-right-up"]   = oxin.action.workspace_next
+-- oxin.gestures["edge-right-down"] = oxin.action.workspace_prev
+-- oxin.gestures["three-up"]        = oxin.action.close
+-- oxin.gestures["double-tap"]      = oxin.action.solo
+
+-- ---------------------------------------------------------------------------
+-- Behaviour
+-- ---------------------------------------------------------------------------
+-- Handlers can be registered as often as you like and run in the order you
+-- registered them. If one raises, it is reported and the rest still run.
+
+-- Runs once, after the Wayland socket exists, so anything launched here can
+-- connect to us. This is what replaces a list of autostart lines:
+-- local function autostart(cmd)
+--   oxin.on.startup(function() oxin.spawn(cmd) end)
+-- end
+--
+-- autostart("my-bar")
+-- autostart("my-wallpaper-daemon")
+
+-- Runs for each new window, before it is placed. Return nil to leave it alone,
+-- or a table to say what to do with it instead.
+-- oxin.on.window(function(w)
+--   -- w has: app_id, title, workspace (1-based), floating
+--   if w.app_id == "pavucontrol" then
+--     return { float = true }
+--   end
+--   if w.app_id == "firefox" then
+--     return { workspace = 2 }
+--   end
+-- end)
+
+-- Runs after a workspace switch. `ev` has `from` and `to`, both 1-based.
+-- oxin.on.workspace(function(ev)
+--   oxin.spawn("notify-send 'workspace " .. ev.to .. "'")
+-- end)
+
+-- ---------------------------------------------------------------------------
+-- Asking about the running compositor
+-- ---------------------------------------------------------------------------
+-- Available inside a binding or a handler, once the compositor is up:
+--   oxin.spawn(cmd)     launch a command the way a keybinding would
+--   oxin.workspace()    the workspace on the focused monitor, 1-based
+--   oxin.workspaces()   every workspace, as { number = N, windows = N }

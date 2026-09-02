@@ -38,3 +38,4 @@
 - [Stage 25 — Double-tap to Solo a Window](phases/stage-25-double-tap-solo.md)
 - [Stage 26 — Rounded Window Corners](phases/stage-26-rounded-window-corners.md)
 - [Stage 27 — Focused Text Input and System OSK](phases/stage-27-text-input-osk.md)
+- [Stage 28 — Lua Configuration](phases/stage-28-lua-configuration.md)
