@@ -11,7 +11,7 @@ pub const MOD_LOGO: u32 = 1 << 6; // Super / Logo
 pub const MOD_MASK: u32 = MOD_SHIFT | MOD_CTRL | MOD_ALT | MOD_LOGO;
 
 /// A screen-relative direction, for directional focus/move (`Mod+hjkl`).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Left,
     Right,
@@ -20,7 +20,7 @@ pub enum Direction {
 }
 
 /// What a keybinding does when triggered.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Spawn(String),
     Close,
@@ -59,14 +59,14 @@ pub enum Action {
 }
 
 /// One key combination mapped to an action.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Bind {
     pub mods: u32,
     pub keysym: u32,
     pub action: Action,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HoldBind {
     pub mods: u32,
     pub keysym: u32,
@@ -110,7 +110,7 @@ pub enum GestureTrigger {
     EdgeRightDown = 22,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GestureBind {
     pub trigger: GestureTrigger,
     pub action: Action,
@@ -119,7 +119,7 @@ pub struct GestureBind {
 /// An explicit position + scale for one named output (connector name, e.g.
 /// `HDMI-A-1`). An output with no matching entry keeps the default
 /// `wlr_output_layout_add_auto` placement — this is opt-in per monitor.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MonitorConfig {
     pub name: String,
     pub x: i32,
@@ -128,6 +128,7 @@ pub struct MonitorConfig {
 }
 
 /// Parsed compositor configuration.
+#[derive(Debug, PartialEq)]
 pub struct Config {
     /// The primary modifier (`$mod` / `MOD` in binds); Super by default.
     pub modifier: u32,

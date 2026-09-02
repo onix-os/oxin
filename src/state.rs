@@ -4,6 +4,7 @@ use crate::config::Action;
 use crate::config::Config;
 use crate::ffi::ShimListener;
 use crate::layout::Node;
+use crate::lua::link::LuaLink;
 use crate::wlr;
 use std::os::raw::c_void;
 use std::os::unix::net::UnixListener;
@@ -75,6 +76,10 @@ pub(crate) struct Server {
     pub(crate) outputs: Vec<Output>,
     /// User configuration: modifier, gap, background, keybindings.
     pub(crate) config: Config,
+    /// Pointers to the Lua VM and its registry, both `main` locals. Null when
+    /// no Lua config is in use; see `lua::link` for why they live outside
+    /// `Server` rather than as fields.
+    pub(crate) lua: LuaLink,
     pub(crate) event_loop: *mut wlr::wl_event_loop,
     pub(crate) hold_source: *mut c_void,
     pub(crate) held_keysym: u32,

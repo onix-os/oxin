@@ -25,6 +25,7 @@ mod input;
 mod keybindings;
 mod layer_shell;
 mod layout;
+mod lua;
 mod output;
 mod output_power;
 mod session_lock;
@@ -42,6 +43,7 @@ use input::{
 };
 use keybindings::handle_text_input_visibility;
 use layer_shell::handle_new_layer_surface;
+use lua::link::LuaLink;
 use output::{handle_new_output, handle_session_active};
 use state::{GrabMode, Server, Workspace, WORKSPACE_COUNT};
 use std::env;
@@ -83,7 +85,9 @@ fn main() {
         // has no effect rather than crashing the compositor.
         let corner_program = oxide_gles2_corner_program_create(renderer);
         if corner_program.is_null() {
-            eprintln!("0xin: corner-radius GLES2 program unavailable — corner_radius will have no effect");
+            eprintln!(
+                "0xin: corner-radius GLES2 program unavailable — corner_radius will have no effect"
+            );
         }
 
         // Buffer-factory globals: wl_shm + linux-dmabuf. Clients need these to
@@ -138,7 +142,17 @@ fn main() {
         // Load user config (modifier, gap, background, keybindings). Falls back
         // to built-in defaults; `OXIN_MOD=alt` overrides the modifier for
         // nested dev (a nesting host like Hyprland grabs Super-chords before us).
-        let config = Config::load();
+        // `OXIN_LUA=1` swaps the line-based `0xin.conf` parser for an
+        // `init.lua` run through the embedded interpreter. Both produce the
+        // same `Config`; the Lua path is opt-in until it has replaced the
+        // other outright.
+        let use_lua = matches!(env::var("OXIN_LUA").as_deref(), Ok("1"));
+        let (config, mut lua_session) = if use_lua {
+            let session = lua::session::start();
+            (session.config, Some((session.vm, session.registry)))
+        } else {
+            (Config::load(), None)
+        };
         let first_split_vertical = config.first_split_vertical;
 
         // `server` lives for the whole of main(), which blocks in wl_display_run
@@ -181,6 +195,7 @@ fn main() {
                 .collect(),
             outputs: Vec::new(),
             config,
+            lua: LuaLink::disabled(),
             event_loop,
             hold_source: std::ptr::null_mut(),
             held_keysym: 0,
@@ -198,6 +213,17 @@ fn main() {
             grab_w: 0,
             grab_h: 0,
         };
+        // The VM and its registry are `main` locals, not `Server` fields:
+        // `Server`'s address is handed to the C shim and every callback
+        // rebuilds `&mut Server` from it, so a `lua.enter(...)` borrow through
+        // a field would invalidate that pointer's provenance. Three disjoint
+        // allocations, and `Server` holds only raw pointers to two of them.
+        if let Some((vm, registry)) = lua_session.as_mut() {
+            // SAFETY: both live in `lua_session`, which is a `main` local held
+            // across `wl_display_run` below, so they outlive every use.
+            server.lua = LuaLink::new(vm as *mut _, registry as *mut _);
+        }
+
         let server_ptr = &mut server as *mut Server as *mut c_void;
         // Focused clients use the standard text-input-v3 protocol to request
         // whichever OSK the profile configured (wvkbd today, replaceable later).

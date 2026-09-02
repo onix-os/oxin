@@ -394,6 +394,7 @@ mod tests {
             }],
             outputs: Vec::new(),
             config: Config::default(),
+            lua: crate::lua::link::LuaLink::disabled(),
             event_loop: ptr::null_mut(),
             hold_source: ptr::null_mut(),
             held_keysym: 0,

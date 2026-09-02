@@ -16,6 +16,7 @@ path = "src/bin/0xinctl.rs"
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+luna = { git = "https://github.com/onix-os/luna", tag = "v0.5.1" }
 
 [build-dependencies]
 bindgen = "0.71"

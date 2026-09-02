@@ -31,7 +31,7 @@ pub(super) fn split_kv(line: &str) -> Option<(&str, &str)> {
 
 /// Parse a modifier spec like `SUPER SHIFT`, `super+shift`, `MOD`, `$mod`.
 /// `MOD`/`$mod`/`mainmod` expand to `primary`.
-pub(super) fn parse_mods(spec: &str, primary: u32) -> Option<u32> {
+pub(crate) fn parse_mods(spec: &str, primary: u32) -> Option<u32> {
     let mut bits = 0;
     for tok in spec.split(['+', ' ', '\t']).filter(|t| !t.is_empty()) {
         bits |= match tok.to_ascii_uppercase().trim_start_matches('$') {
@@ -170,7 +170,7 @@ fn direction_from_arg(arg: &str) -> Option<Direction> {
 }
 
 /// Resolve a key name to a keysym, or None if xkb doesn't know it.
-pub(super) fn keysym_from_name(name: &str) -> Option<u32> {
+pub(crate) fn keysym_from_name(name: &str) -> Option<u32> {
     let c = CString::new(name).ok()?;
     let sym = unsafe { oxide_keysym_from_name(c.as_ptr()) };
     (sym != 0).then_some(sym)
@@ -181,7 +181,7 @@ pub(super) fn key(name: &str) -> u32 {
     keysym_from_name(name).expect("built-in default key name should resolve")
 }
 
-pub(super) fn mod_name(m: u32) -> &'static str {
+pub(crate) fn mod_name(m: u32) -> &'static str {
     match m {
         MOD_ALT => "Alt",
         MOD_LOGO => "Super",

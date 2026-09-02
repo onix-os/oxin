@@ -18,7 +18,7 @@
 //! together.
 
 mod defaults;
-mod parse;
+pub(crate) mod parse;
 mod types;
 
 #[cfg(test)]
