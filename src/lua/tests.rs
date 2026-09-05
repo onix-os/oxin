@@ -537,6 +537,37 @@ fn session_startup_loads_a_config_and_survives_a_broken_one() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The system config is a fallback, not an override: a machine that ships one
+/// (the NixOS module writes `/etc/xdg/0xin/init.lua`) must not take the file
+/// out of the user's hands. No environment variables here — `pick` is the
+/// ordering on its own, so this can run in parallel with everything else.
+#[test]
+fn a_users_config_wins_over_the_system_one() {
+    use crate::lua::session::pick;
+
+    let dir = std::env::temp_dir().join(format!("0xin-pick-test-{}", std::process::id()));
+    let user = dir.join("user/init.lua");
+    let system = dir.join("etc/init.lua");
+    std::fs::create_dir_all(user.parent().unwrap()).expect("temp dir");
+    std::fs::create_dir_all(system.parent().unwrap()).expect("temp dir");
+
+    // Neither exists: the user's path, so the "no config" message names it.
+    assert_eq!(pick(Some(user.clone()), system.clone()), Some(user.clone()));
+
+    // Only the system's: that one, which is the whole point of the fallback.
+    std::fs::write(&system, b"oxin.gap = 1\n").unwrap();
+    assert_eq!(pick(Some(user.clone()), system.clone()), Some(system.clone()));
+
+    // Both: the user's.
+    std::fs::write(&user, b"oxin.gap = 2\n").unwrap();
+    assert_eq!(pick(Some(user.clone()), system.clone()), Some(user.clone()));
+
+    // No home at all, and a system file: still found.
+    assert_eq!(pick(None, system.clone()), Some(system));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ---------------------------------------------------------------------------
 // Registrars: keys, hold, gestures, monitors
 // ---------------------------------------------------------------------------

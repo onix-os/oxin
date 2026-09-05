@@ -26,6 +26,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The system-wide config root, for anything installed by a package manager —
+/// a distro package, or the NixOS module in `nix/module.nix`. Named here
+/// because `session` looks for a system `init.lua` in the same place, and two
+/// copies of the path would be two things to keep in step.
+pub(super) const SYSTEM_ROOT: &str = "/etc/xdg/0xin";
+
 /// The ordered list of roots plugins are looked for in.
 ///
 /// A path with one entry is still a path; growing one later is a config break,
@@ -34,7 +40,7 @@ pub(crate) fn runtimepath() -> Vec<PathBuf> {
     let mut roots = Vec::new();
 
     // System-wide, for anything installed by a package manager.
-    roots.push(PathBuf::from("/etc/xdg/0xin"));
+    roots.push(PathBuf::from(SYSTEM_ROOT));
 
     // The user's own.
     if let Some(dir) = config_dir() {

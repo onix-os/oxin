@@ -21,12 +21,21 @@ use super::{config, plugins, vm};
 ///    the format changed, the role did not.
 /// 2. `$XDG_CONFIG_HOME/0xin/init.lua`
 /// 3. `~/.config/0xin/init.lua`
+/// 4. `/etc/xdg/0xin/init.lua` — whatever packaged 0xin for this machine, such
+///    as the NixOS module in `nix/module.nix`. Last, so a user's own file
+///    always wins over the system's; it is the root `plugins::runtimepath`
+///    already scans, so a package has one directory to install into.
 pub(crate) fn config_path() -> Option<PathBuf> {
     if let Ok(p) = env::var("OXIN_CONFIG") {
         if !p.is_empty() {
             return Some(PathBuf::from(p));
         }
     }
+    pick(user_config_path(), system_config_path())
+}
+
+/// The user's own path, if the environment says where their home is.
+fn user_config_path() -> Option<PathBuf> {
     if let Ok(dir) = env::var("XDG_CONFIG_HOME") {
         if !dir.is_empty() {
             return Some(PathBuf::from(dir).join("0xin/init.lua"));
@@ -36,6 +45,28 @@ pub(crate) fn config_path() -> Option<PathBuf> {
         .ok()
         .filter(|h| !h.is_empty())
         .map(|h| PathBuf::from(h).join(".config/0xin/init.lua"))
+}
+
+fn system_config_path() -> PathBuf {
+    PathBuf::from(plugins::SYSTEM_ROOT).join("init.lua")
+}
+
+/// The user's file when they have one, the system's when they don't — and the
+/// user's *path* when neither exists, because "no ~/.config/0xin/init.lua" is
+/// a more useful thing to print than the name of a file they cannot write.
+///
+/// Split out from `config_path` so the order is testable without setting
+/// process-wide environment variables, which parallel tests cannot do.
+pub(super) fn pick(user: Option<PathBuf>, system: PathBuf) -> Option<PathBuf> {
+    if let Some(path) = &user {
+        if path.is_file() {
+            return user;
+        }
+    }
+    if system.is_file() {
+        return Some(system);
+    }
+    user
 }
 
 /// What a run of the Lua layer produced.

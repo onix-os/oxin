@@ -24,13 +24,13 @@ local oxin = require("oxin")
 -- Set this BEFORE any MOD+ binding: chords resolve MOD as they are written.
 oxin.modifier = "super"                 -- super | alt | ctrl | shift
 
-oxin.gap = 2                            -- pixels between and around windows
+oxin.gap = 4                            -- pixels between and around windows
 oxin.first_split = "vertical"           -- vertical (left/right) | horizontal
 oxin.background = { 0.0, 0.6, 0.6 }     -- r, g, b in 0..1
 -- oxin.wallpaper = "~/pictures/wall.png"  -- PNG or JPEG; colour stays the fallback
 
 oxin.window_opacity = 1.0               -- 0.0..1.0, applied to app windows
-oxin.corner_radius = 0                  -- logical pixels; 0 disables masking
+oxin.corner_radius = 8                  -- logical pixels; 0 disables masking
 oxin.float_size = { 60, 60 }            -- default float size, % of usable area
 
 -- Touch: whether the bottom gesture target draws a visible pill.

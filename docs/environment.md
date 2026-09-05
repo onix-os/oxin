@@ -24,12 +24,77 @@ work around).
 it to parse the wlroots C headers into Rust FFI declarations.
 
 A [direnv](https://direnv.net) `.envrc` is committed (run `direnv allow`
-once after cloning, if you use direnv — it's optional). Today it only turns
-backtraces on (`RUST_BACKTRACE=1`); it's also the designated place for
-`PKG_CONFIG_PATH`/`LD_LIBRARY_PATH` if we ever pin our own wlroots build
-instead of the Arch package. Per-scenario variables (`WLR_BACKENDS`,
+once after cloning, if you use direnv — it's optional). It turns backtraces
+on (`RUST_BACKTRACE=1`) and, on a machine that has Nix, enters the flake's
+devshell — the check is guarded, so the file stays a no-op here on Arch. It's
+also the designated place for `PKG_CONFIG_PATH`/`LD_LIBRARY_PATH` if we ever
+pin our own wlroots build instead of the Arch package. Per-scenario variables (`WLR_BACKENDS`,
 `WLR_WL_OUTPUTS`, `OXIN_MOD`, …) deliberately stay on the command line —
 they select a run mode and don't belong in ambient env.
+
+## Building with Nix
+
+Arch is where 0xin is developed, but it isn't the only way to build it. A `flake.nix`
+is committed, and it is what makes 0xin installable on NixOS as a real session rather
+than a checkout somebody has to build by hand.
+
+```sh
+nix build          # packages.default — the 0xin and 0xinctl binaries
+nix develop        # devShells.default — the system dependencies above, plus cargo
+nix flake check    # builds the package and runs the test suite in the sandbox
+nix run . -- kitty # apps.default
+```
+
+The flake follows the one in [oslo](https://github.com/termworks/oslo) — nixpkgs
+pinned by revision, `flake-utils` over x86_64 and aarch64 (the FP5 profile is the
+aarch64 target), `rust-overlay` for the toolchain, and the version read out of
+`Cargo.toml` — with two deliberate differences:
+
+- **The Rust version is not written in `flake.nix`.** oslo deleted its
+  `rust-toolchain.toml` and moved the number into the flake, because two copies drift.
+  0xin needs the file — it is how the rustup build above gets 1.96.0 — so the flake
+  reads the channel out of it instead. The number still lives in exactly one place.
+- **No static build.** oslo ships a static musl binary; a compositor cannot. 0xin
+  links wlroots, EGL/GLESv2, libinput, libdrm and libseat dynamically, and the GPU
+  driver has to come from the host at runtime.
+
+`buildInputs` is deliberately short: `build.rs` probes only `wlroots-0.19`,
+`wayland-server`, `xkbcommon`, `glesv2` and `egl` (plus `wayland-protocols` for its
+`pkgdatadir`), and everything else 0xin links — libseat, libgbm, libinput, libdrm,
+pixman, libdisplay-info — arrives transitively through wlroots. `libclang` comes from
+`rustPlatform.bindgenHook`, which sets the include arguments bindgen needs.
+
+The `luna` dependency is a git tag, so `cargoLock.outputHashes` carries a hash for it.
+It only ever changes when the tag in `Cargo.toml` does: set it to `lib.fakeHash`, run
+`nix build`, and copy the `got:` hash from the error.
+
+### As a NixOS session
+
+`nixosModules.default` turns the package into a session the machine offers:
+
+```nix
+imports = [ inputs.oxin.nixosModules.default ];
+
+programs.oxin = {
+  enable = true;
+  extraPackages = [ pkgs.kitty ];  # Mod+Return spawns kitty by default
+  config = ''
+    local oxin = require("oxin")
+    oxin.gap = 10
+  '';
+  plugins = [ ./my-0xin-plugin ];
+};
+```
+
+`enable` installs both binaries and registers the `wayland-sessions` entry the package
+ships, so a display manager lists **0xin** to log into. It also turns on
+`hardware.graphics` and polkit; seatd is deliberately left alone, because logind hands
+the active VT its devices — the same thing `LIBSEAT_BACKEND=logind` arranges on Arch.
+
+`config` is written to `/etc/xdg/0xin/init.lua` and `plugins` are linked under
+`/etc/xdg/0xin/pack/nix/start/`, which is a runtimepath root 0xin already scans (see
+[Configuration](../README.md#configuration)). A user's own `~/.config/0xin/init.lua`
+still takes precedence over the system one.
 
 ## The FFI pipeline
 

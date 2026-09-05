@@ -87,6 +87,38 @@ The build script (`build.rs`) finds wlroots via `pkg-config`, generates the
 `xdg-shell` protocol header with `wayland-scanner`, compiles the C shim, and runs
 `bindgen` over `wrapper.h`.
 
+### With Nix
+
+A flake is committed, so 0xin builds without any of the above on a machine that has
+Nix — and can be declared as a session on NixOS. The Rust version is not repeated in
+`flake.nix`; it is read out of `rust-toolchain.toml`, so both builds use the same
+compiler.
+
+```sh
+nix build                        # the compositor, 0xinctl, and a wayland-sessions entry
+nix develop                      # wlroots 0.19, clang and the pinned toolchain, then cargo
+OXIN_MOD=alt nix run . -- kitty  # the nested dev loop, without installing anything
+```
+
+On NixOS, import the module and the session appears in your display manager:
+
+```nix
+{
+  inputs.oxin.url = "github:termworks/0xin";
+
+  # in configuration.nix
+  imports = [ inputs.oxin.nixosModules.default ];
+  programs.oxin = {
+    enable = true;
+    extraPackages = [ pkgs.kitty ];   # Mod+Return spawns kitty by default
+    config = ''
+      local oxin = require("oxin")
+      oxin.gap = 10
+    '';
+  };
+}
+```
+
 ## Run
 
 ### Nested (the fast dev loop)
