@@ -556,7 +556,10 @@ fn a_users_config_wins_over_the_system_one() {
 
     // Only the system's: that one, which is the whole point of the fallback.
     std::fs::write(&system, b"oxin.gap = 1\n").unwrap();
-    assert_eq!(pick(Some(user.clone()), system.clone()), Some(system.clone()));
+    assert_eq!(
+        pick(Some(user.clone()), system.clone()),
+        Some(system.clone())
+    );
 
     // Both: the user's.
     std::fs::write(&user, b"oxin.gap = 2\n").unwrap();

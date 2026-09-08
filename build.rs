@@ -25,6 +25,21 @@ fn main() {
     let xkbcommon = pkg_config::Config::new()
         .probe("xkbcommon")
         .expect("xkbcommon not found via pkg-config");
+    // Two header-only dependencies of the *compile*, asked for by name. wlroots
+    // lists both under `Requires.private`, so whether their include paths reach
+    // us for free depends on how the .pc chain is resolved — on Arch they do, in
+    // a Nix build sandbox they don't. Naming them is cheap and works everywhere.
+    //
+    // - libdrm: shim/output.c includes <drm_fourcc.h> for the DRM format
+    //   constants on the buffer it hands wlroots.
+    // - pixman: wlroots' own public headers (wlr/types/wlr_output.h and the
+    //   render headers) include <pixman.h>, so anything including them needs it.
+    let libdrm = pkg_config::Config::new()
+        .probe("libdrm")
+        .expect("libdrm not found via pkg-config");
+    let pixman = pkg_config::Config::new()
+        .probe("pixman-1")
+        .expect("pixman-1 not found via pkg-config");
     // The corner-radius mask pass drives GLES2/EGL directly (wlroots' scene
     // API has no shader-injection point), so we need both libraries too.
     let glesv2 = pkg_config::Config::new()
@@ -94,6 +109,8 @@ fn main() {
         .iter()
         .chain(wayland.include_paths.iter())
         .chain(xkbcommon.include_paths.iter())
+        .chain(libdrm.include_paths.iter())
+        .chain(pixman.include_paths.iter())
         .chain(glesv2.include_paths.iter())
         .chain(egl.include_paths.iter())
         .cloned()

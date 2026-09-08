@@ -95,10 +95,14 @@ Nix — and can be declared as a session on NixOS. The Rust version is not repea
 compiler.
 
 ```sh
-nix build                        # the compositor, 0xinctl, and a wayland-sessions entry
-nix develop                      # wlroots 0.19, clang and the pinned toolchain, then cargo
-OXIN_MOD=alt nix run . -- kitty  # the nested dev loop, without installing anything
+nix build     # the compositor, 0xinctl, and a wayland-sessions entry
+nix develop   # wlroots 0.19, clang and the pinned toolchain, then cargo
+nix flake check
 ```
+
+On a non-NixOS host the Nix-built binary builds but won't render — it links Nix's
+libglvnd and can't see the system's GPU driver. Build with Nix, run with `cargo`; on
+NixOS the module turns on `hardware.graphics` and it runs as a real session.
 
 On NixOS, import the module and the session appears in your display manager:
 

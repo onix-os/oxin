@@ -45,10 +45,25 @@ nix flake check    # builds the package and runs the test suite in the sandbox
 nix run . -- kitty # apps.default
 ```
 
+On Arch itself, Nix needs three things done once before any of that works. The package
+installs the binaries and the systemd units but **does not create the store**, and
+because the client resolves its store path before it ever connects to the daemon, every
+command fails with `opening file "/nix/store": No such file or directory` until it
+exists:
+
+```sh
+sudo systemctl enable --now nix-daemon.socket
+sudo nix-store --init     # creates /nix/store — the step that is easy to miss
+mkdir -p ~/.config/nix && printf 'experimental-features = nix-command flakes\n' >> ~/.config/nix/nix.conf
+```
+
+Flakes are not a separate package — they are an experimental feature of the `nix`
+already installed, which is what the third line turns on.
+
 The flake follows the one in [oslo](https://github.com/termworks/oslo) — nixpkgs
 pinned by revision, `flake-utils` over x86_64 and aarch64 (the FP5 profile is the
 aarch64 target), `rust-overlay` for the toolchain, and the version read out of
-`Cargo.toml` — with two deliberate differences:
+`Cargo.toml` — with three deliberate differences:
 
 - **The Rust version is not written in `flake.nix`.** oslo deleted its
   `rust-toolchain.toml` and moved the number into the flake, because two copies drift.
@@ -57,12 +72,40 @@ aarch64 target), `rust-overlay` for the toolchain, and the version read out of
 - **No static build.** oslo ships a static musl binary; a compositor cannot. 0xin
   links wlroots, EGL/GLESv2, libinput, libdrm and libseat dynamically, and the GPU
   driver has to come from the host at runtime.
+- **A different nixpkgs revision.** Not a preference: crates.io now answers every
+  `/api/v1/crates/<crate>/<version>/download` with a 403, and nixpkgs only switched
+  crate fetching to the `static.crates.io` CDN after the revision oslo pins. Against
+  an older nixpkgs the build cannot vendor its dependencies at all. The revision here
+  carries that fix and still has wlroots 0.19.3 — the same version Arch ships.
 
-`buildInputs` is deliberately short: `build.rs` probes only `wlroots-0.19`,
-`wayland-server`, `xkbcommon`, `glesv2` and `egl` (plus `wayland-protocols` for its
-`pkgdatadir`), and everything else 0xin links — libseat, libgbm, libinput, libdrm,
-pixman, libdisplay-info — arrives transitively through wlroots. `libclang` comes from
-`rustPlatform.bindgenHook`, which sets the include arguments bindgen needs.
+`buildInputs` is short, and there is one entry per pkg-config module `build.rs`
+probes: `wlroots-0.19`, `wayland-server`, `xkbcommon`, `libdrm`, `pixman-1`, `glesv2`
+and `egl`, plus `wayland-protocols` for its `pkgdatadir`. Everything else 0xin links —
+libseat, libgbm, libinput, libdisplay-info, libliftoff — is pulled in by wlroots and
+needs no entry. `libclang` comes from `rustPlatform.bindgenHook`, which sets the
+include arguments bindgen needs.
+
+`libdrm` and `pixman-1` are probed by name for a reason worth knowing: wlroots lists
+its dependencies under `Requires.private`, and whether their include paths reach a
+compile depends on how the `.pc` chain gets resolved. On Arch they arrive for free, so
+`shim/output.c`'s `#include <drm_fourcc.h>` and wlroots' own `#include <pixman.h>` just
+work; in a Nix build sandbox they do not, and the compile fails on a missing header.
+Naming both in `build.rs` costs nothing and makes the build independent of that
+difference — which is why the fix lives in `build.rs` rather than in `flake.nix`.
+
+### Running the Nix build on a non-NixOS host
+
+`nix build` produces a working compositor, but **running it on Arch will not get you a
+picture**: it fails at `Could not initialize renderer`, with no EGL client extensions
+and `ERROR_INCOMPATIBLE_DRIVER` from Vulkan. Nothing is wrong with the build — a
+Nix-built binary links Nix's libglvnd, which looks for the GPU driver Nix knows about,
+and Arch's Mesa is not it. On NixOS the driver comes from `hardware.graphics`, which
+`programs.oxin.enable` turns on, and the same binary runs fine; elsewhere it needs
+[nixGL](https://github.com/nix-community/nixGL).
+
+So on Arch, use Nix to *build* and `cargo` to *run* — which is the order this chapter
+already recommends. The same caveat applies to running the compositor out of `nix
+develop`; building there is fine.
 
 The `luna` dependency is a git tag, so `cargoLock.outputHashes` carries a hash for it.
 It only ever changes when the tag in `Cargo.toml` does: set it to `lib.fakeHash`, run

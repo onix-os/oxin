@@ -90,17 +90,20 @@
             rustPlatform.bindgenHook
           ];
 
-          # Exactly the five modules `build.rs` probes with pkg-config, plus
-          # wayland-protocols for its `pkgdatadir` variable. libglvnd is what provides the
-          # `egl` and `glesv2` .pc files. Everything else 0xin links (libseat, libgbm,
-          # libinput, libdrm, pixman, libdisplay-info, …) propagates through wlroots — see
-          # `ldd` on a built binary.
+          # One entry per pkg-config module `build.rs` probes, plus wayland-protocols for
+          # its `pkgdatadir` variable. libglvnd provides the `egl` and `glesv2` .pc files;
+          # libdrm and pixman are here because the C shim and wlroots' own headers include
+          # <drm_fourcc.h> and <pixman.h>. The rest of what 0xin links (libseat, libgbm,
+          # libinput, libdisplay-info, …) is pulled in by wlroots and needs no entry —
+          # see `ldd` on a built binary.
           buildInputs = [
             pkgs.wlroots_0_19
             pkgs.wayland
             pkgs.wayland-protocols
             pkgs.libxkbcommon
             pkgs.libglvnd
+            pkgs.libdrm
+            pkgs.pixman
           ];
 
           # `src/lua/tests.rs` reads HOME and XDG_CONFIG_HOME to work out where a config
