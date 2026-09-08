@@ -42,9 +42,24 @@ GL directly before this; every prior frame was 100% delegated to
   for `GL_TEXTURE_EXTERNAL_OES`/`samplerExternalOES`, since
   `wlr_gles2_texture_get_attribs` can report either depending on the
   client's buffer import path, and using the wrong sampler type for the
-  bound texture renders solid black, not a GL error. NULL on any
-  compile/link failure — corner-radius masking is then silently
-  unavailable rather than crashing the compositor.
+  bound texture renders solid black, not a GL error. The two are built
+  **independently and either one is enough**: a driver missing
+  `GL_OES_EGL_image_external` costs rounding only on clients that actually
+  hand over external textures, and the apply path leaves a window unmasked
+  when the variant it would need is absent. NULL on any compile/link
+  failure — corner-radius masking is then unavailable rather than crashing
+  the compositor.
+
+  **This needs the GLES2 renderer, and checks first.** wlroots chooses a
+  renderer on its own, and on a Vulkan or pixman session every entry point
+  used here is unavailable: `wlr_gles2_renderer_get_egl` asserts that its
+  argument really is the GLES2 renderer, so calling it aborts the whole
+  compositor rather than returning an error. The constructor therefore
+  starts with `wlr_renderer_is_gles2` and, when that is false, logs one line
+  and returns NULL so `corner_radius` is a no-op instead of a crash.
+  `WLR_RENDERER=gles2` forces the renderer if a machine picks another. This
+  was a real crash, not a precaution — reproduced with
+  `WLR_RENDERER=pixman`, which is also the regression test.
 - `oxide_toplevel_apply_corner_radius` runs from `src/toplevel.rs`'s
   `handle_commit` — the same per-commit hook that already reapplies
   `window_opacity` — gated on `corner_radius > 0` and the window not being

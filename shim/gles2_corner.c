@@ -163,6 +163,19 @@ static const GLfloat QUAD_VERTICES[] = {
 };
 
 void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer) {
+    // Every GL call below reaches the renderer through wlroots' GLES2 API, and
+    // `wlr_gles2_renderer_get_egl` asserts its argument really is that renderer
+    // — so on a Vulkan or pixman session, calling it *aborts the compositor*
+    // before this function can report anything. Ask first. wlroots picks the
+    // renderer itself, so a machine that lands on another one is not a
+    // misconfiguration; it just cannot have this feature.
+    if (!wlr_renderer_is_gles2(renderer)) {
+        wlr_log(WLR_INFO, "0xin: corner-radius masking needs the GLES2 renderer and "
+                "this session is using another one (WLR_RENDERER=gles2 forces it) — "
+                "corner_radius will have no effect");
+        return NULL;
+    }
+
     struct wlr_egl *egl = wlr_gles2_renderer_get_egl(renderer);
     EGLDisplay display = wlr_egl_get_display(egl);
     EGLContext context = wlr_egl_get_context(egl);
@@ -174,10 +187,18 @@ void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer) {
 
     struct oxide_corner_program *p = calloc(1, sizeof(*p));
     GLuint vertex = compile_shader(GL_VERTEX_SHADER, VERTEX_SRC);
-    bool ok = vertex != 0
-            && build_variant(&p->tex2d, vertex, "sampler2D", "")
+
+    // The two variants are built independently, and one is enough. Which one a
+    // window needs depends on how its client's buffer was imported, so a driver
+    // without GL_OES_EGL_image_external should cost rounding only on the clients
+    // that actually hand over external textures — not on every window on the
+    // screen, which is what requiring both variants used to do.
+    bool have_2d = vertex != 0
+            && build_variant(&p->tex2d, vertex, "sampler2D", "");
+    bool have_oes = vertex != 0
             && build_variant(&p->tex_oes, vertex, "samplerExternalOES",
                     "#extension GL_OES_EGL_image_external : enable\n");
+    bool ok = have_2d || have_oes;
     if (vertex != 0) {
         glDeleteShader(vertex);
     }
@@ -205,7 +226,15 @@ void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer) {
         free(p);
         return NULL;
     }
-    wlr_log(WLR_INFO, "0xin: corner-radius GLES2 program ready");
+    if (have_2d && have_oes) {
+        wlr_log(WLR_INFO, "0xin: corner-radius GLES2 program ready");
+    } else {
+        // Worth a warning rather than silence: rounding will look inconsistent
+        // between windows, and this says which half is missing and why.
+        wlr_log(WLR_ERROR, "0xin: corner-radius GLES2 program ready for %s textures "
+                "only — windows using the other kind stay square",
+                have_2d ? "sampler2D" : "external (OES)");
+    }
     return p;
 }
 
@@ -308,6 +337,16 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     }
     struct wlr_gles2_texture_attribs attribs;
     wlr_gles2_texture_get_attribs(texture, &attribs);
+
+    // Bail before allocating a swapchain if the shader this texture would need
+    // never built (see the variant handling in the program constructor). The
+    // window then keeps square corners instead of being masked with the wrong
+    // sampler type, which renders solid black rather than failing loudly.
+    const struct oxide_corner_variant *needed =
+            attribs.target == GL_TEXTURE_EXTERNAL_OES ? &prog->tex_oes : &prog->tex2d;
+    if (needed->program == 0) {
+        return false;
+    }
 
     int w = root_surface->current.buffer_width;
     int h = root_surface->current.buffer_height;

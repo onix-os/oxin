@@ -31,6 +31,7 @@ oxin.background = { 0.0, 0.6, 0.6 }     -- r, g, b in 0..1
 
 oxin.window_opacity = 1.0               -- 0.0..1.0, applied to app windows
 oxin.corner_radius = 8                  -- logical pixels; 0 disables masking
+                                        -- (needs wlroots' GLES2 renderer)
 oxin.float_size = { 60, 60 }            -- default float size, % of usable area
 
 -- Touch: whether the bottom gesture target draws a visible pill.
