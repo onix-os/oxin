@@ -59,6 +59,6 @@ real DRM/KMS session on a bare TTY. It tiles windows, switches workspaces,
 reads a config file, survives VT switching, and drives multiple monitors with
 configurable position and scale. It's being grown into something to
 daily-drive, one capability at a time — see the [repository
-README](https://github.com/termworks/0xin#readme) for the current feature list,
+README](https://github.com/onix-os/oxin#readme) for the current feature list,
 or jump straight to the [build phases](phases/README.md) for the story of how
 it got there.

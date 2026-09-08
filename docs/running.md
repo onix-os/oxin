@@ -3,7 +3,7 @@
 Building a compositor raises an obvious problem: how do you check that a
 change actually works, when the thing you built *is* the environment
 everything else renders inside? This chapter is less "here's the command"
-(the [README](https://github.com/termworks/0xin#readme) covers that) and more
+(the [README](https://github.com/onix-os/oxin#readme) covers that) and more
 about the verification habits that came out of building 0xin without a
 synthetic-input tool available in the dev environment (no `wtype`/`ydotool`)
 — every recipe here exists because "just try it and see" wasn't always

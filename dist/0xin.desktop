@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=0xin
+Comment=A from-scratch tiling Wayland compositor in Rust on wlroots
+Exec=0xin
+TryExec=0xin
+Type=Application
+DesktopNames=0xin

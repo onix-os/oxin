@@ -54,18 +54,6 @@
           rustc = toolchain;
         };
 
-        # A session entry, so a display manager can offer 0xin as a Wayland session.
-        # `services.displayManager.sessionPackages` in `nix/module.nix` picks this up.
-        sessionDesktop = pkgs.writeText "0xin.desktop" ''
-          [Desktop Entry]
-          Name=0xin
-          Comment=${manifest.package.description}
-          Exec=0xin
-          TryExec=0xin
-          Type=Application
-          DesktopNames=0xin
-        '';
-
         oxin = rustPlatform.buildRustPackage {
           pname = "oxin";
           inherit version;
@@ -113,8 +101,13 @@
             export XDG_CONFIG_HOME="$TMPDIR/config"
           '';
 
+          # The session entry a display manager reads, so it can offer 0xin as a session
+          # (`services.displayManager.sessionPackages` in `nix/module.nix` picks it up).
+          # It is `dist/0xin.desktop` in the tree rather than text generated here, because
+          # `make install` and the release tarball install the very same file — one entry,
+          # not three copies to drift apart.
           postInstall = ''
-            install -Dm444 ${sessionDesktop} "$out/share/wayland-sessions/0xin.desktop"
+            install -Dm444 dist/0xin.desktop "$out/share/wayland-sessions/0xin.desktop"
           '';
 
           # A compositor can't be started in a sandbox with no seat, no GPU and no display,
@@ -150,7 +143,7 @@
 
           meta = {
             description = manifest.package.description;
-            homepage = "https://github.com/termworks/0xin";
+            homepage = "https://github.com/onix-os/oxin";
             license = lib.licenses.mit;
             mainProgram = "0xin";
             platforms = lib.platforms.linux;

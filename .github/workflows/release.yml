@@ -1,0 +1,122 @@
+name: release
+
+on:
+  release:
+    types: [created]
+  # So a binary can be built and downloaded without cutting a release — which is most of
+  # why anybody wants one, and it means the first tag is not what discovers a broken build.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04-arm
+            artifact: "0xin-linux-arm64-musl"
+    steps:
+      - uses: actions/checkout@v4
+      # **Why Alpine, and why this job exists at all.**
+      #
+      # The reference phone (Fairphone 5, postmarketOS) is musl, so a glibc build cannot
+      # run there. It also cannot build 0xin *itself*: on postmarketOS with systemd,
+      # `wlroots0.19-dev` pulls `libseat-dev`, which pulls `elogind-dev`, which conflicts
+      # with the installed `systemd-dev` — an Alpine packaging conflict with no
+      # workaround on the device. A clean Alpine has no systemd-dev and no conflict, so
+      # the binary gets built here instead.
+      #
+      # The runner is arm64, so this is a native build inside a native Alpine root — no
+      # cross-compiler, no qemu.
+      #
+      # `clang-dev` is what bindgen needs; it pulls `clang*-libclang` (the actual
+      # libclang.so) on its own. `wayland-dev` is what owns `wayland-scanner`.
+      # `libinput-dev` and `libseat-dev` arrive with `wlroots0.19-dev`.
+      - uses: jirutka/setup-alpine@v1
+        with:
+          branch: edge
+          packages: >
+            build-base
+            cargo
+            pkgconf
+            clang-dev
+            wlroots0.19-dev
+            wayland-dev
+            wayland-protocols
+            libxkbcommon-dev
+            libdrm-dev
+            pixman-dev
+            mesa-dev
+      # `rust-toolchain.toml` is deliberately not honoured here and cannot be: it is a
+      # rustup file, and this is Alpine's own cargo. The pin governs the rustup/Arch
+      # build; the distro compiler builds the distro binary, which is the point.
+      - name: Build
+        shell: alpine.sh {0}
+        run: |
+          cargo build --release --locked
+          ls -l target/release/0xin target/release/0xinctl
+      # oslo asserts its binaries are *static*. A compositor cannot be: it links wlroots,
+      # EGL, libinput and libseat dynamically and takes its GPU driver from the host. So
+      # assert the things that are actually true and actually break — that every library
+      # it needs resolves against a plain Alpine runtime, and that the binary starts.
+      - name: Verify
+        shell: alpine.sh {0}
+        run: |
+          for bin in target/release/0xin target/release/0xinctl; do
+            file "$bin"
+          done
+
+          if ldd target/release/0xin | grep -i "not found"; then
+            echo "::error::0xin has unresolved libraries against a plain Alpine root" >&2
+            exit 1
+          fi
+          echo "0xin: every NEEDED library resolves"
+
+          # 0xinctl with no arguments prints its usage and exits 2 without touching the
+          # control socket — no seat, no GPU and no display needed, so it is the one
+          # runtime assertion a CI runner can honestly make about this build.
+          set +e
+          usage="$(./target/release/0xinctl 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "::error::0xinctl with no arguments exited $status, expected 2" >&2
+            exit 1
+          fi
+          case "$usage" in
+            usage:*) echo "0xinctl: prints usage and exits 2" ;;
+            *) echo "::error::0xinctl printed no usage: $usage" >&2; exit 1 ;;
+          esac
+      # The session entry and installer ship alongside the binaries, so a release
+      # installs the same files in the same places as `make install` from source.
+      - name: Package
+        run: |
+          mkdir -p "${{ matrix.artifact }}"
+          cp target/release/0xin target/release/0xinctl "${{ matrix.artifact }}/"
+          cp dist/0xin.desktop dist/install.sh "${{ matrix.artifact }}/"
+          chmod +x "${{ matrix.artifact }}/install.sh"
+          tar -czf "${{ matrix.artifact }}.tar.gz" "${{ matrix.artifact }}"
+          sha256sum "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256"
+          ls -l "${{ matrix.artifact }}.tar.gz"
+      # Downloadable from the run itself, so a manual build is useful without a release.
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256
+          if-no-files-found: error
+      # And attached to the release, when there is one.
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=0xin (Fairphone 5)
+Comment=0xin with the Fairphone 5 profile
+Exec=/usr/local/bin/0xin-fp5-session
+TryExec=/usr/local/bin/0xin-fp5-session
+Type=Application
+DesktopNames=0xin

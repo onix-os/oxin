@@ -4,27 +4,60 @@ This profile is intentionally temporary: it starts 0xin directly on DRM/KMS
 with Patin and a gesture-controlled wvkbd, without text-input-driven automatic
 keyboard activation or autologin. Phosh and Hyprland remain separate sessions.
 
-The wrapper now starts only 0xin. Session clients are declared in the profile's
-`config/0xin/0xin.conf` with repeated `exec_once` lines: Patin and wvkbd. Each
-is launched once per compositor process after `WAYLAND_DISPLAY` is ready. Edit
+The wrapper starts only 0xin. Session clients are declared in the profile's
+`config/0xin/init.lua` with `oxin.on.startup(...)` registrations: Patin, its
+on-screen keyboard, the workspace bar and the auto-rotate helper. Each is
+launched once per compositor process after `WAYLAND_DISPLAY` is ready. Edit
 those lines to change the shell/session composition without rewriting the
 session wrapper.
+
+## Installing
+
+**The phone cannot build 0xin.** On postmarketOS with systemd,
+`wlroots0.19-dev` pulls `libseat-dev`, which pulls `elogind-dev`, which
+conflicts with the installed `systemd-dev` — an Alpine packaging conflict with
+no workaround on the device. The runtime is fine, so the compositor comes from
+a release build instead:
+
+```sh
+sudo apk add wlroots0.19          # once; pulls libliftoff, no conflict
+
+curl -LO https://github.com/onix-os/oxin/releases/latest/download/0xin-linux-arm64-musl.tar.gz
+tar xzf 0xin-linux-arm64-musl.tar.gz
+cd 0xin-linux-arm64-musl && sudo ./install.sh
+```
+
+That puts `0xin` and `0xinctl` in `/usr/local/bin`, which is already on the
+phone's `PATH`. No `LD_LIBRARY_PATH`, no `.sysroot`, no build tree.
+
+The profile's own assets — the helper scripts below and `init.lua` — are not
+part of the compositor package. Keep a clone for them; it is never built:
+
+```sh
+git clone https://github.com/onix-os/oxin ~/proj/0xin
+install -Dm644 ~/proj/0xin/profiles/fp5/config/0xin/init.lua ~/.config/0xin/init.lua
+install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-auto-rotate ~/.local/bin/
+install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-session-menu ~/.local/bin/
+sudo install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-fp5-session /usr/local/bin/
+```
+
+`init.lua` goes to `~/.config/0xin/init.lua`, where 0xin's normal search path
+finds it — the session wrapper no longer overrides `XDG_CONFIG_HOME`.
 
 ## Wallpaper
 
 0xin renders wallpapers internally; the FP5 does not need swaybg, Hyprpaper,
 or another layer-shell wallpaper process. Add a persistent image to
-`config/0xin/0xin.conf`:
+`~/.config/0xin/init.lua`:
 
-```ini
-wallpaper = ~/Pictures/wallpaper.jpg
+```lua
+oxin.wallpaper = "~/Pictures/wallpaper.jpg"
 ```
 
 PNG and JPEG images use cover scaling. From a terminal inside the running 0xin
 session, change or clear it immediately:
 
 ```sh
-install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
 0xinctl wallpaper ~/Pictures/another.png
 0xinctl wallpaper clear
 ```
@@ -46,7 +79,6 @@ other helpers:
 
 ```sh
 install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-auto-rotate ~/.local/bin/
-install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
 ```
 
 Touch input is mapped to the output (`wlr_cursor_map_input_to_output`) so it
@@ -72,26 +104,35 @@ xdg-user-dirs-update --set PICTURES "$HOME/pics"
 
 New captures therefore go to `~/pics/Camera` instead of `~/Pictures/Camera`.
 
-Build 0xin in `~/proj/0xin`, then install the chooser entry:
+Install the chooser entry. Phrog reads `/usr/share/wayland-sessions`, so the
+entry goes there even though the binaries live under `/usr/local`:
 
 ```sh
 sudo install -m 0644 \
-  ~/proj/0xin/profiles/fp5/0xin-touch-test.desktop \
-  /usr/share/wayland-sessions/0xin-touch-test.desktop
+  ~/proj/0xin/profiles/fp5/0xin-fp5.desktop \
+  /usr/share/wayland-sessions/0xin-fp5.desktop
 ```
 
-Confirm SSH works before logging out. Select **0xin Touch Test** in Phrog.
+Remove any earlier entries first — `0xin-touch-test.desktop` hardcoded a path
+into a build tree, and `0xin-smithay-test.desktop` predates wlroots entirely:
+
+```sh
+sudo rm -f /usr/share/wayland-sessions/0xin-touch-test.desktop \
+           /usr/share/wayland-sessions/0xin-smithay-test.desktop
+```
+
+Confirm SSH works before logging out. Select **0xin (Fairphone 5)** in Phrog.
 End the test from another machine:
 
 ```sh
 ssh fp5 'pkill -TERM -x 0xin'
 ```
 
-The wrapper exits with 0xin, returning control to greetd. Remove the temporary
-entry when it is no longer needed:
+The wrapper exits with 0xin, returning control to greetd. Remove the entry when
+it is no longer needed:
 
 ```sh
-sudo rm /usr/share/wayland-sessions/0xin-touch-test.desktop
+sudo rm /usr/share/wayland-sessions/0xin-fp5.desktop
 ```
 
 ## Power button and logout
@@ -107,7 +148,6 @@ Install the profile helper and current control client:
 
 ```sh
 install -m 0755 ~/proj/0xin/profiles/fp5/bin/0xin-session-menu ~/.local/bin/
-install -m 0755 ~/proj/0xin/target/debug/0xinctl ~/.local/bin/0xinctl
 ```
 
 A shorter power-button press launches the independently installed,
@@ -115,9 +155,9 @@ touch-capable Patin lock client; reaching the two-second hold threshold launches
 the session menu instead. The `pgrep` guard prevents another locker from being
 started while Patin's supervisor or lock worker is already running.
 
-```ini
-bind = , XF86PowerOff, spawn, pgrep -x patin-lock >/dev/null || patin-lock
-hold = , XF86PowerOff, 2000, spawn, ~/.local/bin/0xin-session-menu
+```lua
+oxin.keys["XF86PowerOff"] = oxin.action.spawn("pgrep -x patin-lock >/dev/null || patin-lock")
+oxin.hold["XF86PowerOff"] = { ms = 2000, action = oxin.action.spawn("~/.local/bin/0xin-session-menu") }
 ```
 
 `patin-lock` owns its touch password keyboard because an ordinary layer-shell

@@ -1,0 +1,26 @@
+#!/bin/sh
+# greetd session wrapper for the Fairphone 5 profile.
+#
+# What is left here is only what a *session* needs — everything that is compositor
+# configuration is ordinary Lua in ~/.config/0xin/init.lua, found by 0xin's normal
+# search path rather than by this script overriding XDG_CONFIG_HOME.
+#
+# It runs the installed `0xin`, not a binary inside a checkout. The phone cannot build
+# 0xin (Alpine's libseat-dev conflicts with systemd-dev on postmarketOS), so the binary
+# comes from a release; see profiles/fp5/README.md.
+set -eu
+
+# A greetd session starts without a parent Wayland display. Clear any stale inherited
+# display variables anyway so wlroots must choose DRM + libinput.
+unset WAYLAND_DISPLAY DISPLAY
+export XDG_CURRENT_DESKTOP=0xin
+export WLR_BACKENDS=drm,libinput
+export LIBSEAT_BACKEND=logind
+
+# stdout/stderr otherwise go to the real console, which isn't visible once 0xin takes
+# over the display and isn't readable after the fact from a separate SSH session — a log
+# file makes post-hoc debugging possible without eyes on the physical screen.
+# Overwritten each run.
+log_file="$HOME/.local/state/0xin.log"
+mkdir -p "$(dirname "$log_file")"
+exec 0xin > "$log_file" 2>&1

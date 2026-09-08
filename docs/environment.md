@@ -32,6 +32,31 @@ pin our own wlroots build instead of the Arch package. Per-scenario variables (`
 `WLR_WL_OUTPUTS`, `OXIN_MOD`, …) deliberately stay on the command line —
 they select a run mode and don't belong in ambient env.
 
+## Installing
+
+Cargo builds; `make` installs. The split is deliberate and narrow: `cargo install`
+places binaries only, and only in `~/.cargo/bin`, which is not where a display manager
+looks for a session entry. So the Makefile does one job — put files where the system
+expects them:
+
+```sh
+make               # cargo build --release
+sudo make install  # PREFIX ?= /usr/local
+make uninstall
+```
+
+`$PREFIX/bin/0xin`, `$PREFIX/bin/0xinctl`, and
+`$PREFIX/share/wayland-sessions/0xin.desktop`. `PREFIX` and `DESTDIR` are both honoured,
+so a distro package builds with `make install PREFIX=/usr DESTDIR=...`.
+
+The prefix and layout follow **Hyprland**, which is the same kind of program: its
+Makefile defaults to `/usr/local` and its CMake installs the binary to `$PREFIX/bin` and
+`example/hyprland.desktop` to `$PREFIX/share/wayland-sessions/`, with Arch's package
+overriding `PREFIX=/usr`. Rust compositors differ on whether to have a Makefile at all —
+cosmic-comp ships one of exactly this shape, niri ships none and leaves the placing to
+packagers — but both keep the session entry as a real file in the tree, which is why
+`dist/0xin.desktop` exists rather than text generated inside `flake.nix`.
+
 ## Building with Nix
 
 Arch is where 0xin is developed, but it isn't the only way to build it. A `flake.nix`
@@ -139,6 +164,36 @@ the active VT its devices — the same thing `LIBSEAT_BACKEND=logind` arranges o
 [Configuration](../README.md#configuration)). A user's own `~/.config/0xin/init.lua`
 still takes precedence over the system one.
 
+## Releases
+
+`.github/workflows/release.yml` builds `0xin-linux-arm64-musl.tar.gz` — both binaries,
+`0xin.desktop` and `install.sh` — and attaches it to a GitHub release. It also runs on
+`workflow_dispatch`, so a binary can be produced without cutting a release, and so a tag
+is never the thing that discovers a broken build.
+
+It builds **inside Alpine edge on a native arm64 runner**, and the reason is specific
+rather than stylistic. The reference phone is musl, so a glibc build cannot run on it —
+and the phone cannot build 0xin itself:
+
+```
+$ apk add --simulate wlroots0.19-dev      # on postmarketOS with systemd
+ERROR: unable to select packages:
+  elogind-dev-255.24-r0:
+    conflicts: systemd-dev-261.2-r0
+    satisfies: libseat-dev-0.9.3-r1[pc:libelogind]
+```
+
+Alpine's `libseat-dev` is built against elogind, so on a systemd postmarketOS the whole
+`-dev` chain is uninstallable. A clean Alpine has no `systemd-dev` and no conflict, which
+is why the build happens in CI and the device gets a binary. The *runtime* is unaffected:
+`apk add wlroots0.19` resolves cleanly, so the released binary runs natively.
+
+Unlike [oslo](https://github.com/termworks/oslo)'s release workflow, this one does not
+assert the binary is static — a compositor links wlroots, EGL, libinput and libseat
+dynamically and takes its GPU driver from the host. It asserts what is true instead:
+every `NEEDED` library resolves against a plain Alpine root, and `0xinctl` with no
+arguments prints its usage and exits 2.
+
 ## The FFI pipeline
 
 `build.rs` does four things, in order, every build:
@@ -153,7 +208,7 @@ still takes precedence over the system one.
    0xin actually calls (see [Architecture](architecture.md) for why the
    allowlist exists and what it means for opaque struct types).
 
-See [`build.rs`](https://github.com/termworks/0xin/blob/main/build.rs) for the
+See [`build.rs`](https://github.com/onix-os/oxin/blob/main/build.rs) for the
 exact allowlist and flag wiring.
 
 ## Running it
@@ -176,5 +231,5 @@ Two run modes, both via cargo aliases in `.cargo/config.toml`:
 Full recipes, verification commands, and known gotchas (multi-GPU device
 selection, VT-switch repaint behavior, headless screenshot verification) live
 in [Running & Verifying](running.md) and the in-repo
-[`notes/`](https://github.com/termworks/0xin/tree/main/notes) directory, which
+[`notes/`](https://github.com/onix-os/oxin/tree/main/notes) directory, which
 is the day-to-day working reference this chapter is distilled from.

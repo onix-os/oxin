@@ -6,6 +6,6 @@ src = "docs"
 language = "en"
 
 [output.html]
-git-repository-url = "https://github.com/termworks/0xin"
+git-repository-url = "https://github.com/onix-os/oxin"
 default-theme = "navy"
 preferred-dark-theme = "navy"

@@ -87,6 +87,32 @@ The build script (`build.rs`) finds wlroots via `pkg-config`, generates the
 `xdg-shell` protocol header with `wayland-scanner`, compiles the C shim, and runs
 `bindgen` over `wrapper.h`.
 
+### Install
+
+`cargo build` leaves the binaries in `target/` and nothing else. `make install` puts
+them where a system expects them, using Hyprland's layout:
+
+```sh
+make               # cargo build --release
+sudo make install  # PREFIX=/usr/local
+```
+
+That places `0xin` and `0xinctl` in `$PREFIX/bin` and the session entry
+(`dist/0xin.desktop`) in `$PREFIX/share/wayland-sessions/`, so a display manager offers
+**0xin** as a session to log into. `PREFIX=/usr` and `DESTDIR=` are honoured for
+packaging, and `make uninstall` removes exactly what was installed.
+
+Cargo is still the build system; the Makefile exists only to place the files cargo
+cannot — `cargo install` handles binaries alone, and only into `~/.cargo/bin`.
+
+### Prebuilt releases
+
+Each [release](https://github.com/onix-os/oxin/releases) carries
+`0xin-linux-arm64-musl.tar.gz`, built on Alpine for aarch64 — for devices that cannot
+build 0xin themselves, such as a postmarketOS phone (see
+[`profiles/fp5/`](profiles/fp5/README.md)). Unpack it and run the included
+`install.sh`, which installs the same files to the same places as `make install`.
+
 ### With Nix
 
 A flake is committed, so 0xin builds without any of the above on a machine that has
@@ -108,7 +134,7 @@ On NixOS, import the module and the session appears in your display manager:
 
 ```nix
 {
-  inputs.oxin.url = "github:termworks/0xin";
+  inputs.oxin.url = "github:onix-os/oxin";
 
   # in configuration.nix
   imports = [ inputs.oxin.nixosModules.default ];

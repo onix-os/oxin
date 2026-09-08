@@ -1,6 +1,6 @@
 [package]
 name = "oxin"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "0xin — a from-scratch tiling Wayland compositor in Rust, built on wlroots"
 
