@@ -144,7 +144,10 @@ extern "C" {
         callback: ShimCallback,
         userdata: *mut c_void,
     ) -> *mut ShimListener;
-    pub(crate) fn oxide_xdg_shell_setup_popups(shell: *mut wlr::wlr_xdg_shell);
+    pub(crate) fn oxide_xdg_shell_setup_popups(
+        shell: *mut wlr::wlr_xdg_shell,
+        layout: *mut wlr::wlr_output_layout,
+    );
     pub(crate) fn oxide_scene_add_xdg_toplevel(
         tree: *mut wlr::wlr_scene_tree,
         toplevel: *mut wlr::wlr_xdg_toplevel,

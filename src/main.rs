@@ -266,7 +266,7 @@ fn main() {
         // its new_toplevel signal so each app window enters our scene graph.
         let xdg_shell = wlr::wlr_xdg_shell_create(display, 6);
         oxide_xdg_shell_add_new_toplevel(xdg_shell, handle_new_toplevel, server_ptr);
-        oxide_xdg_shell_setup_popups(xdg_shell);
+        oxide_xdg_shell_setup_popups(xdg_shell, output_layout);
 
         // xdg-decoration: force server-side mode on every toplevel so clients
         // skip drawing their own CSD title bar. We draw nothing in its place.

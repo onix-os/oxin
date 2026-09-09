@@ -160,8 +160,12 @@ void oxide_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int heigh
 // --- xdg-shell (app windows) ----------------------------------------------
 struct oxide_listener *oxide_xdg_shell_add_new_toplevel(
         struct wlr_xdg_shell *shell, oxide_callback callback, void *userdata);
-// Configure XDG popups after their initial commit so they can map.
-void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell);
+// Configure XDG popups after their initial commit so they can map, give each
+// one its own scene node (wlr_scene_xdg_surface_create on the toplevel covers
+// sub-surfaces only, never popups), and unconstrain it against its output so a
+// menu near an edge stays on screen. `layout` may be NULL to skip the latter.
+void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell,
+        struct wlr_output_layout *layout);
 // Add a toplevel to the scene graph, under `tree` (the normal/app-window
 // layer). Returns the scene tree node so Rust can position it. (Use
 // oxide_xdg_add_commit for the initial-configure listener.)

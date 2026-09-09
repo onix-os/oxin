@@ -260,9 +260,10 @@ static void log_gl_errors(const char *where) {
 
 // Walks every wlr_scene_buffer under a toplevel's scene tree (same primitive
 // oxide_scene_tree_set_opacity above already uses) looking for the one node
-// backed by the toplevel's own root surface — never a popup/subsurface, which
-// wlr_scene_xdg_surface_create also parents under the same tree and which
-// must stay unmasked.
+// backed by the toplevel's own root surface. Sub-surfaces are parented under
+// this tree by wlr_scene_xdg_surface_create and popups by handle_new_popup in
+// shim/xdg_shell.c; both must stay unmasked, which is why this matches on the
+// root surface rather than taking the first buffer it finds.
 static void find_root_scene_buffer(struct wlr_scene_buffer *buffer, int sx,
         int sy, void *userdata) {
     (void)sx;

@@ -1,10 +1,12 @@
 #define WLR_USE_UNSTABLE
 #include <stdlib.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
+#include <wlr/util/log.h>
 
 #include "oxide_shim_internal.h"
 
@@ -45,9 +47,65 @@ static void handle_popup_destroy_before_configure(struct wl_listener *listener,
     popup_configure_finish(pending);
 }
 
+// The output layout, kept so a popup can be unconstrained against the output it
+// actually appears on. Set once at startup by oxide_xdg_shell_setup_popups.
+static struct wlr_output_layout *popup_output_layout = NULL;
+
+// Keeps a popup on screen by letting wlroots apply the client's own positioner
+// rules (flip/slide/resize) against the output box. Without this a menu anchored
+// near an edge simply overflows it and is clipped — the positioner's constraint
+// adjustments are only applied when the compositor asks for them.
+static void popup_unconstrain(struct wlr_xdg_popup *popup,
+        struct wlr_scene_tree *parent_tree) {
+    if (popup_output_layout == NULL || parent_tree == NULL) {
+        return;
+    }
+    int lx, ly;
+    if (!wlr_scene_node_coords(&parent_tree->node, &lx, &ly)) {
+        return;
+    }
+    struct wlr_output *output =
+            wlr_output_layout_output_at(popup_output_layout, lx, ly);
+    if (output == NULL) {
+        return;
+    }
+    struct wlr_box box;
+    wlr_output_layout_get_box(popup_output_layout, output, &box);
+    // The box must be in the popup's root toplevel surface coordinates, and
+    // (lx, ly) is where that toplevel sits in the layout.
+    box.x -= lx;
+    box.y -= ly;
+    wlr_xdg_popup_unconstrain_from_box(popup, &box);
+}
+
 static void handle_new_popup(void *userdata, void *data) {
     (void)userdata;
     struct wlr_xdg_popup *popup = data;
+
+    // **A popup needs its own scene node.** `wlr_scene_xdg_surface_create` on
+    // the toplevel covers that surface "and all of its sub-surfaces" — and a
+    // popup is not a sub-surface, it is a separate xdg_surface. Without this
+    // the popup maps perfectly happily, the client believes its menu is open,
+    // and nothing is ever drawn. Every menu in every application is invisible.
+    //
+    // The parent is a toplevel for a first-level menu and another popup for a
+    // submenu, so the scene tree is carried on `xdg_surface->data` — set here
+    // and in oxide_scene_add_xdg_toplevel — rather than looked up by type.
+    struct wlr_xdg_surface *parent =
+            wlr_xdg_surface_try_from_wlr_surface(popup->parent);
+    struct wlr_scene_tree *parent_tree = parent != NULL ? parent->data : NULL;
+    if (parent_tree != NULL) {
+        popup->base->data =
+                wlr_scene_xdg_surface_create(parent_tree, popup->base);
+        popup_unconstrain(popup, parent_tree);
+    } else {
+        // A popup parented to something with no scene tree (a layer surface
+        // whose helper owns its own nodes, say) is left alone rather than
+        // guessed at: better an unplaced menu than one attached to the wrong
+        // part of the scene.
+        wlr_log(WLR_DEBUG, "0xin: xdg popup with no parent scene tree; not adding to the scene");
+    }
+
     struct oxide_xdg_popup_configure *pending =
             calloc(1, sizeof(*pending));
     pending->popup = popup;
@@ -57,15 +115,22 @@ static void handle_new_popup(void *userdata, void *data) {
     wl_signal_add(&popup->events.destroy, &pending->destroy);
 }
 
-void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell) {
+void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell,
+        struct wlr_output_layout *layout) {
+    popup_output_layout = layout;
     signal_add(&shell->events.new_popup, handle_new_popup, NULL);
 }
 
 struct wlr_scene_tree *oxide_scene_add_xdg_toplevel(struct wlr_scene_tree *tree,
         struct wlr_xdg_toplevel *toplevel) {
-    // A scene node that tracks this surface (and its popups) and follows its
-    // map/unmap state automatically.
-    return wlr_scene_xdg_surface_create(tree, toplevel->base);
+    // A scene node that tracks this surface and its *sub-surfaces*, following
+    // its map/unmap state automatically. Popups are deliberately not included —
+    // they are separate xdg_surfaces and get their own node in handle_new_popup,
+    // which finds this tree through the `data` pointer set below.
+    struct wlr_scene_tree *surface_tree =
+            wlr_scene_xdg_surface_create(tree, toplevel->base);
+    toplevel->base->data = surface_tree;
+    return surface_tree;
 }
 
 // Commit listener, routed to Rust. Fires on every commit; Rust filters for
