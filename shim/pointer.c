@@ -212,6 +212,9 @@ struct wlr_cursor *oxide_cursor_setup(struct wlr_output_layout *layout,
     signal_add(&cursor->events.touch_up, handle_touch_up, p);
     signal_add(&cursor->events.touch_cancel, handle_touch_cancel, p);
     signal_add(&cursor->events.touch_frame, handle_touch_frame, p);
+    // Touchpad swipe/pinch/hold. Separate file because it shares nothing with
+    // the touch recognizer above: libinput has already done the recognition.
+    pointer_gestures_init(p);
 
     // Stash our context on the cursor so oxide_cursor_set_focus_callback can
     // find it later (the Rust Server, the callback's userdata, doesn't exist

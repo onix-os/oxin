@@ -835,6 +835,61 @@ mod registrars {
         assert_eq!(find(GestureTrigger::DoubleTap), Some(&Action::ToggleSolo));
     }
 
+    /// Touchpad triggers live in their own `pad-` namespace, and their bits
+    /// have to stay clear of the touchscreen ones — `gesture_mask` is a u32
+    /// and the shim tests it with `1 << trigger`, so an overlap would make one
+    /// device silently fire the other's binding.
+    #[test]
+    fn touchpad_gestures_bind_and_get_their_own_bits() {
+        let cfg = load(
+            r#"
+                oxin.gestures["pad-three-left"]  = oxin.action.workspace_prev
+                oxin.gestures["pad-three-right"] = oxin.action.workspace_next
+                oxin.gestures["pad-pinch-in"]    = oxin.action.solo
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.gestures.len(), 3);
+        let find = |t| {
+            cfg.gestures
+                .iter()
+                .find(|g| g.trigger == t)
+                .map(|g| &g.action)
+        };
+        assert_eq!(
+            find(GestureTrigger::PadThreeLeft),
+            Some(&Action::WorkspacePrevious)
+        );
+        assert_eq!(
+            find(GestureTrigger::PadThreeRight),
+            Some(&Action::WorkspaceNext)
+        );
+        assert_eq!(find(GestureTrigger::PadPinchIn), Some(&Action::ToggleSolo));
+
+        // Distinct bits, and none of them collides with a touchscreen trigger.
+        let mask = cfg.gesture_mask();
+        assert_eq!(mask.count_ones(), 3, "each pad trigger needs its own bit");
+        assert_eq!(
+            mask & ((1 << GestureTrigger::ThreeLeft as u32)
+                | (1 << GestureTrigger::ThreeRight as u32)
+                | (1 << GestureTrigger::DoubleTap as u32)),
+            0,
+            "pad triggers must not share bits with touchscreen ones",
+        );
+    }
+
+    /// Every trigger has to fit the u32 mask `gesture_mask` builds with
+    /// `1 << trigger`. Adding a 33rd would wrap silently in release and panic
+    /// in debug, and the symptom would look like "that one gesture is broken".
+    #[test]
+    fn every_gesture_trigger_fits_the_mask() {
+        assert!(
+            (GestureTrigger::PadPinchOut as u32) < 32,
+            "highest trigger is {}, which no longer fits a u32 mask",
+            GestureTrigger::PadPinchOut as u32,
+        );
+    }
+
     #[test]
     fn an_unknown_gesture_is_refused() {
         let err = load(r#"oxin.gestures["sideways-wiggle"] = oxin.action.quit"#).unwrap_err();

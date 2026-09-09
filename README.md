@@ -280,6 +280,11 @@ oxin.gestures["top-right"]     = oxin.action.spawn("brightnessctl set +5%")
 oxin.gestures["three-left"]    = oxin.action.move_to_workspace_prev
 oxin.gestures["double-tap"]    = oxin.action.solo
 
+-- Laptop touchpad gestures, in their own `pad-` namespace.
+oxin.gestures["pad-three-left"]  = oxin.action.workspace_prev
+oxin.gestures["pad-three-right"] = oxin.action.workspace_next
+oxin.gestures["pad-pinch-out"]   = oxin.action.fullscreen
+
 -- Behaviour: handlers can be registered repeatedly and run in order. If one
 -- raises it is reported and the rest still run.
 local function autostart(cmd)
@@ -293,6 +298,22 @@ oxin.on.window(function(w)
   if w.app_id == "firefox"     then return { workspace = 2 } end
 end)
 ```
+
+### Gestures
+
+Touchscreen and touchpad triggers are separate families, because the devices do not
+offer the same gestures. Touchscreen triggers are about *where* a finger lands —
+`bottom-up`, `edge-left-in`, `top-down`, `to-top` — plus multi-finger swipes
+(`two-left`, `three-up`, …) and `double-tap`.
+
+Touchpad triggers are `pad-three-left/right/up/down` and `pad-pinch-in/out`. They start
+at three fingers because libinput treats two fingers on a touchpad as **scrolling** and
+delivers axis events instead, and pinch is its own event type rather than a swipe. The
+edge triggers have no touchpad equivalent: they describe a relationship to the screen.
+
+Both families reach the same actions, so a config can bind the same behaviour to
+whichever device a machine has. Any touchpad gesture you do *not* bind is forwarded to
+the focused window, so an application's own pinch-to-zoom keeps working.
 
 A config that raises is reported with its file and line and 0xin starts on the
 built-in defaults — it never refuses to start. `0xinctl config-error` repeats the

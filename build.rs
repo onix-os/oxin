@@ -130,6 +130,7 @@ fn main() {
         "shim/decoration.c",
         "shim/keyboard_seat.c",
         "shim/pointer.c",
+        "shim/pointer_gestures.c",
         "shim/touch_gestures.c",
         "shim/touch_multi.c",
         "shim/touch_events.c",
@@ -201,6 +202,7 @@ fn main() {
         .allowlist_function("wlr_xdg_output_manager_v1_create")
         .allowlist_function("wlr_viewporter_create")
         .allowlist_function("wlr_fractional_scale_manager_v1_create")
+        .allowlist_function("wlr_pointer_gestures_v1_create")
         .allowlist_type("wlr_xdg_toplevel")
         .allowlist_type("wlr_session")
         .allowlist_type("wlr_seat")

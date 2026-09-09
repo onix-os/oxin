@@ -114,6 +114,10 @@ fn main() {
         // each visible surface its preferred fractional scale.
         wlr::wlr_viewporter_create(display);
         wlr::wlr_fractional_scale_manager_v1_create(display, 1);
+        // Touchpad swipe/pinch/hold for clients (a browser's pinch-to-zoom).
+        // wlroots forwards nothing on its own: the shim sends through this
+        // global for any gesture the config doesn't claim.
+        let pointer_gestures = wlr::wlr_pointer_gestures_v1_create(display);
 
         // Create the seat (wl_seat global). We wire input devices into it below.
         let seat = oxide_seat_create(display, c"seat0".as_ptr());
@@ -250,6 +254,7 @@ fn main() {
             handle_gesture,
             server_ptr,
         );
+        oxide_cursor_set_pointer_gestures(cursor, pointer_gestures);
         // Repaint outputs when we regain the VT (no-op when nested / no session).
         oxide_session_add_active(session, handle_session_active, server_ptr);
 

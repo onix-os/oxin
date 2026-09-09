@@ -303,11 +303,18 @@ fn gesture_trigger(name: &str) -> Result<GestureTrigger, String> {
         "three-left" => GestureTrigger::ThreeLeft,
         "three-right" => GestureTrigger::ThreeRight,
         "double-tap" => GestureTrigger::DoubleTap,
+        "pad-three-left" => GestureTrigger::PadThreeLeft,
+        "pad-three-right" => GestureTrigger::PadThreeRight,
+        "pad-three-up" => GestureTrigger::PadThreeUp,
+        "pad-three-down" => GestureTrigger::PadThreeDown,
+        "pad-pinch-in" => GestureTrigger::PadPinchIn,
+        "pad-pinch-out" => GestureTrigger::PadPinchOut,
         other => {
             return Err(format!(
-                "oxin.gestures has no trigger {other:?}. Triggers are edge swipes \
-                 (bottom-up, edge-left-in, top-down, …), multi-finger swipes \
-                 (two-left, three-up, …) and double-tap."
+                "oxin.gestures has no trigger {other:?}. Touchscreen triggers are \
+                 edge swipes (bottom-up, edge-left-in, top-down, …), multi-finger \
+                 swipes (two-left, three-up, …) and double-tap. Touchpad triggers \
+                 are pad-three-left/right/up/down and pad-pinch-in/out."
             ))
         }
     })

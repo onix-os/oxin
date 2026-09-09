@@ -26,6 +26,7 @@ struct wlr_xdg_decoration_manager_v1;
 struct wlr_seat;
 struct wlr_input_device;
 struct wlr_cursor;
+struct wlr_pointer_gestures_v1;
 struct wlr_output_layout;
 struct wlr_session;
 struct wlr_output_power_manager_v1;
@@ -333,6 +334,13 @@ void oxide_cursor_set_gestures(struct wlr_cursor *cursor,
         struct wlr_output_layout *layout, uint32_t enabled_mask,
         int keyboard_height, struct wl_event_loop *event_loop,
         oxide_gesture_callback callback, void *userdata);
+// Hand the shim the zwp_pointer_gestures_v1 global so touchpad swipes and
+// pinches that no config binding claims can be forwarded to the focused client
+// (a browser's pinch-to-zoom, say). Forwarding is explicit in wlroots — there
+// is no automatic path — so without this nothing reaches clients at all.
+// Passing NULL simply disables forwarding.
+void oxide_cursor_set_pointer_gestures(struct wlr_cursor *cursor,
+        struct wlr_pointer_gestures_v1 *gestures);
 void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor, bool visible);
 void oxide_cursor_set_keyboard_height(struct wlr_cursor *cursor, int height);
 // Disable compositor gestures and cancel active touch sequences while locked;

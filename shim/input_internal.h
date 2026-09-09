@@ -14,6 +14,7 @@
 struct wlr_surface;
 struct wlr_seat_client;
 struct wlr_touch_down_event;
+struct wlr_pointer_gestures_v1;
 
 // Double-tap thresholds: max travel for a touch to still count as a tap, and
 // the max time/distance gap between two taps for them to count as a pair.
@@ -89,7 +90,24 @@ struct oxide_pointer {
     uint32_t last_tap_time_msec;
     oxide_callback double_tap_callback;
     void *double_tap_userdata;
+    // --- touchpad gestures (shim/pointer_gestures.c) ---
+    // libinput has already recognised these by the time they arrive, so there
+    // is no recognizer here: one gesture's travel is accumulated only so it can
+    // be classified once, when it ends.
+    struct wlr_pointer_gestures_v1 *pointer_gestures;
+    // Whether the in-flight gesture belongs to the compositor. Decided at
+    // begin, so a gesture is either ours for its whole life or the client's —
+    // never handed over halfway, which would leave a client with a begin and
+    // no end.
+    bool swipe_claimed;
+    bool pinch_claimed;
+    double swipe_dx, swipe_dy;
+    double pinch_scale;
 };
+
+// Subscribes the cursor's swipe/pinch/hold signals. Called from pointer.c
+// alongside the other cursor signal_adds.
+void pointer_gestures_init(struct oxide_pointer *p);
 
 struct oxide_touch_point {
     int32_t touch_id;

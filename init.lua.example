@@ -120,6 +120,22 @@ end
 -- oxin.gestures["double-tap"]      = oxin.action.solo
 
 -- ---------------------------------------------------------------------------
+-- Touchpad gestures
+-- ---------------------------------------------------------------------------
+-- The laptop counterpart, in their own `pad-` namespace: pad-three-left,
+-- -right, -up, -down and pad-pinch-in / pad-pinch-out. Three fingers rather
+-- than two because libinput treats two fingers on a touchpad as scrolling,
+-- and pinch is a separate event type rather than a swipe.
+--
+-- Anything left unbound is forwarded to the focused window, so an app's own
+-- pinch-to-zoom keeps working.
+--
+-- oxin.gestures["pad-three-left"]  = oxin.action.workspace_prev
+-- oxin.gestures["pad-three-right"] = oxin.action.workspace_next
+-- oxin.gestures["pad-three-up"]    = oxin.action.fullscreen
+-- oxin.gestures["pad-pinch-in"]    = oxin.action.solo
+
+-- ---------------------------------------------------------------------------
 -- Behaviour
 -- ---------------------------------------------------------------------------
 -- Handlers can be registered as often as you like and run in the order you

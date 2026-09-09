@@ -112,6 +112,21 @@ pub enum GestureTrigger {
     /// purpose (workspace switching rather than volume).
     EdgeRightUp = 21,
     EdgeRightDown = 22,
+    /// Touchpad gestures, kept in their own `pad-` namespace rather than
+    /// reusing the touchscreen triggers above. The two devices do not offer
+    /// the same gestures: on a touchpad two fingers is *scrolling*, delivered
+    /// as axis events, so libinput only reports swipes from three fingers up,
+    /// and pinch is a separate event type rather than a swipe. The edge
+    /// triggers have no meaning at all on a device that is not the screen.
+    ///
+    /// libinput has already done the recognition by the time these arrive —
+    /// see shim/pointer_gestures.c.
+    PadThreeLeft = 23,
+    PadThreeRight = 24,
+    PadThreeUp = 25,
+    PadThreeDown = 26,
+    PadPinchIn = 27,
+    PadPinchOut = 28,
 }
 
 #[derive(Clone, Debug, PartialEq)]

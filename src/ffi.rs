@@ -259,6 +259,13 @@ extern "C" {
         motion_callback: GrabMotionCallback,
         userdata: *mut c_void,
     );
+    /// Hands the shim the `zwp_pointer_gestures_v1` global so touchpad
+    /// gestures no config binding claims still reach the focused client.
+    /// wlroots has no automatic forwarding path — see shim/pointer_gestures.c.
+    pub(crate) fn oxide_cursor_set_pointer_gestures(
+        cursor: *mut wlr::wlr_cursor,
+        gestures: *mut wlr::wlr_pointer_gestures_v1,
+    );
     pub(crate) fn oxide_cursor_set_gestures(
         cursor: *mut wlr::wlr_cursor,
         layout: *mut wlr::wlr_output_layout,
