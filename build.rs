@@ -143,13 +143,18 @@ fn main() {
     }
     shim.compile("oxide_shim");
     // `cc` emits the static shim archive here. Repeat xkbcommon after it so
-    // strict `--as-needed` linkers (Alpine/musl) see the library after the
-    // shim's xkb_* references instead of discarding the earlier pkg-config
-    // link flag before those references appear. Same story for GLESv2/EGL,
-    // which the corner-radius mask pass (shim/gles2_corner.c) calls directly.
+    // strict `--as-needed` linkers (Alpine/musl, and NixOS' cc wrapper) see the
+    // library after the shim's xkb_* references instead of discarding the
+    // earlier pkg-config link flag before those references appear. Same story
+    // for GLESv2/EGL, which the corner-radius mask pass (shim/gles2_corner.c)
+    // calls directly — and for pixman, which the same file calls to build the
+    // opaque region it hands back to the scene. libdrm is deliberately absent:
+    // the shim includes <drm_fourcc.h> for its format macros but calls no
+    // libdrm function, so it needs the header path, not the library.
     println!("cargo:rustc-link-lib=xkbcommon");
     println!("cargo:rustc-link-lib=GLESv2");
     println!("cargo:rustc-link-lib=EGL");
+    println!("cargo:rustc-link-lib=pixman-1");
 
     // 4. Generate Rust bindings. We allowlist exactly the functions Rust calls
     //    directly; bindgen pulls in the types they reference automatically. The
