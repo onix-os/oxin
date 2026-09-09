@@ -27,6 +27,9 @@ static void popup_configure_finish(struct oxide_xdg_popup_configure *pending) {
     free(pending);
 }
 
+// Defined below, next to the popup scene wiring it belongs with.
+static void popup_unconstrain(struct wlr_xdg_popup *popup);
+
 static void handle_popup_initial_commit(struct wl_listener *listener,
         void *data) {
     (void)data;
@@ -35,6 +38,10 @@ static void handle_popup_initial_commit(struct wl_listener *listener,
     if (!pending->popup->base->initial_commit) {
         return;
     }
+    // Unconstraining schedules the configure itself; the explicit call is the
+    // fallback for when there was no layout or no root toplevel to measure
+    // against, since a popup that is never configured never maps at all.
+    popup_unconstrain(pending->popup);
     wlr_xdg_surface_schedule_configure(pending->popup->base);
     popup_configure_finish(pending);
 }
@@ -51,17 +58,52 @@ static void handle_popup_destroy_before_configure(struct wl_listener *listener,
 // actually appears on. Set once at startup by oxide_xdg_shell_setup_popups.
 static struct wlr_output_layout *popup_output_layout = NULL;
 
+// Walks a popup chain up to the toplevel it ultimately belongs to and returns
+// that toplevel's scene tree, whose layout coordinates anchor the unconstrain
+// box below. A submenu's immediate parent is another popup, so this cannot just
+// look at popup->parent.
+static struct wlr_scene_tree *popup_root_toplevel_tree(
+        struct wlr_xdg_popup *popup) {
+    struct wlr_surface *surface = popup->parent;
+    while (surface != NULL) {
+        struct wlr_xdg_surface *xdg =
+                wlr_xdg_surface_try_from_wlr_surface(surface);
+        if (xdg == NULL) {
+            return NULL;
+        }
+        if (xdg->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
+            return xdg->data;
+        }
+        if (xdg->role != WLR_XDG_SURFACE_ROLE_POPUP || xdg->popup == NULL) {
+            return NULL;
+        }
+        surface = xdg->popup->parent;
+    }
+    return NULL;
+}
+
 // Keeps a popup on screen by letting wlroots apply the client's own positioner
 // rules (flip/slide/resize) against the output box. Without this a menu anchored
 // near an edge simply overflows it and is clipped — the positioner's constraint
 // adjustments are only applied when the compositor asks for them.
-static void popup_unconstrain(struct wlr_xdg_popup *popup,
-        struct wlr_scene_tree *parent_tree) {
-    if (popup_output_layout == NULL || parent_tree == NULL) {
+//
+// **Only ever from the initial commit.** It ends in
+// wlr_xdg_surface_schedule_configure, which asserts `surface->initialized` —
+// and that is not true until the surface's first commit. Calling this from the
+// new_popup handler aborts the compositor before the menu can appear.
+static void popup_unconstrain(struct wlr_xdg_popup *popup) {
+    if (popup_output_layout == NULL) {
+        return;
+    }
+    // The box has to be in the *root toplevel's* surface coordinates —
+    // wlr_xdg_popup_get_toplevel_coords walks the popup chain up itself — so
+    // the immediate parent is not good enough for a submenu.
+    struct wlr_scene_tree *root_tree = popup_root_toplevel_tree(popup);
+    if (root_tree == NULL) {
         return;
     }
     int lx, ly;
-    if (!wlr_scene_node_coords(&parent_tree->node, &lx, &ly)) {
+    if (!wlr_scene_node_coords(&root_tree->node, &lx, &ly)) {
         return;
     }
     struct wlr_output *output =
@@ -97,7 +139,6 @@ static void handle_new_popup(void *userdata, void *data) {
     if (parent_tree != NULL) {
         popup->base->data =
                 wlr_scene_xdg_surface_create(parent_tree, popup->base);
-        popup_unconstrain(popup, parent_tree);
     } else {
         // A popup parented to something with no scene tree (a layer surface
         // whose helper owns its own nodes, say) is left alone rather than
