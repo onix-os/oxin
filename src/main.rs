@@ -53,6 +53,17 @@ use std::ptr;
 use toplevel::handle_new_toplevel;
 
 fn main() {
+    // Answered before anything else is touched. A version query must not need a
+    // seat, a GPU or a display — `0xin --version` used to fall through to the
+    // compositor proper and die with a libseat error, which left a script no way
+    // to ask what is installed before comparing it against the latest release.
+    if let Some(flag) = env::args().nth(1) {
+        if flag == "--version" || flag == "-V" {
+            println!("0xin {}", env!("CARGO_PKG_VERSION"));
+            return;
+        }
+    }
+
     unsafe {
         oxide_log_init();
 

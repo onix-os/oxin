@@ -23,6 +23,12 @@ fn main() {
     let Some(command) = args.next() else {
         usage();
     };
+    // Same as the compositor's: answerable without a running session, so a
+    // script can report the installed version even when nothing is up.
+    if command == "--version" || command == "-V" {
+        println!("0xinctl {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let request = match (command.as_str(), args.next(), args.next()) {
         ("quit", None, None) => "quit\n".to_string(),
         ("workspaces", None, None) => "workspaces\n".to_string(),

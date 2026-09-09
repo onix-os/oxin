@@ -22,6 +22,20 @@ jobs:
             artifact: "0xin-linux-arm64-musl"
     steps:
       - uses: actions/checkout@v4
+      # A release whose tag says one version while its binaries say another is
+      # worse than no release at all, and nothing else in this pipeline would
+      # notice. Only meaningful on a tagged release run; workflow_dispatch has
+      # no tag to check against.
+      - name: Check the tag matches Cargo.toml
+        if: github.event_name == 'release'
+        run: |
+          manifest=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$manifest" != "$tag" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} claims $tag but Cargo.toml says $manifest" >&2
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches Cargo.toml ($manifest)"
       # **Why Alpine, and why this job exists at all.**
       #
       # The reference phone (Fairphone 5, postmarketOS) is musl, so a glibc build cannot
@@ -92,6 +106,17 @@ jobs:
             usage:*) echo "0xinctl: prints usage and exits 2" ;;
             *) echo "::error::0xinctl printed no usage: $usage" >&2; exit 1 ;;
           esac
+
+          # The version an installed build reports is what an update script
+          # compares against the latest tag, so a build that reports the wrong
+          # one is a real defect — and it is only checkable by running it.
+          manifest=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          reported="$(./target/release/0xin --version)"
+          if [ "$reported" != "0xin $manifest" ]; then
+            echo "::error::0xin --version said '$reported', expected '0xin $manifest'" >&2
+            exit 1
+          fi
+          echo "0xin --version: $reported"
       # The session entry and installer ship alongside the binaries, so a release
       # installs the same files in the same places as `make install` from source.
       - name: Package

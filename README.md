@@ -45,7 +45,7 @@ The full story — architecture, environment/toolchain, and a phase-by-phase
 build log (Stage 0 through Stage 8, each with its deliverable and how it
 actually went) — lives in an [mdBook](https://rust-lang.github.io/mdBook/)
 under [`docs/`](docs/introduction.md), published at
-**[termworks.github.io/0xin](https://termworks.github.io/0xin/)**.
+**[onix-os.github.io/oxin](https://onix-os.github.io/oxin/)**.
 Preview it locally with:
 
 ```sh
@@ -113,6 +113,24 @@ build 0xin themselves, such as a postmarketOS phone (see
 [`profiles/fp5/`](profiles/fp5/README.md)). Unpack it and run the included
 `install.sh`, which installs the same files to the same places as `make install`.
 
+Releases are tagged `vMAJOR.MINOR.PATCH`, matching `version` in `Cargo.toml` — the
+release workflow refuses to build a tag that disagrees with the manifest. That gives an
+update script two fixed points to compare:
+
+```sh
+installed=$(0xin --version | cut -d' ' -f2)                    # e.g. 0.2.0
+latest=$(curl -fsSL https://api.github.com/repos/onix-os/oxin/releases/latest \
+         | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+[ "$installed" = "$latest" ] || echo "0xin $latest is available (have $installed)"
+```
+
+The download URL always resolves to the newest release, so a script never has to
+construct a version into it:
+
+```
+https://github.com/onix-os/oxin/releases/latest/download/0xin-linux-arm64-musl.tar.gz
+```
+
 ### With Nix
 
 A flake is committed, so 0xin builds without any of the above on a machine that has
@@ -134,7 +152,7 @@ On NixOS, import the module and the session appears in your display manager:
 
 ```nix
 {
-  inputs.oxin.url = "github:onix-os/oxin";
+  inputs.oxin.url = "github:onix-os/oxin/v0.2.0";   # or drop the tag to follow main
 
   # in configuration.nix
   imports = [ inputs.oxin.nixosModules.default ];

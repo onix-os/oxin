@@ -3,6 +3,7 @@
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
+#include <pixman.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -471,7 +472,18 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     glTexParameteri(attribs.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glUniform1i(variant->uniform_tex, 0);
     glUniform2f(variant->uniform_size, (float)w, (float)h);
-    glUniform1f(variant->uniform_radius, (float)radius);
+    // `radius` arrives in *logical* pixels (it is the config value), but u_size
+    // is the buffer's *physical* size and the shader compares both in one
+    // space. On a scaled output those are not the same unit: at scale 3 a
+    // configured 40 would be cut as 40 buffer pixels — about 13 logical — so
+    // the rounding silently shrank in proportion to the display's scale, and
+    // was only ever correct at scale 1. Convert here, using the surface's own
+    // buffer-to-logical ratio rather than an output scale looked up elsewhere,
+    // so it matches the very buffer being masked.
+    float buffer_scale = root_surface->current.width > 0
+            ? (float)w / (float)root_surface->current.width
+            : 1.0f;
+    glUniform1f(variant->uniform_radius, (float)radius * buffer_scale);
     glUniform1f(variant->uniform_has_alpha, attribs.has_alpha ? 1.0f : 0.0f);
 
     glBindBuffer(GL_ARRAY_BUFFER, prog->quad_vbo);
@@ -535,8 +547,54 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     // actually contains. Also reset any leftover source crop from the
     // client's own buffer/viewport state, since our mask buffer is a full,
     // uncropped copy — a stale src_box would crop it incorrectly.
-    wlr_scene_buffer_set_dest_size(target.found, root_surface->current.width,
-            root_surface->current.height);
+    // Tell the scene which of this buffer's pixels are still opaque. wlroots
+    // uses that to decide whether anything *underneath* needs drawing at all,
+    // and what it currently holds is the client's own region — for most
+    // toplevels, the entire window. Leave it alone and the wallpaper beneath
+    // the corners is never painted, so the transparent pixels the mask just
+    // cut reveal an unpainted framebuffer: corners that read as solid black
+    // instead of as whatever is behind the window. The shader is not at fault
+    // there and neither is blending; nothing was ever drawn to blend with.
+    //
+    // Start from what the client actually declared rather than a full rect: a
+    // terminal with transparency declares nothing opaque, and claiming
+    // otherwise would drop the background behind *it*. Subtracting only the
+    // four corners, rather than clearing the region outright, keeps the
+    // occlusion optimisation for the body of the window — which is the whole
+    // reason the hint exists.
+    //
+    // Logical coordinates throughout, matching set_dest_size below and
+    // wlroots' own surface_reconfigure, which sets these two together in this
+    // order.
+    int logical_w = root_surface->current.width;
+    int logical_h = root_surface->current.height;
+    int corner = radius;
+    if (corner > logical_w / 2) {
+        corner = logical_w / 2;
+    }
+    if (corner > logical_h / 2) {
+        corner = logical_h / 2;
+    }
+    pixman_region32_t opaque;
+    pixman_region32_init(&opaque);
+    pixman_region32_copy(&opaque, &root_surface->opaque_region);
+    pixman_region32_intersect_rect(&opaque, &opaque, 0, 0, logical_w, logical_h);
+    if (corner > 0) {
+        pixman_region32_t corners;
+        pixman_region32_init_rect(&corners, 0, 0, corner, corner);
+        pixman_region32_union_rect(&corners, &corners,
+                logical_w - corner, 0, corner, corner);
+        pixman_region32_union_rect(&corners, &corners,
+                0, logical_h - corner, corner, corner);
+        pixman_region32_union_rect(&corners, &corners,
+                logical_w - corner, logical_h - corner, corner, corner);
+        pixman_region32_subtract(&opaque, &opaque, &corners);
+        pixman_region32_fini(&corners);
+    }
+    wlr_scene_buffer_set_opaque_region(target.found, &opaque);
+    pixman_region32_fini(&opaque);
+
+    wlr_scene_buffer_set_dest_size(target.found, logical_w, logical_h);
     wlr_scene_buffer_set_source_box(target.found, NULL);
     wlr_buffer_unlock(mask_buffer);
     return true;

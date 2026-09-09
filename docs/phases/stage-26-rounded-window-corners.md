@@ -73,6 +73,29 @@ GL directly before this; every prior frame was 100% delegated to
   it, since `wlr_scene_output_commit` renders the rest of that output's
   scene moments later the same frame — leftover state there would corrupt
   other windows' rendering, not just this one.
+- **The mask is only half the job: the scene has to be told the corners are
+  no longer opaque.** `wlr_scene_buffer_set_opaque_region` is what wlroots
+  uses to decide whether anything *underneath* a buffer needs drawing at
+  all, and the region it holds is the client's — which for most toplevels
+  covers the whole window. Swap in a masked buffer without correcting it and
+  wlroots skips painting the wallpaper beneath the corners, so the
+  transparent pixels the shader just cut reveal an unpainted framebuffer:
+  corners that render solid black. The shader is not at fault there and
+  neither is blending — nothing was ever drawn to blend with. So the apply
+  path takes the surface's own opaque region, subtracts the four corner
+  boxes, and sets that alongside `set_dest_size` (the same pair, in the same
+  order, that wlroots' own `surface_reconfigure` sets). Starting from the
+  client's region rather than a full rect matters: a terminal with
+  transparency declares nothing opaque, and claiming otherwise would drop the
+  background behind it. Subtracting only the corners keeps the occlusion
+  optimisation for the body of the window.
+- **The radius is converted from logical to buffer pixels.** `corner_radius`
+  is configured in logical pixels, but the shader compares it against
+  `u_size`, which is the buffer's physical size. Those are the same unit only
+  at scale 1; at scale 3 a configured 40 was being cut as 40 *buffer* pixels,
+  about 13 logical, so the rounding silently shrank in proportion to the
+  display's scale. The apply path now scales by the surface's own
+  buffer-to-logical ratio.
 - The per-toplevel swapchain is freed on window destroy
   (`oxide_swapchain_destroy`, from `handle_destroy`) — the shared
   `corner_program`, like the renderer/allocator it's built from, lives for
@@ -85,13 +108,15 @@ GL directly before this; every prior frame was 100% delegated to
 
 ## Known limitations (by design, for this first cut)
 
-- **`corner_radius` is currently in the surface's buffer-pixel units, not
-  logical pixels adjusted for output scale.** The FP5 profile's `monitor =
-  DSI-1, 0x0, 2.4` (2.4× scale) means a given `corner_radius` value will
-  look visually smaller there than the same value on an unscaled desktop
-  output. Verified correct on the nested (unscaled) Intel path; the
-  logical-vs-physical adjustment for fractional-scale outputs is an open
-  follow-up, not yet resolved.
+- ~~**`corner_radius` is in the surface's buffer-pixel units, not logical
+  pixels adjusted for output scale.**~~ **Resolved.** The radius was being
+  compared against `u_size` in buffer pixels while arriving in logical ones,
+  so a scaled output shrank the rounding in proportion to its scale — on the
+  FP5 profile (`scale = 3`) a configured 40 was cut as roughly 13 logical
+  pixels. The apply path now multiplies by the surface's own
+  buffer-to-logical ratio. Measured nested at scale 1 and scale 2: the cut
+  spans 21.0 and 21.5 logical pixels respectively, against an ideal arc of
+  22.6 (the shortfall is the anti-aliasing band).
 - **Damage tracking regresses for masked windows.** Every masked commit
   repaints the whole buffer (`wlr_scene_buffer_set_buffer`'s plain
   variant), losing wlroots' fine-grained per-region damage tracking for as
