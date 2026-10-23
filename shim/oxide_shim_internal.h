@@ -24,4 +24,12 @@ struct oxide_listener {
 struct oxide_listener *signal_add(struct wl_signal *signal,
         oxide_callback callback, void *userdata);
 
+struct wlr_surface;
+
+// Defined in layer_shell.c, for xdg_shell.c's popup unconstraining: if
+// `surface` is a layer surface 0xin has placed, the layout coordinates of its
+// origin and the output it is on. False for anything else, or while unmapped.
+bool oxide_layer_popup_anchor(struct wlr_surface *surface, int *lx, int *ly,
+        struct wlr_output **output);
+
 #endif // OXIN_SHIM_INTERNAL_H

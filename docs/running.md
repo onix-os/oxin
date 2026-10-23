@@ -82,6 +82,29 @@ To check whether a problem is yours or a plugin's, start without them:
 OXIN_NOPLUGIN=1 target/debug/0xin      # or: target/debug/0xin --noplugin
 ```
 
+## Visual checks, headless
+
+The headless backend still composites, and 0xin's screencopy works against it,
+so `grim` can screenshot a session that never opens a window anywhere. Point
+clients at 0xin's own socket (it logs `WAYLAND_DISPLAY=…` once ready), and use
+quickshell as a scriptable test client: a `.qml` file can declare toplevels
+(`FloatingWindow`), bars on any layer (`PanelWindow`), menus (`PopupWindow`),
+and a `Timer` to change them mid-run.
+
+```sh
+XDG_CONFIG_HOME=/tmp/cfg WLR_BACKENDS=headless OXIN_NOPLUGIN=1 \
+    target/debug/0xin >log 2>&1 &
+until SOCK=$(grep -o 'WAYLAND_DISPLAY=wayland-[0-9]*' log | cut -d= -f2) && [ -n "$SOCK" ]; do
+    sleep 0.1
+done
+WAYLAND_DISPLAY=$SOCK QT_QPA_PLATFORM=wayland qs -p scene.qml &
+sleep 3; WAYLAND_DISPLAY=$SOCK grim shot.png
+```
+
+Add `WAYLAND_DEBUG=server` to 0xin's environment to see the protocol exchange
+itself, which is how Stage 30 confirmed menus were really being repositioned
+rather than recreated.
+
 ## Multi-output, nested
 
 The nested Wayland backend honors `WLR_WL_OUTPUTS=2`, opening two host

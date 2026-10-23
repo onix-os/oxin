@@ -217,7 +217,6 @@ unsafe fn floats_naturally(tl: *mut Toplevel) -> bool {
         || oxide_xdg_toplevel_fixed_size((*tl).xdg_toplevel)
 }
 
-
 /// The configured default floating size (`float_size`, percentages) applied
 /// to the active output's usable area. (0, 0) — "client decides" — when no
 /// output exists yet.

@@ -345,6 +345,10 @@ extern "C" {
         tree: *mut wlr::wlr_scene_tree,
         ls: *mut c_void,
     ) -> *mut c_void;
+    pub(crate) fn oxide_layer_surface_setup_popups(
+        scene_ls: *mut c_void,
+        popup_tree: *mut wlr::wlr_scene_tree,
+    );
     pub(crate) fn oxide_scene_layer_surface_configure(
         scene_ls: *mut c_void,
         fx: i32,

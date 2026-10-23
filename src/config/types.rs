@@ -1,4 +1,4 @@
-//! Config data types: the vocabulary `0xin.conf` lines parse into.
+//! Config data types: the vocabulary `init.lua` settings and registrars resolve into.
 
 /// Modifier bits (mirror the WLR_MODIFIER_* enum).
 pub const MOD_SHIFT: u32 = 1 << 0; // Shift

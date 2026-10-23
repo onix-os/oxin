@@ -15,17 +15,15 @@ struct oxide_listener *oxide_xdg_shell_add_new_toplevel(
     return signal_add(&shell->events.new_toplevel, callback, userdata);
 }
 
-struct oxide_xdg_popup_configure {
+// Per-popup state for the popup's whole life: the one-shot initial configure,
+// and a fresh unconstrain whenever the client repositions it (xdg_popup v3
+// `reposition`, which a menu uses to move without being torn down).
+struct oxide_xdg_popup {
     struct wlr_xdg_popup *popup;
-    struct wl_listener commit;
+    struct wl_listener commit;     // removed once the initial commit is handled
+    struct wl_listener reposition;
     struct wl_listener destroy;
 };
-
-static void popup_configure_finish(struct oxide_xdg_popup_configure *pending) {
-    wl_list_remove(&pending->commit.link);
-    wl_list_remove(&pending->destroy.link);
-    free(pending);
-}
 
 // Defined below, next to the popup scene wiring it belongs with.
 static void popup_unconstrain(struct wlr_xdg_popup *popup);
@@ -33,53 +31,79 @@ static void popup_unconstrain(struct wlr_xdg_popup *popup);
 static void handle_popup_initial_commit(struct wl_listener *listener,
         void *data) {
     (void)data;
-    struct oxide_xdg_popup_configure *pending =
-            wl_container_of(listener, pending, commit);
-    if (!pending->popup->base->initial_commit) {
+    struct oxide_xdg_popup *state = wl_container_of(listener, state, commit);
+    if (!state->popup->base->initial_commit) {
         return;
     }
     // Unconstraining schedules the configure itself; the explicit call is the
-    // fallback for when there was no layout or no root toplevel to measure
+    // fallback for when there was no layout or no root surface to measure
     // against, since a popup that is never configured never maps at all.
-    popup_unconstrain(pending->popup);
-    wlr_xdg_surface_schedule_configure(pending->popup->base);
-    popup_configure_finish(pending);
+    popup_unconstrain(state->popup);
+    wlr_xdg_surface_schedule_configure(state->popup->base);
+    // Re-initialised so the destroy handler can remove it unconditionally.
+    wl_list_remove(&state->commit.link);
+    wl_list_init(&state->commit.link);
 }
 
-static void handle_popup_destroy_before_configure(struct wl_listener *listener,
-        void *data) {
+static void handle_popup_reposition(struct wl_listener *listener, void *data) {
     (void)data;
-    struct oxide_xdg_popup_configure *pending =
-            wl_container_of(listener, pending, destroy);
-    popup_configure_finish(pending);
+    struct oxide_xdg_popup *state =
+            wl_container_of(listener, state, reposition);
+    // wlroots has already recomputed the geometry from the new positioner;
+    // its constraint adjustments still only happen when we ask for them.
+    if (state->popup->base->initialized) {
+        popup_unconstrain(state->popup);
+    }
+}
+
+static void handle_popup_destroy(struct wl_listener *listener, void *data) {
+    (void)data;
+    struct oxide_xdg_popup *state = wl_container_of(listener, state, destroy);
+    wl_list_remove(&state->commit.link);
+    wl_list_remove(&state->reposition.link);
+    wl_list_remove(&state->destroy.link);
+    free(state);
 }
 
 // The output layout, kept so a popup can be unconstrained against the output it
 // actually appears on. Set once at startup by oxide_xdg_shell_setup_popups.
 static struct wlr_output_layout *popup_output_layout = NULL;
 
-// Walks a popup chain up to the toplevel it ultimately belongs to and returns
-// that toplevel's scene tree, whose layout coordinates anchor the unconstrain
-// box below. A submenu's immediate parent is another popup, so this cannot just
-// look at popup->parent.
-static struct wlr_scene_tree *popup_root_toplevel_tree(
-        struct wlr_xdg_popup *popup) {
+// Where a popup chain's root surface sits: the layout coordinates of its
+// surface-local origin, and the output the popup should be kept on. The root is
+// an xdg toplevel for an application's menu and a layer surface for a bar's; a
+// submenu's immediate parent is another popup, so the chain is walked to the top.
+static bool popup_root_anchor(struct wlr_xdg_popup *popup, int *lx, int *ly,
+        struct wlr_output **output) {
     struct wlr_surface *surface = popup->parent;
     while (surface != NULL) {
         struct wlr_xdg_surface *xdg =
                 wlr_xdg_surface_try_from_wlr_surface(surface);
         if (xdg == NULL) {
-            return NULL;
+            // Not an xdg surface at all: a layer surface, or nothing we place.
+            return oxide_layer_popup_anchor(surface, lx, ly, output);
         }
         if (xdg->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
-            return xdg->data;
+            struct wlr_scene_tree *tree = xdg->data;
+            if (tree == NULL || popup_output_layout == NULL
+                    || !wlr_scene_node_coords(&tree->node, lx, ly)) {
+                return false;
+            }
+            *output = wlr_output_layout_output_at(popup_output_layout, *lx, *ly);
+            // The toplevel's tree sits at its *window geometry* origin
+            // (wlr_scene_xdg_surface_create offsets the surface inside it), so
+            // the surface origin is that minus the geometry offset — nonzero
+            // for a client that draws its own shadow.
+            *lx -= xdg->geometry.x;
+            *ly -= xdg->geometry.y;
+            return *output != NULL;
         }
         if (xdg->role != WLR_XDG_SURFACE_ROLE_POPUP || xdg->popup == NULL) {
-            return NULL;
+            return false;
         }
         surface = xdg->popup->parent;
     }
-    return NULL;
+    return false;
 }
 
 // Keeps a popup on screen by letting wlroots apply the client's own positioner
@@ -87,34 +111,21 @@ static struct wlr_scene_tree *popup_root_toplevel_tree(
 // near an edge simply overflows it and is clipped — the positioner's constraint
 // adjustments are only applied when the compositor asks for them.
 //
-// **Only ever from the initial commit.** It ends in
+// **Never from the new_popup handler.** It ends in
 // wlr_xdg_surface_schedule_configure, which asserts `surface->initialized` —
 // and that is not true until the surface's first commit. Calling this from the
 // new_popup handler aborts the compositor before the menu can appear.
 static void popup_unconstrain(struct wlr_xdg_popup *popup) {
-    if (popup_output_layout == NULL) {
-        return;
-    }
-    // The box has to be in the *root toplevel's* surface coordinates —
-    // wlr_xdg_popup_get_toplevel_coords walks the popup chain up itself — so
-    // the immediate parent is not good enough for a submenu.
-    struct wlr_scene_tree *root_tree = popup_root_toplevel_tree(popup);
-    if (root_tree == NULL) {
-        return;
-    }
     int lx, ly;
-    if (!wlr_scene_node_coords(&root_tree->node, &lx, &ly)) {
-        return;
-    }
-    struct wlr_output *output =
-            wlr_output_layout_output_at(popup_output_layout, lx, ly);
-    if (output == NULL) {
+    struct wlr_output *output;
+    if (!popup_root_anchor(popup, &lx, &ly, &output)) {
         return;
     }
     struct wlr_box box;
     wlr_output_layout_get_box(popup_output_layout, output, &box);
-    // The box must be in the popup's root toplevel surface coordinates, and
-    // (lx, ly) is where that toplevel sits in the layout.
+    // wlr_xdg_popup_unconstrain_from_box wants the box in the root surface's
+    // local coordinates (it walks the popup chain up itself), and (lx, ly) is
+    // where that surface's origin sits in the layout.
     box.x -= lx;
     box.y -= ly;
     wlr_xdg_popup_unconstrain_from_box(popup, &box);
@@ -133,27 +144,34 @@ static void handle_new_popup(void *userdata, void *data) {
     // The parent is a toplevel for a first-level menu and another popup for a
     // submenu, so the scene tree is carried on `xdg_surface->data` — set here
     // and in oxide_scene_add_xdg_toplevel — rather than looked up by type.
-    struct wlr_xdg_surface *parent =
-            wlr_xdg_surface_try_from_wlr_surface(popup->parent);
+    //
+    // **The parent can be NULL.** A layer surface's popup is created with no
+    // parent and only gets one from zwlr_layer_surface_v1.get_popup, after this
+    // signal; wlroots still emits it, and wlr_xdg_surface_try_from_wlr_surface
+    // does not accept NULL. That popup's node is made in shim/layer_shell.c,
+    // from the layer surface's own new_popup, once the parent is known.
+    struct wlr_xdg_surface *parent = popup->parent != NULL
+            ? wlr_xdg_surface_try_from_wlr_surface(popup->parent)
+            : NULL;
     struct wlr_scene_tree *parent_tree = parent != NULL ? parent->data : NULL;
     if (parent_tree != NULL) {
         popup->base->data =
                 wlr_scene_xdg_surface_create(parent_tree, popup->base);
-    } else {
-        // A popup parented to something with no scene tree (a layer surface
-        // whose helper owns its own nodes, say) is left alone rather than
-        // guessed at: better an unplaced menu than one attached to the wrong
-        // part of the scene.
+    } else if (popup->parent != NULL) {
+        // Parented to something with no scene tree of ours: left alone rather
+        // than guessed at — better an unplaced menu than one attached to the
+        // wrong part of the scene.
         wlr_log(WLR_DEBUG, "0xin: xdg popup with no parent scene tree; not adding to the scene");
     }
 
-    struct oxide_xdg_popup_configure *pending =
-            calloc(1, sizeof(*pending));
-    pending->popup = popup;
-    pending->commit.notify = handle_popup_initial_commit;
-    pending->destroy.notify = handle_popup_destroy_before_configure;
-    wl_signal_add(&popup->base->surface->events.commit, &pending->commit);
-    wl_signal_add(&popup->events.destroy, &pending->destroy);
+    struct oxide_xdg_popup *state = calloc(1, sizeof(*state));
+    state->popup = popup;
+    state->commit.notify = handle_popup_initial_commit;
+    state->reposition.notify = handle_popup_reposition;
+    state->destroy.notify = handle_popup_destroy;
+    wl_signal_add(&popup->base->surface->events.commit, &state->commit);
+    wl_signal_add(&popup->events.reposition, &state->reposition);
+    wl_signal_add(&popup->events.destroy, &state->destroy);
 }
 
 void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell,

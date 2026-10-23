@@ -40,3 +40,4 @@
 - [Stage 27 — Focused Text Input and System OSK](phases/stage-27-text-input-osk.md)
 - [Stage 28 — Lua Configuration](phases/stage-28-lua-configuration.md)
 - [Stage 29 — Touchpad Gestures](phases/stage-29-touchpad-gestures.md)
+- [Stage 30 — Popups and Menus](phases/stage-30-popups.md)

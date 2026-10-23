@@ -88,8 +88,7 @@ fn main() {
     // react to its `set_mode` signal (see src/output_power.rs).
     let output_power_xml =
         manifest_dir.join("protocols/wlr-output-power-management-unstable-v1.xml");
-    let output_power_header =
-        out_dir.join("wlr-output-power-management-unstable-v1-protocol.h");
+    let output_power_header = out_dir.join("wlr-output-power-management-unstable-v1-protocol.h");
     let status = Command::new("wayland-scanner")
         .arg("server-header")
         .arg(&output_power_xml)
@@ -225,7 +224,5 @@ fn main() {
     println!("cargo:rerun-if-changed=shim/oxide_shim_internal.h");
     println!("cargo:rerun-if-changed=shim/input_internal.h");
     println!("cargo:rerun-if-changed=protocols/wlr-layer-shell-unstable-v1.xml");
-    println!(
-        "cargo:rerun-if-changed=protocols/wlr-output-power-management-unstable-v1.xml"
-    );
+    println!("cargo:rerun-if-changed=protocols/wlr-output-power-management-unstable-v1.xml");
 }

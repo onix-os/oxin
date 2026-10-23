@@ -263,9 +263,7 @@ pub(crate) unsafe fn rotate(server: &mut Server, name: &str, transform: u32) -> 
     let idx = server
         .outputs
         .iter()
-        .position(|o| {
-            CStr::from_ptr(oxide_output_name(o.wlr_output)).to_string_lossy() == name
-        })
+        .position(|o| CStr::from_ptr(oxide_output_name(o.wlr_output)).to_string_lossy() == name)
         .ok_or_else(|| format!("no output named {name}"))?;
 
     if server.outputs[idx].transform == transform {
@@ -278,7 +276,14 @@ pub(crate) unsafe fn rotate(server: &mut Server, name: &str, transform: u32) -> 
     // wlroots recomputes the layout box from the output's new effective
     // (transform-swapped, for 90/270) size once the commit above lands.
     let (mut x, mut y, mut w, mut h) = (0, 0, 0, 0);
-    oxide_output_layout_get_box(server.output_layout, wlr_output, &mut x, &mut y, &mut w, &mut h);
+    oxide_output_layout_get_box(
+        server.output_layout,
+        wlr_output,
+        &mut x,
+        &mut y,
+        &mut w,
+        &mut h,
+    );
 
     {
         let o = &mut server.outputs[idx];
@@ -331,7 +336,14 @@ pub(crate) unsafe fn set_transform_for_lock(server: &mut Server, idx: usize, tra
     oxide_output_set_transform(wlr_output, transform);
 
     let (mut x, mut y, mut w, mut h) = (0, 0, 0, 0);
-    oxide_output_layout_get_box(server.output_layout, wlr_output, &mut x, &mut y, &mut w, &mut h);
+    oxide_output_layout_get_box(
+        server.output_layout,
+        wlr_output,
+        &mut x,
+        &mut y,
+        &mut w,
+        &mut h,
+    );
 
     let o = &mut server.outputs[idx];
     o.x = x;

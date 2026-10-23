@@ -28,13 +28,22 @@ pub(crate) unsafe extern "C" fn handle_new_layer_surface(userdata: *mut c_void, 
         }
     }
 
-    let tree = match oxide_layer_surface_layer(ls) {
+    let layer = oxide_layer_surface_layer(ls);
+    let tree = match layer {
         0 => server.tree_layer_bg,
         1 => server.tree_layer_bottom,
         3 => server.tree_layer_overlay,
         _ => server.tree_layer_top, // 2 (top), and any unknown value
     };
     let scene_ls = oxide_scene_layer_surface_create(tree, ls);
+    // Its popups (a bar's menus) need scene nodes of their own. A menu from a
+    // background/bottom surface drops over the windows, so it is lifted into
+    // the top layer; top and overlay menus already paint above them.
+    let popup_tree = match layer {
+        0 | 1 => server.tree_layer_top,
+        _ => ptr::null_mut(),
+    };
+    oxide_layer_surface_setup_popups(scene_ls, popup_tree);
 
     let lsurf = Box::into_raw(Box::new(LayerSurface {
         server: userdata as *mut Server,

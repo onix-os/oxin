@@ -17,7 +17,7 @@ automatically to fill the screen instead of floating and overlapping.
 - **9 workspaces** — switch between them and move windows across them from the keyboard.
 - **Multi-monitor** with **focus-follows-monitor** — new windows open on the monitor
   your cursor is on; each monitor shows its own workspace. Position/scale per
-  named output are configurable (`monitor =` lines), otherwise auto-placed.
+  named output are configurable (`oxin.monitors["DP-1"] = {…}`), otherwise auto-placed.
 - **Keyboard-driven**, configured and scripted in **Lua** (`~/.config/0xin/init.lua`)
   through an embedded pure-Rust interpreter: settings are assigned, keybindings and
   behaviour are registered, and a binding can be a Lua function. A broken config is
@@ -25,12 +25,14 @@ automatically to fill the screen instead of floating and overlapping.
 - **Plugins** — a neovim-shaped runtimepath (`plugin/` runs, `lua/` is required,
   `after/` last), so config somebody else wrote drops in as a directory.
 - **Pointer + cursor** with click-to-focus.
-- Runs real **xdg-shell apps** (terminals, browsers, …).
+- Runs real **xdg-shell apps** (terminals, browsers, …), with their **menus and
+  popups** — kept on screen near an edge, and nested submenus included.
 - Runs on a **real TTY** via libseat/logind, and **survives VT switching**
   (Ctrl+Alt+Fn away and back) without crashing or losing your windows.
 - **Layer-shell** (`wlr-layer-shell-unstable-v1`) — bars, panels and wallpaper (e.g.
   [quickshell](https://quickshell.org)) render in the correct z-order and reserve their
-  screen space, so tiled windows never sit underneath them.
+  screen space, so tiled windows never sit underneath them. Their menus (tray,
+  dropdowns) draw over windows even from a bottom-layer bar.
 - **Server-side decorations** (`xdg-decoration-unstable-v1`) — 0xin always claims
   decoration, so clients don't draw their own title bar/border: bare, borderless windows.
 - **Screenshots/screen recording** (`wlr-screencopy-unstable-v1` + `xdg-output`) — tools
@@ -42,7 +44,7 @@ automatically to fill the screen instead of floating and overlapping.
 ## Docs
 
 The full story — architecture, environment/toolchain, and a phase-by-phase
-build log (Stage 0 through Stage 8, each with its deliverable and how it
+build log (every stage from Stage 0 on, each with its deliverable and how it
 actually went) — lives in an [mdBook](https://rust-lang.github.io/mdBook/)
 under [`docs/`](docs/introduction.md), published at
 **[onix-os.github.io/oxin](https://onix-os.github.io/oxin/)**.

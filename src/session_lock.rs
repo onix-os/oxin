@@ -133,7 +133,7 @@ unsafe extern "C" fn handle_new_surface(userdata: *mut c_void, data: *mut c_void
 unsafe extern "C" fn handle_surface_map(userdata: *mut c_void, _data: *mut c_void) {
     let surface = &*(userdata as *mut LockSurface);
     let server = &mut *surface.server;
-    if server.locked && server.active_lock.is_null() == false {
+    if server.locked && !server.active_lock.is_null() {
         oxide_focus_session_lock_surface(server.seat, surface.lock_surface);
     }
 }

@@ -135,7 +135,11 @@ pub(crate) unsafe extern "C" fn handle_double_tap(userdata: *mut c_void, data: *
     let Some(tl) = toplevel_from_surface(server, data) else {
         return;
     };
-    let Some(wi) = server.workspaces.iter().position(|ws| ws.windows.contains(&tl)) else {
+    let Some(wi) = server
+        .workspaces
+        .iter()
+        .position(|ws| ws.windows.contains(&tl))
+    else {
         return;
     };
     let idx = server.workspaces[wi]

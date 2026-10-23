@@ -74,7 +74,9 @@ pub(crate) enum Node {
 /// iteratively: window 0 splits off the first half (alternating
 /// vertical/horizontal), the rest recurse into the second half, and the
 /// last window is a bare leaf that fills whatever's left. `None` for `n == 0`
-/// (nothing to tile).
+/// (nothing to tile). Test-only: the live tree is grown incrementally, and this
+/// one-shot build is the reference those tests check it against.
+#[cfg(test)]
 pub(crate) fn build_dwindle(n: usize) -> Option<Node> {
     fn go(n: usize, vertical: bool) -> Node {
         if n <= 1 {

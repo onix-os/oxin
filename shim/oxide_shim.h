@@ -162,8 +162,10 @@ struct oxide_listener *oxide_xdg_shell_add_new_toplevel(
         struct wlr_xdg_shell *shell, oxide_callback callback, void *userdata);
 // Configure XDG popups after their initial commit so they can map, give each
 // one its own scene node (wlr_scene_xdg_surface_create on the toplevel covers
-// sub-surfaces only, never popups), and unconstrain it against its output so a
-// menu near an edge stays on screen. `layout` may be NULL to skip the latter.
+// sub-surfaces only, never popups), and unconstrain it against its output —
+// again on every reposition — so a menu near an edge stays on screen. `layout`
+// may be NULL to skip the latter. Popups of layer surfaces get their node from
+// oxide_layer_surface_setup_popups instead.
 void oxide_xdg_shell_setup_popups(struct wlr_xdg_shell *shell,
         struct wlr_output_layout *layout);
 // Add a toplevel to the scene graph, under `tree` (the normal/app-window
@@ -260,10 +262,18 @@ uint32_t oxide_layer_surface_layer(struct wlr_layer_surface_v1 *ls);
 // must skip configuring it until this is true again.
 bool oxide_layer_surface_initialized(struct wlr_layer_surface_v1 *ls);
 
-// Add the layer surface (and its sub-surfaces/popups) to the scene, under the
-// tree matching its layer.
+// Add the layer surface (and its sub-surfaces — not its popups, see below) to
+// the scene, under the tree matching its layer.
 struct wlr_scene_layer_surface_v1 *oxide_scene_layer_surface_create(
         struct wlr_scene_tree *tree, struct wlr_layer_surface_v1 *ls);
+// Give the layer surface's popups (a bar's menus) scene nodes as they are
+// created, and let them be unconstrained against its output. `popup_tree`
+// NULL keeps them in the surface's own tree; otherwise they are lifted into
+// `popup_tree` and kept at the surface's position, so a menu from a low layer
+// still paints over windows. Call once, right after the create above; the
+// state is freed with the surface.
+void oxide_layer_surface_setup_popups(struct wlr_scene_layer_surface_v1 *scene_ls,
+        struct wlr_scene_tree *popup_tree);
 // Position/size the surface per its anchors+margins within the output box
 // (fx,fy,fw,fh), and shrink the usable box (ux,uy,uw,uh, in/out) by its
 // exclusive zone. Also sends the layer_surface.configure event to the client.
