@@ -6,6 +6,7 @@ use crate::ffi::ShimListener;
 use crate::layout::Node;
 use crate::lua::link::LuaLink;
 use crate::wlr;
+use std::os::fd::OwnedFd;
 use std::os::raw::c_void;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
@@ -88,6 +89,11 @@ pub(crate) struct Server {
     /// Nonblocking local IPC endpoint used by 0xinctl.
     pub(crate) control_listener: Option<UnixListener>,
     pub(crate) control_path: Option<PathBuf>,
+    /// inotify fd watching the config's directories for live reload (Stage
+    /// 31); `None` if the watcher could not be set up.
+    pub(crate) watch_fd: Option<OwnedFd>,
+    /// Pending debounce timer for a reload the watcher saw coming, or null.
+    pub(crate) watch_timer: *mut c_void,
     pub(crate) keyboard_visible: bool,
     /// Active pointer grab (Mod+drag on a floating window): what it does,
     /// which window, and the cursor position + window rect when it started —

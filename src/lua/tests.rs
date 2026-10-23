@@ -527,11 +527,34 @@ fn session_startup_loads_a_config_and_survives_a_broken_one() {
         .expect("the failure must be recorded, not just printed");
     assert!(reported.contains("nonsense"), "{reported}");
 
+    // Reloading a broken config is an error, never a fall back to defaults:
+    // the running session still has a config that works.
+    let err = session::reload()
+        .err()
+        .expect("a broken config must not reload");
+    assert!(err.contains("nonsense"), "{err}");
+
+    // Reloading a good one hands back the new config, with no error kept.
+    std::fs::write(&path, b"oxin.gap = 13\n").unwrap();
+    // `Session` holds a VM, which has no `Debug`, so no `.expect()` here.
+    let Ok(reloaded) = session::reload() else {
+        panic!("a good config reloads");
+    };
+    assert_eq!(reloaded.config.gap, 13);
+    assert!(reloaded.registry.config_error.is_none());
+
     // A config that is not there at all: defaults, and no error.
     std::fs::remove_file(&path).unwrap();
     let missing = session::start();
     assert_eq!(missing.config.gap, Config::default().gap);
     assert!(missing.registry.config_error.is_none());
+
+    // ...but on reload, a missing file is a refusal. An editor that saves by
+    // delete-and-rename must not read as "the user wants no config".
+    let gone = session::reload()
+        .err()
+        .expect("a missing file must not reload");
+    assert!(gone.contains("init.lua"), "{gone}");
 
     std::env::remove_var("OXIN_CONFIG");
     let _ = std::fs::remove_dir_all(&dir);
@@ -746,6 +769,12 @@ mod registrars {
             bind_for(&cfg, MOD_ALT, "Return"),
             Some(&Action::Spawn("kitty".into()))
         );
+    }
+
+    #[test]
+    fn reload_is_a_bindable_action() {
+        let cfg = load(r#"oxin.keys["MOD+F5"] = oxin.action.reload"#).unwrap();
+        assert_eq!(bind_for(&cfg, cfg.modifier, "F5"), Some(&Action::Reload));
     }
 
     #[test]
@@ -1148,6 +1177,40 @@ mod plugins {
         let missing = PathBuf::from("/nonexistent/0xin");
         assert!(plugins::plugin_files(std::slice::from_ref(&missing)).is_empty());
         assert!(plugins::lua_path(std::slice::from_ref(&missing)).is_empty());
+    }
+
+    #[test]
+    fn the_watcher_sees_every_directory_a_config_can_load_from() {
+        let dir = root(
+            "watch",
+            &[
+                ("init.lua", ""),
+                ("plugin/a.lua", ""),
+                ("plugin/nested/b.lua", ""),
+                ("after/plugin/c.lua", ""),
+                ("lua/helper.lua", ""),
+                ("pack/x/start/p/plugin/d.lua", ""),
+            ],
+        );
+        let missing = PathBuf::from("/nonexistent/0xin");
+        let dirs = plugins::watch_dirs(Some(&dir.join("init.lua")), &[missing, dir.clone()]);
+        let rel: Vec<_> = dirs
+            .iter()
+            .map(|d| d.strip_prefix(&dir).unwrap().to_string_lossy().into_owned())
+            .collect();
+        // The config's directory is also a root: listed once, not twice.
+        assert_eq!(
+            rel,
+            [
+                "",
+                "plugin",
+                "plugin/nested",
+                "after/plugin",
+                "lua",
+                "pack/x/start/p/plugin",
+            ],
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

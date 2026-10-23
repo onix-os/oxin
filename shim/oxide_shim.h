@@ -73,6 +73,13 @@ void *oxide_event_loop_add_readable(struct wl_event_loop *loop, int fd,
 void *oxide_event_loop_add_timer(struct wl_event_loop *loop, int delay_ms,
         oxide_callback callback, void *userdata);
 void oxide_event_source_remove(void *source);
+// inotify for config live reload (shim/config_watch.c). `open` returns a
+// nonblocking fd or -1; `watch_dir` adds a directory watch; `drain` reads
+// every pending event and reports whether any could change the config (a
+// `.lua` file, a directory, or a queue overflow).
+int oxide_inotify_open(void);
+bool oxide_inotify_watch_dir(int fd, const char *path);
+bool oxide_inotify_drain(int fd);
 // Reset the compositor's signal state (ignored SIGCHLD, blocked INT/TERM) in
 // a forked child before exec, so clients start with clean signals. Must be
 // called from every spawn path's pre_exec.
@@ -129,6 +136,9 @@ void oxide_scene_rect_destroy(struct wlr_scene_rect *rect);
 // Enable/disable a background rect (toggle to force a full-output repaint).
 void oxide_scene_rect_set_enabled(struct wlr_scene_rect *rect, bool enabled);
 void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y);
+// Recolour a rect in place (a background whose colour a config reload changed).
+void oxide_scene_rect_set_color(struct wlr_scene_rect *rect, float r, float g,
+        float b, float a);
 // Copy an RGBA8888 pixel image into an owned wlroots buffer and add it to the
 // scene. The buffer may be a different size from its logical destination.
 void *oxide_scene_add_wallpaper(struct wlr_scene_tree *tree, int x, int y,

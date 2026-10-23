@@ -56,6 +56,10 @@ pub enum Action {
     KeyboardShow,
     KeyboardHide,
     KeyboardToggle,
+    /// Re-read `init.lua` and its plugins and apply them to the running
+    /// session (Stage 31). A config that fails to load leaves the current one
+    /// in place.
+    Reload,
     /// Run a Lua function from the config. The payload indexes the function
     /// table on the Lua registry — `Action` stays free of interpreter types so
     /// that the rest of the compositor never sees one.

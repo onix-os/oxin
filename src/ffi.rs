@@ -44,6 +44,9 @@ extern "C" {
         callback: ShimCallback,
         userdata: *mut c_void,
     ) -> *mut c_void;
+    pub(crate) fn oxide_inotify_open() -> i32;
+    pub(crate) fn oxide_inotify_watch_dir(fd: i32, path: *const c_char) -> bool;
+    pub(crate) fn oxide_inotify_drain(fd: i32) -> bool;
     pub(crate) fn oxide_event_loop_add_timer(
         loop_: *mut wlr::wl_event_loop,
         delay_ms: i32,
@@ -107,6 +110,7 @@ extern "C" {
     pub(crate) fn oxide_scene_rect_destroy(rect: *mut c_void);
     pub(crate) fn oxide_scene_rect_set_enabled(rect: *mut c_void, enabled: bool);
     pub(crate) fn oxide_scene_rect_set_position(rect: *mut c_void, x: i32, y: i32);
+    pub(crate) fn oxide_scene_rect_set_color(rect: *mut c_void, r: f32, g: f32, b: f32, a: f32);
     pub(crate) fn oxide_scene_rect_set_size(rect: *mut c_void, width: i32, height: i32);
     pub(crate) fn oxide_scene_add_wallpaper(
         tree: *mut wlr::wlr_scene_tree,

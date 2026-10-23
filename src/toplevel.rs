@@ -238,22 +238,12 @@ unsafe extern "C" fn handle_request_fullscreen(userdata: *mut c_void, _data: *mu
     set_fullscreen(server, tl, want);
 }
 
-/// Every surface commit; only the client's very first one matters here. That
-/// initial commit must be answered with a configure (or the client never
-/// maps) — and the size we put in it is the client's first real size hint.
-/// Answering `0,0` ("pick your own size") lets clients map at their
-/// remembered/preferred size — often larger than their tile, spilling across
-/// outputs, and some (e.g. browsers) then mishandle the immediate resize that
-/// follows on map. Instead, predict the tile this window will get — it joins
-/// the end of the active output's workspace, so `predict_tile_rect` simulates
-/// appending it to that workspace's split tree — and send that, so the first
-/// frame the client ever draws already fits.
-unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
-    let tl = userdata as *mut Toplevel;
-    let server = &*(*tl).server;
-    // Surface buffers do not necessarily exist when the scene tree is first
-    // created. Reapply on every commit so new buffers and subsurfaces inherit
-    // the configured application opacity.
+/// Apply the configured opacity and corner radius to `tl`'s current buffers.
+///
+/// Run on every commit, because a new buffer or subsurface has neither, and
+/// for every window when a config reload changes either setting — an idle
+/// window would otherwise keep the old look until it next redraws.
+pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
     oxide_scene_tree_set_opacity((*tl).scene_tree, server.config.window_opacity);
     // Fullscreen windows are excluded: rounding a window's edges against the
     // bare screen looks wrong, and skipping the extra GPU pass on exactly the
@@ -271,6 +261,25 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
             &mut (*tl).corner_swapchain_h,
         );
     }
+}
+
+/// Every surface commit; only the client's very first one matters here. That
+/// initial commit must be answered with a configure (or the client never
+/// maps) — and the size we put in it is the client's first real size hint.
+/// Answering `0,0` ("pick your own size") lets clients map at their
+/// remembered/preferred size — often larger than their tile, spilling across
+/// outputs, and some (e.g. browsers) then mishandle the immediate resize that
+/// follows on map. Instead, predict the tile this window will get — it joins
+/// the end of the active output's workspace, so `predict_tile_rect` simulates
+/// appending it to that workspace's split tree — and send that, so the first
+/// frame the client ever draws already fits.
+unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
+    let tl = userdata as *mut Toplevel;
+    let server = &*(*tl).server;
+    // Surface buffers do not necessarily exist when the scene tree is first
+    // created. Reapply on every commit so new buffers and subsurfaces inherit
+    // the configured application opacity.
+    apply_decorations(server, tl);
     if !oxide_xdg_initial_commit((*tl).xdg_toplevel) {
         return;
     }

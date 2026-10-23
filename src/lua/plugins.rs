@@ -93,6 +93,53 @@ pub(crate) fn lua_path(roots: &[PathBuf]) -> String {
     parts.join(";")
 }
 
+/// Every directory a change to the loaded config could come from, for the
+/// live-reload watcher: the config file's own directory, and each root's
+/// `plugin/`, `after/plugin/` and `lua/` trees (packages' too), recursively,
+/// because `plugin_files` and `require` both reach into subdirectories.
+///
+/// Only directories that exist are listed. A new one appearing is seen as a
+/// directory event in its parent, and the list is rebuilt after every reload.
+pub(crate) fn watch_dirs(config: Option<&Path>, roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(parent) = config.and_then(Path::parent) {
+        if parent.is_dir() {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    for root in roots {
+        if root.is_dir() {
+            dirs.push(root.clone());
+        }
+        let mut trees = vec![
+            root.join("plugin"),
+            root.join("after/plugin"),
+            root.join("lua"),
+        ];
+        for package in packages(root) {
+            trees.push(package.join("plugin"));
+            trees.push(package.join("lua"));
+        }
+        for tree in trees {
+            collect_dirs(&tree, &mut dirs);
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| seen.insert(d.clone()));
+    dirs
+}
+
+/// `dir` and every directory under it, if it exists.
+fn collect_dirs(dir: &Path, out: &mut Vec<PathBuf>) {
+    if !dir.is_dir() {
+        return;
+    }
+    out.push(dir.to_path_buf());
+    for sub in sorted_dirs(dir) {
+        collect_dirs(&sub, out);
+    }
+}
+
 fn push_lua_dir(root: &Path, parts: &mut Vec<String>) {
     let dir = root.join("lua");
     if dir.is_dir() {

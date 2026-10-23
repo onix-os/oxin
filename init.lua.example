@@ -96,6 +96,10 @@ end
 -- Assigning nil removes a binding, including a built-in one.
 -- oxin.keys["MOD+f"] = nil
 
+-- Saving this file already reloads it into the running session; a key for it
+-- is only needed if you edit somewhere the save is not seen.
+-- oxin.keys["MOD+SHIFT+r"] = oxin.action.reload
+
 -- A binding can also be a function, and then it can do anything Lua can.
 -- oxin.keys["MOD+g"] = function()
 --   oxin.gap = (oxin.gap == 0) and 12 or 0

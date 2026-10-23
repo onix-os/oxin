@@ -135,6 +135,7 @@ fn main() {
         "shim/touch_events.c",
         "shim/text_input.c",
         "shim/gles2_corner.c",
+        "shim/config_watch.c",
     ];
     let mut shim = cc::Build::new();
     shim.files(shim_files);

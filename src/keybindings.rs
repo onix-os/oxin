@@ -304,7 +304,7 @@ unsafe extern "C" fn handle_hold_timer(userdata: *mut c_void, source: *mut c_voi
     }
 }
 
-unsafe fn cancel_hold(server: &mut Server) {
+pub(crate) unsafe fn cancel_hold(server: &mut Server) {
     if !server.hold_source.is_null() {
         oxide_event_source_remove(server.hold_source);
         server.hold_source = std::ptr::null_mut();
@@ -425,5 +425,9 @@ pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
         Action::KeyboardShow => set_keyboard_visible(server, true),
         Action::KeyboardHide => set_keyboard_visible(server, false),
         Action::KeyboardToggle => set_keyboard_visible(server, !server.keyboard_visible),
+        Action::Reload => {
+            // The failure was already reported loudly; nothing to add here.
+            let _ = crate::reload::reload(server);
+        }
     }
 }

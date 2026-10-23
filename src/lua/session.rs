@@ -84,6 +84,80 @@ pub(crate) struct Session {
 /// `0xinctl` can print it — a session that silently reverted to defaults is
 /// otherwise indistinguishable from one that loaded fine.
 pub(crate) fn start() -> Session {
+    let Loaded {
+        vm,
+        mut registry,
+        path,
+        found,
+        outcome,
+    } = load();
+    if !found {
+        match &path {
+            Some(p) => println!("0xin: no {} — using defaults", p.display()),
+            None => println!("0xin: no config path (no $HOME) — using defaults"),
+        }
+    }
+    if let (Some(p), true, Ok(_)) = (&path, found, &outcome) {
+        println!("0xin: loaded {}", p.display());
+    }
+    match outcome {
+        Ok(config) => Session {
+            vm,
+            registry,
+            config,
+        },
+        Err(message) => {
+            report(&message, "starting with built-in defaults instead");
+            registry.config_error = Some(message);
+            Session {
+                vm,
+                registry,
+                config: Config::default(),
+            }
+        }
+    }
+}
+
+/// Build a fresh VM and run `init.lua` again, for a running session.
+///
+/// Unlike [`start`], a failure here is an `Err` and nothing else: the caller is
+/// still running a config that works, and swapping it for the defaults would
+/// take away every binding the user had because of one typo. A *missing* file
+/// is a failure too, for the same reason — an editor that saves by deleting
+/// and renaming, or a file moved aside for a moment, must not be read as "the
+/// user wants no config".
+pub(crate) fn reload() -> Result<Session, String> {
+    let loaded = load();
+    if !loaded.found {
+        return Err(match &loaded.path {
+            Some(p) => format!("no {} to reload", p.display()),
+            None => "no config path (no $HOME) to reload".into(),
+        });
+    }
+    let config = loaded.outcome?;
+    if let Some(p) = &loaded.path {
+        println!("0xin: reloaded {}", p.display());
+    }
+    Ok(Session {
+        vm: loaded.vm,
+        registry: loaded.registry,
+        config,
+    })
+}
+
+/// One run of the Lua layer, before anyone has decided what a failure means.
+struct Loaded {
+    vm: Lua,
+    registry: LuaRegistry,
+    path: Option<PathBuf>,
+    /// Whether `path` existed and was read.
+    found: bool,
+    /// The finished config. On `Ok` the registry already holds its functions
+    /// and handlers; on `Err` it holds none.
+    outcome: Result<Config, String>,
+}
+
+fn load() -> Loaded {
     let mut vm = vm::build();
     let mut registry = LuaRegistry::new();
 
@@ -118,15 +192,10 @@ pub(crate) fn start() -> Session {
 
     let path = config_path();
     let source = path.as_ref().and_then(|p| fs::read(p).ok());
-    let chunk = match (&path, &source) {
-        (Some(p), Some(bytes)) => Some((p.as_path(), bytes.clone())),
-        _ => {
-            match &path {
-                Some(p) => println!("0xin: no {} — using defaults", p.display()),
-                None => println!("0xin: no config path (no $HOME) — using defaults"),
-            }
-            None
-        }
+    let found = source.is_some();
+    let chunk = match (&path, source) {
+        (Some(p), Some(bytes)) => Some((p.as_path(), bytes)),
+        _ => None,
     };
     if !plugin_files.is_empty() {
         println!(
@@ -135,43 +204,32 @@ pub(crate) fn start() -> Session {
         );
     }
 
-    match config::load_all(&mut vm, chunk, &plugin_files) {
+    let outcome = match config::load_all(&mut vm, chunk, &plugin_files) {
         Ok(finished) => {
-            if let Some(p) = &path {
-                if source.is_some() {
-                    println!("0xin: loaded {}", p.display());
-                }
-            }
             registry.set_functions(finished.functions);
             registry.set_handlers(finished.handlers);
-            Session {
-                vm,
-                registry,
-                config: finished.config,
-            }
+            Ok(finished.config)
         }
-        Err(message) => {
-            report(path.as_deref(), &message);
-            registry.config_error = Some(message);
-            Session {
-                vm,
-                registry,
-                config: Config::default(),
-            }
-        }
+        Err(message) => Err(message),
+    };
+    Loaded {
+        vm,
+        registry,
+        path,
+        found,
+        outcome,
     }
 }
 
 /// Say loudly what went wrong. A user whose config silently reverted is left
 /// staring at a working compositor with no explanation and no scrollback.
-fn report(path: Option<&std::path::Path>, message: &str) {
-    let _ = path;
+pub(crate) fn report(message: &str, consequence: &str) {
     eprintln!("0xin: ─────────────────────────────────────────");
     eprintln!("0xin: config error");
     for line in message.lines() {
         eprintln!("0xin:   {line}");
     }
-    eprintln!("0xin: starting with built-in defaults instead");
+    eprintln!("0xin: {consequence}");
     eprintln!("0xin: (`0xinctl config-error` repeats this)");
     eprintln!("0xin: ─────────────────────────────────────────");
 }

@@ -64,17 +64,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
     // Phone profiles opt into a small compositor-owned handle. Its larger
     // invisible touch target is implemented in the input shim.
     let gesture_handle = if server.config.has_keyboard_handle() {
-        oxide_scene_add_rect(
-            server.tree_layer_overlay,
-            x + (w - 120) / 2,
-            y + h - 10,
-            120,
-            5,
-            0.85,
-            0.85,
-            0.88,
-            1.0,
-        )
+        add_gesture_handle(server, x, y, w, h)
     } else {
         std::ptr::null_mut()
     };
@@ -256,6 +246,60 @@ unsafe extern "C" fn handle_frame(userdata: *mut c_void, _data: *mut c_void) {
     oxide_scene_output_render(ctx.scene_output);
 }
 
+/// Size of the phone-profile gesture handle drawn at an output's bottom edge.
+const HANDLE_W: i32 = 120;
+const HANDLE_H: i32 = 5;
+
+/// Where the handle sits on an output with this box: centred, 10px up.
+fn gesture_handle_position(x: i32, y: i32, w: i32, h: i32) -> (i32, i32) {
+    (x + (w - HANDLE_W) / 2, y + h - 10)
+}
+
+/// Draw the gesture handle for an output with this box.
+unsafe fn add_gesture_handle(server: &Server, x: i32, y: i32, w: i32, h: i32) -> *mut c_void {
+    let (hx, hy) = gesture_handle_position(x, y, w, h);
+    oxide_scene_add_rect(
+        server.tree_layer_overlay,
+        hx,
+        hy,
+        HANDLE_W,
+        HANDLE_H,
+        0.85,
+        0.85,
+        0.88,
+        1.0,
+    )
+}
+
+/// Bring every output's background colour and gesture handle in line with
+/// the config. Both are made once per output as it connects, so a config
+/// reload that changes them has to come back here.
+pub(crate) unsafe fn apply_config(server: &mut Server) {
+    let (r, g, b) = server.config.background;
+    let want_handle = server.config.has_keyboard_handle();
+    for i in 0..server.outputs.len() {
+        let o = &server.outputs[i];
+        oxide_scene_rect_set_color(o.background, r, g, b, 1.0);
+        if want_handle && o.gesture_handle.is_null() {
+            let handle = add_gesture_handle(server, o.x, o.y, o.w, o.h);
+            server.outputs[i].gesture_handle = handle;
+        } else if !want_handle && !o.gesture_handle.is_null() {
+            oxide_scene_rect_destroy(o.gesture_handle);
+            server.outputs[i].gesture_handle = std::ptr::null_mut();
+        }
+        // An open keyboard lifts the handle by its configured height, which
+        // may just have changed. `tiling::refresh` then snaps it to the
+        // keyboard's real exclusive zone, as it does on every re-tile.
+        let o = &server.outputs[i];
+        if server.keyboard_visible && !o.gesture_handle.is_null() {
+            let (hx, _) = gesture_handle_position(o.x, o.y, o.w, o.h);
+            let hy = o.y + o.h - (server.config.virtual_keyboard_height + 8);
+            oxide_scene_rect_set_position(o.gesture_handle, hx, hy);
+        }
+        oxide_output_schedule_frame(server.outputs[i].wlr_output);
+    }
+}
+
 /// Rotate/flip an output at runtime — driven by `0xinctl rotate NAME
 /// TRANSFORM` (`control.rs`), in turn driven by the phone's accelerometer
 /// watcher script. `transform` is a raw WL_OUTPUT_TRANSFORM_* value.
@@ -295,8 +339,8 @@ pub(crate) unsafe fn rotate(server: &mut Server, name: &str, transform: u32) -> 
         oxide_scene_rect_set_size(o.background, w, h);
         oxide_scene_rect_set_position(o.background, x, y);
         if !o.gesture_handle.is_null() {
-            // Same offset formula as the handle's creation in handle_new_output.
-            oxide_scene_rect_set_position(o.gesture_handle, x + (w - 120) / 2, y + h - 10);
+            let (hx, hy) = gesture_handle_position(x, y, w, h);
+            oxide_scene_rect_set_position(o.gesture_handle, hx, hy);
         }
     }
 

@@ -41,3 +41,4 @@
 - [Stage 28 — Lua Configuration](phases/stage-28-lua-configuration.md)
 - [Stage 29 — Touchpad Gestures](phases/stage-29-touchpad-gestures.md)
 - [Stage 30 — Popups and Menus](phases/stage-30-popups.md)
+- [Stage 31 — Live Config Reload](phases/stage-31-live-reload.md)

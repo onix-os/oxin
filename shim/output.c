@@ -123,6 +123,12 @@ void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y) {
     wlr_scene_node_set_position(&rect->node, x, y);
 }
 
+void oxide_scene_rect_set_color(struct wlr_scene_rect *rect, float r, float g,
+        float b, float a) {
+    const float color[4] = {r, g, b, a};
+    wlr_scene_rect_set_color(rect, color);
+}
+
 void oxide_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int height) {
     wlr_scene_rect_set_size(rect, width, height);
 }

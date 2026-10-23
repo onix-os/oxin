@@ -98,6 +98,12 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
         wlr::wl_display_terminate(server.display);
         return "ok\n".into();
     }
+    if request == "reload" {
+        return match crate::reload::reload(server) {
+            Ok(()) => "ok\n".into(),
+            Err(error) => format!("error {}\n", error.trim_end()),
+        };
+    }
     if let Some(argument) = request.strip_prefix("rotate ") {
         return match parse_rotate(argument) {
             Some((name, transform)) => match crate::output::rotate(server, name, transform) {
@@ -108,7 +114,7 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
         };
     }
     let Some(argument) = request.strip_prefix("wallpaper ") else {
-        return "error expected `quit`, `config-error`, `wallpaper PATH`, \
+        return "error expected `quit`, `config-error`, `reload`, `wallpaper PATH`, \
                 `wallpaper clear`, or `rotate NAME normal|90|180|270`\n"
             .into();
     };

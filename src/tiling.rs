@@ -402,6 +402,8 @@ mod tests {
             held_action: None,
             control_listener: None,
             control_path: None,
+            watch_fd: None,
+            watch_timer: ptr::null_mut(),
             keyboard_visible: false,
             grab: GrabMode::None,
             grab_tl: ptr::null_mut(),

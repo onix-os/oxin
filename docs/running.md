@@ -76,6 +76,17 @@ one that loaded fine.
 `print()` from a config goes to stderr as `0xin: lua: …`, which is usually
 quicker than reasoning about what a setting resolved to.
 
+Once 0xin is running, there is no need to restart it to try a change: saving
+the file reloads it ([Stage 31](phases/stage-31-live-reload.md)), and the log
+says `0xin: reloaded …` or prints the error and `keeping the previous config`.
+`0xinctl reload` does the same on demand and answers `ok` or the error, which
+makes it the scriptable form:
+
+```sh
+sed -i 's/oxin.gap = .*/oxin.gap = 20/' /tmp/cfg/0xin/init.lua   # reloads on its own
+WAYLAND_DISPLAY=$SOCK 0xinctl reload                             # or explicitly
+```
+
 To check whether a problem is yours or a plugin's, start without them:
 
 ```sh

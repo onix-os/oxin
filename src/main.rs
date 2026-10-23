@@ -18,6 +18,7 @@ mod wlr {
 }
 
 mod config;
+mod config_watch;
 mod control;
 mod decoration;
 mod ffi;
@@ -28,6 +29,7 @@ mod layout;
 mod lua;
 mod output;
 mod output_power;
+mod reload;
 mod session_lock;
 mod state;
 mod tiling;
@@ -213,6 +215,8 @@ fn main() {
             held_action: None,
             control_listener: None,
             control_path: None,
+            watch_fd: None,
+            watch_timer: std::ptr::null_mut(),
             keyboard_visible: false,
             grab: GrabMode::None,
             grab_tl: std::ptr::null_mut(),
@@ -316,6 +320,11 @@ fn main() {
 
         if let Err(error) = control::setup(&mut server, event_loop, server_ptr) {
             eprintln!("0xin: control socket disabled: {error}");
+        }
+        // Saving init.lua (or a plugin) reloads it. Losing this only loses the
+        // convenience; `0xinctl reload` still works.
+        if let Err(error) = config_watch::setup(&mut server, event_loop, server_ptr) {
+            eprintln!("0xin: config watcher disabled: {error}");
         }
 
         // Declarative session startup: the config's `on.startup` handlers,

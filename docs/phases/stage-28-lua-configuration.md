@@ -136,6 +136,10 @@ property rather than a discipline. The message is kept for
 `0xinctl config-error`, because a session that silently reverted to defaults
 is otherwise indistinguishable from one that loaded fine.
 
+A *reload* turns the startup policy around: once a session is running, a config
+that fails to load leaves the current one in place instead of falling back to
+defaults ([Stage 31](stage-31-live-reload.md)).
+
 ## Sandbox
 
 `Lua::core()` plus `package`, not `Lua::full()`. Three entries in the fuller

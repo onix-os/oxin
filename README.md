@@ -323,6 +323,16 @@ message once you are in. A config that loops forever is stopped by a fuel budget
 and a wall-clock deadline rather than hanging the session. See
 [`init.lua.example`](init.lua.example) for the full annotated example.
 
+### Live reload
+
+Saving `init.lua`, or any `.lua` file under a `plugin/`, `after/plugin/` or `lua/`
+directory, reloads the config into the running session: change `oxin.gap`, save, and
+the windows re-tile. `0xinctl reload` and `oxin.action.reload` do the same on demand.
+A save that fails to load is reported (and kept for `0xinctl config-error`), and the
+session keeps the config it was already running, so a typo mid-edit costs nothing.
+`on.startup` handlers are not run again, and `oxin.monitors` applies when a monitor
+next connects.
+
 ### Plugins
 
 Config somebody else wrote drops in as a directory, following neovim's layout: an
@@ -344,6 +354,12 @@ wallpaper without restarting:
 
 Runtime changes last until 0xin exits. Set `wallpaper =` in the config to make
 the selection persistent across sessions.
+
+Re-read the config without waiting for a save (see [Live reload](#live-reload)):
+
+```sh
+0xinctl reload
+```
 
 End the running compositor cleanly (and return to its login/session chooser)
 with:
@@ -409,6 +425,7 @@ reappear correctly.
 | `src/lua/`                | Embedded Lua: VM, the `oxin` module, registrars, events, plugins |
 | `src/wallpaper.rs`        | Internal PNG/JPEG decoder + wlroots wallpaper buffers      |
 | `src/control.rs`          | Local runtime-control socket                               |
+| `src/reload.rs`, `src/config_watch.rs` | Live config reload, and the inotify watcher that triggers it on save |
 | `src/bin/0xinctl.rs`      | Runtime control command                                    |
 | `shim/oxide_shim.{c,h}` | Thin C shim: wlroots listener glue + struct access        |
 | `build.rs`, `wrapper.h`   | The FFI pipeline (pkg-config, wayland-scanner, cc, bindgen) |
