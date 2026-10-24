@@ -253,7 +253,7 @@ pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
     // bare screen looks wrong, and skipping the extra GPU pass on exactly the
     // "video playing, committing every frame" case is a real perf win too.
     if server.config.corner_radius > 0 && !(*tl).fullscreen {
-        (*tl).was_masked = oxide_toplevel_apply_corner_mask(
+        oxide_toplevel_apply_corner_radius(
             server.renderer,
             server.allocator,
             server.corner_program,
@@ -263,21 +263,7 @@ pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
             &mut (*tl).corner_swapchain,
             &mut (*tl).corner_swapchain_w,
             &mut (*tl).corner_swapchain_h,
-            &mut (*tl).composite_swapchain,
-            &mut (*tl).composite_swapchain_w,
-            &mut (*tl).composite_swapchain_h,
         );
-    } else if (*tl).was_masked {
-        // `corner_radius` was turned off (live reload) or this window just
-        // entered fullscreen while previously masked — undo it immediately
-        // rather than leaving a stale masked buffer showing until the next
-        // commit. Gated on `was_masked` so a window that was never masked
-        // (the common case when corner_radius == 0) costs nothing here.
-        oxide_toplevel_restore_corner_mask(
-            (*tl).scene_tree,
-            oxide_xdg_toplevel_surface((*tl).xdg_toplevel),
-        );
-        (*tl).was_masked = false;
     }
 }
 
@@ -416,7 +402,6 @@ unsafe extern "C" fn handle_destroy(userdata: *mut c_void, _data: *mut c_void) {
     oxide_listener_remove((*tl).destroy_listener);
     oxide_listener_remove((*tl).fullscreen_listener);
     oxide_swapchain_destroy((*tl).corner_swapchain);
-    oxide_swapchain_destroy((*tl).composite_swapchain);
     remove_window(server, tl);
     drop(Box::from_raw(tl));
 }
