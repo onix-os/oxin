@@ -354,6 +354,10 @@ mod tests {
             corner_swapchain: ptr::null_mut(),
             corner_swapchain_w: 0,
             corner_swapchain_h: 0,
+            composite_swapchain: ptr::null_mut(),
+            composite_swapchain_w: 0,
+            composite_swapchain_h: 0,
+            was_masked: false,
         }))
     }
 

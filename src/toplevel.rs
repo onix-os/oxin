@@ -38,6 +38,10 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
         corner_swapchain: ptr::null_mut(),
         corner_swapchain_w: 0,
         corner_swapchain_h: 0,
+        composite_swapchain: ptr::null_mut(),
+        composite_swapchain_w: 0,
+        composite_swapchain_h: 0,
+        was_masked: false,
     }));
 
     // Listen for its lifecycle so Rust can keep the window list current. We keep

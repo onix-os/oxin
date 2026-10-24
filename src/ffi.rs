@@ -421,10 +421,13 @@ extern "C" {
     pub(crate) fn oxide_gles2_corner_program_create(
         renderer: *mut wlr::wlr_renderer,
     ) -> *mut c_void;
-    // Best-effort: returns false and leaves the previous buffer in place on
-    // any failure. `swapchain_inout`/`_w_inout`/`_h_inout` are the caller's
-    // per-Toplevel corner_swapchain/_w/_h fields, updated in place.
-    pub(crate) fn oxide_toplevel_apply_corner_radius(
+    // Best-effort: returns false and leaves the window fully visible/
+    // unmasked (via an internal restore) on any failure.
+    // `swapchain_inout`/`_w_inout`/`_h_inout` are the caller's per-Toplevel
+    // corner_swapchain/_w/_h fields (the final masked result);
+    // `composite_swapchain_inout`/`_w_inout`/`_h_inout` are the intermediate
+    // pre-mask composite's equivalents. Both updated in place.
+    pub(crate) fn oxide_toplevel_apply_corner_mask(
         renderer: *mut wlr::wlr_renderer,
         allocator: *mut wlr::wlr_allocator,
         corner_program: *mut c_void,
@@ -434,6 +437,17 @@ extern "C" {
         swapchain_inout: *mut *mut c_void,
         swapchain_w_inout: *mut i32,
         swapchain_h_inout: *mut i32,
+        composite_swapchain_inout: *mut *mut c_void,
+        composite_swapchain_w_inout: *mut i32,
+        composite_swapchain_h_inout: *mut i32,
     ) -> bool;
+    // Undoes masking: re-enables every scene node a previous
+    // oxide_toplevel_apply_corner_mask call may have hidden, and puts the
+    // root surface's own scene buffer back to its own current buffer/size.
+    // Safe to call on a window that was never masked.
+    pub(crate) fn oxide_toplevel_restore_corner_mask(
+        scene_tree: *mut wlr::wlr_scene_tree,
+        root_surface: *mut c_void,
+    );
     pub(crate) fn oxide_swapchain_destroy(swapchain: *mut c_void);
 }

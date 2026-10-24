@@ -198,14 +198,26 @@ pub(crate) struct Toplevel {
     pub(crate) unmap_listener: *mut ShimListener,
     pub(crate) destroy_listener: *mut ShimListener,
     pub(crate) fullscreen_listener: *mut ShimListener,
-    /// Per-window GPU buffer chain for corner-radius masking (opaque —
-    /// `struct wlr_swapchain*`, see shim/gles2_corner.c); NULL until the
-    /// first masked commit. Recreated when the surface's buffer size
-    /// changes, so `corner_swapchain_w`/`_h` track what size it currently
-    /// matches.
+    /// Per-window GPU buffer chain for the FINAL masked result of
+    /// corner-radius masking (opaque — `struct wlr_swapchain*`, see
+    /// shim/gles2_corner.c); NULL until the first masked commit. Recreated
+    /// when the whole-window bounding box's buffer size changes, so
+    /// `corner_swapchain_w`/`_h` track what size it currently matches.
     pub(crate) corner_swapchain: *mut c_void,
     pub(crate) corner_swapchain_w: i32,
     pub(crate) corner_swapchain_h: i32,
+    /// Per-window GPU buffer chain for the INTERMEDIATE pre-mask composite
+    /// (root surface + subsurfaces flattened together, before the
+    /// rounded-rect mask is applied) — same lifecycle as `corner_swapchain`.
+    pub(crate) composite_swapchain: *mut c_void,
+    pub(crate) composite_swapchain_w: i32,
+    pub(crate) composite_swapchain_h: i32,
+    /// Whether this window's scene nodes are currently in the "masked"
+    /// state (root node repurposed, other nodes hidden) from a previous
+    /// `apply_decorations` call — lets `apply_decorations` skip the restore
+    /// walk entirely for a window that was never masked, so `corner_radius
+    /// == 0` still costs nothing per commit.
+    pub(crate) was_masked: bool,
 }
 
 /// One layer-shell surface (bar, panel, wallpaper — e.g. quickshell). Heap-
