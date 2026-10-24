@@ -2,13 +2,18 @@
 
 **What it is.** An opt-in `corner_radius` config value that rounds tiled and
 floating application windows' corners with real per-pixel masking — not an
-illusion.
+illusion. Originally root-surface-only; extended to cover a window's
+subsurfaces too (see "Whole-window masking" below) once it became clear real
+apps — Firefox among them — paint their visible content into a subsurface
+rather than their root surface, and never got rounded at all under the first
+cut.
 
 **Gate:** *`corner_radius = N` in config rounds every tiled/floating
-window's corners with a clean, anti-aliased edge that's correct regardless
-of what's behind it (wallpaper image, another window, `window_opacity <
-1.0`); fullscreen windows are unaffected; `corner_radius = 0` (the default)
-costs nothing.*
+window's corners — root surface and any subsurfaces alike — with a clean,
+anti-aliased edge that's correct regardless of what's behind it (wallpaper
+image, another window, `window_opacity < 1.0`); popups stay unrounded (they
+can legitimately extend past the window); fullscreen windows are unaffected;
+`corner_radius = 0` (the default) costs nothing.*
 
 ## Why this needed real rendering work
 
@@ -60,19 +65,81 @@ GL directly before this; every prior frame was 100% delegated to
   `WLR_RENDERER=gles2` forces the renderer if a machine picks another. This
   was a real crash, not a precaution — reproduced with
   `WLR_RENDERER=pixman`, which is also the regression test.
-- `oxide_toplevel_apply_corner_radius` runs from `src/toplevel.rs`'s
-  `handle_commit` — the same per-commit hook that already reapplies
+- `oxide_toplevel_apply_corner_mask` runs from `src/toplevel.rs`'s
+  `apply_decorations` — the same per-commit hook that already reapplies
   `window_opacity` — gated on `corner_radius > 0` and the window not being
-  fullscreen. It finds the toplevel's own root-surface scene buffer (never
-  a popup/subsurface — both are parented under the same scene tree by
-  `wlr_scene_xdg_surface_create`, and must stay unmasked), renders through
-  the shader into a per-toplevel swapchain (`Toplevel.corner_swapchain`,
-  recreated when the surface's buffer size changes), and swaps the result
-  in. Every piece of GL state the draw touches (program, texture bindings,
-  viewport, blend state, vertex attrib arrays) is saved and restored around
-  it, since `wlr_scene_output_commit` renders the rest of that output's
-  scene moments later the same frame — leftover state there would corrupt
-  other windows' rendering, not just this one.
+  fullscreen. Every piece of GL state each pass touches (program, texture
+  bindings, viewport, blend state, vertex attrib arrays) is saved and
+  restored around it, since `wlr_scene_output_commit` renders the rest of
+  that output's scene moments later the same frame — leftover state there
+  would corrupt other windows' rendering, not just this one.
+
+## Whole-window masking (root surface + subsurfaces)
+
+The first cut of this feature masked only the toplevel's own root-surface
+scene buffer. That's wrong for any client whose actual visible content is
+painted into a `wl_subsurface` instead — Firefox is the motivating case —
+which left such windows permanently square: `find_root_scene_buffer` would
+simply never find a match and bail with a log line saying so.
+
+Rounding the whole window needed two more pieces oxin didn't have before:
+Hyprland can round every client because it owns its entire render pipeline
+and clips per draw call; oxin bolts masking onto wlroots' stock `wlr_scene`
+graph, which has no clip/mask primitive, so matching that behavior means
+actually flattening a window's content first.
+
+- **Buffer collection.** `collect_mask_source`, driven by the same
+  `wlr_scene_node_for_each_buffer` primitive `oxide_scene_tree_set_opacity`
+  already uses generically, walks every buffer under the toplevel's scene
+  tree and keeps the root surface and any subsurfaces, in the painter's-
+  order the iterator already visits them in. Popups are explicitly skipped
+  (`wlr_xdg_surface_try_from_wlr_surface(surface)->role ==
+  WLR_XDG_SURFACE_ROLE_POPUP`) — they are structurally distinct xdg_surfaces
+  that can legitimately extend past the window, and must never be masked or
+  flattened in. Each source's window-local position comes from the
+  iterator's layout-coordinate callback minus the toplevel's own origin
+  (`wlr_scene_node_coords`); the union of all sources' extents is the
+  window's bounding box, clamped to 4x the root surface's own logical size
+  (and the whole pass abandoned, falling back to "leave it unmasked for this
+  commit") as a guard against a stray/misbehaving subsurface inflating it
+  arbitrarily.
+- **Pass A — flatten.** `render_composite_pass` draws every collected source
+  into one new/reused intermediate swapchain (`Toplevel.composite_swapchain`)
+  sized to the bounding box, back-to-front, through a small dedicated "blit"
+  shader pair (same `sampler2D`/`samplerExternalOES` split as the mask
+  shader, for the same reason) that scales each source by its own
+  `wlr_scene_buffer.opacity` while keeping the output premultiplied.
+  Standard premultiplied "over" blending (`GL_ONE, GL_ONE_MINUS_SRC_ALPHA`)
+  onto a transparent-cleared canvas.
+- **Pass B — mask.** The flattened result is re-imported as a texture
+  (`wlr_texture_from_buffer`) and run through the *same, unmodified*
+  rounded-rect shader the single-surface case always used
+  (`render_corner_mask`), into `Toplevel.corner_swapchain` — because that
+  logic already re-derives which sampler variant a texture needs from its
+  own GL attribs, it works correctly regardless of what target the
+  intermediate composite happens to import as.
+- **Scene graph.** The masked result is swapped into the *root surface's
+  own* scene buffer node (repositioned if the bounding box's origin isn't
+  the root's own `(0,0)`), and every other collected node is disabled
+  (`wlr_scene_node_set_enabled(..., false)`) — its content is now baked into
+  the composite. `oxide_toplevel_apply_corner_mask` always calls
+  `oxide_toplevel_restore_corner_mask` first, unconditionally, before
+  attempting any of the above — so a transient failure anywhere in the
+  pipeline (texture not ready, swapchain acquire failure, composite import
+  failure, …) always leaves the window back in a fully-visible, square-
+  cornered state for that commit rather than partially hidden.
+  `apply_decorations` calls that same restore function on the Rust side,
+  gated on a new `Toplevel.was_masked` flag, whenever `corner_radius` turns
+  off (live reload) or the window enters fullscreen while previously masked
+  — so turning rounding off no longer leaves a stale masked buffer on
+  screen, and a window that was never masked costs nothing to check.
+- **Known, accepted gap:** a *desynchronized* subsurface (common for a
+  video/GL overlay) can commit independently of the root surface. Nothing
+  listens for that commit — `wlr_scene_node_for_each_buffer` always re-walks
+  the *live* tree on demand, so no bespoke per-subsurface tracking was added
+  — so such a subsurface's content can go one frame stale until the root
+  surface's own next commit. A natural, wider extension of the damage-
+  tracking regression already accepted below, not a new class of bug.
 - **The mask is only half the job: the scene has to be told the corners are
   no longer opaque.** `wlr_scene_buffer_set_opaque_region` is what wlroots
   uses to decide whether anything *underneath* a buffer needs drawing at
@@ -120,31 +187,66 @@ GL directly before this; every prior frame was 100% delegated to
 - **Damage tracking regresses for masked windows.** Every masked commit
   repaints the whole buffer (`wlr_scene_buffer_set_buffer`'s plain
   variant), losing wlroots' fine-grained per-region damage tracking for as
-  long as `corner_radius > 0`. Accepted for this first cut.
-- **Real, non-hypothetical battery/perf cost.** An extra GPU pass on every
-  commit of every visible masked window — the same device (FP5) this
-  project added DPMS power-off support *to save battery on*. No
-  throttling/coalescing is implemented.
+  long as `corner_radius > 0` — now for the *whole* window (root +
+  subsurfaces), not just the root surface. Accepted.
+- **Real, non-hypothetical battery/perf cost, now larger.** What was one
+  extra GPU pass per masked commit is now up to *N* source draws (Pass A)
+  plus two full buffer passes (Pass A submit, Pass B submit) — roughly
+  double the cost even for a window with no subsurfaces (the extra copy
+  through the intermediate buffer), scaling further with how many
+  subsurfaces a window has. Directly relevant to the FP5 profile, which
+  runs `corner_radius = 40` — re-measure battery/frame-time impact there
+  specifically; this was not possible in the environment this change was
+  written in (no real hardware, no display at all — see Verification).
 - **Scanout loss.** A masked window can never be handed straight to a KMS
   plane for direct scanout — the scene graph sees a compositor-rendered
   copy, not the client's original buffer, for as long as it's masked.
-- Popups/subsurfaces, layer-shell surfaces (bars/panels), the wallpaper,
-  and session-lock surfaces are all unaffected — none of them route
-  through `toplevel.rs::handle_commit`.
+- **A source whose texture import GLES2 can't handle** (e.g. an unusual
+  multi-plane format) is skipped — logged, drawn as nothing in the
+  composite — rather than aborting the whole window's masking.
+- **Popups** are the one thing still deliberately excluded by design — they
+  can legitimately extend past the window's bounds (menus, tooltips) and
+  must never be masked or flattened in. Layer-shell surfaces (bars/panels),
+  the wallpaper, and session-lock surfaces remain unaffected — none of them
+  route through `toplevel.rs::apply_decorations`.
 
 ## Verification
 
-Verified nested (Intel Iris Xe, unscaled): `corner_radius = 24` with a
-`kitty` test window — screenshotted via `grim`, all four corners show
-clean, correctly anti-aliased rounding with no premultiplied-alpha fringing,
-holding up across repeated commits (not just the first frame). No GL state
-corruption observed in neighboring host windows sharing the same frame.
-Window-destroy cleanup verified: killing a masked window produces no
-wlroots assertions or buffer-lock leak warnings, and the compositor process
-survives.
+Root-only masking was verified nested (Intel Iris Xe, unscaled):
+`corner_radius = 24` with a `kitty` test window — screenshotted via `grim`,
+all four corners show clean, correctly anti-aliased rounding with no
+premultiplied-alpha fringing, holding up across repeated commits (not just
+the first frame). No GL state corruption observed in neighboring host
+windows sharing the same frame. Window-destroy cleanup verified: killing a
+masked window produces no wlroots assertions or buffer-lock leak warnings,
+and the compositor process survives.
 
-**Not yet verified on real hardware (FP5/Adreno).** GLES2/EGL behavior —
-shader precision qualifiers, extension availability, swapchain format/
-modifier compatibility — can differ from the nested Intel path; this is
-exactly the class of bug a nested-only test can miss. Recommended before
-enabling `corner_radius` on the FP5 profile.
+**Whole-window masking (root + subsurfaces) is not yet verified against a
+real compositor session at all.** It was written and built (`cargo build`,
+`cargo test` — both clean, 73 tests passing) in an environment with no
+display and no wlroots session available, so none of the following has
+actually been run yet and all of it should happen before trusting this on
+the FP5 profile:
+
+- A plain terminal (kitty, one source, no subsurfaces) should look
+  identical to the already-verified root-only case — the regression check
+  that the two-pass path didn't change anything for the common case.
+- A subsurface-rendering client (Firefox, or `mpv --vo=gpu` with a
+  subsurface-backed video overlay) should now show rounded corners on its
+  actual visible content — screenshot via `grim` to confirm clean corners
+  with no black/transparent artifacts at the composite's edges, and no
+  upside-down or offset content (the Pass A quad placement math in
+  `compute_quad` is derived from, but not re-verified against, the already-
+  proven root-only orientation).
+- Toggling `corner_radius` to `0` via `0xinctl reload` while such a window
+  is open should snap it back to square *and fully visible* — confirming
+  `oxide_toplevel_restore_corner_mask` actually un-hides every subsurface
+  node it hid.
+- Resizing, fullscreening, and unfullscreening such a window should not
+  leave any node stuck hidden or any stale masked buffer on screen.
+
+**Still not yet verified on real hardware (FP5/Adreno)** even for the
+root-only path, let alone the whole-window one — GLES2/EGL behavior (shader
+precision qualifiers, extension availability, swapchain format/modifier
+compatibility) can differ from the nested Intel path. Recommended before
+re-enabling `corner_radius` on the FP5 profile.
