@@ -442,48 +442,28 @@ bool oxide_output_power_set_mode_event_is_on(
 // (see main.rs), so there is no paired destroy function.
 void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer);
 
-// Composites every buffer under `scene_tree` that isn't a popup (the root
-// surface plus any wl_subsurfaces — e.g. Firefox, which paints its visible
-// content into a subsurface rather than its root surface) into one
-// compositor-owned buffer, then runs that composite through the
-// corner-radius shader and swaps the masked result into the root surface's
-// own `wlr_scene_buffer` node, hiding every other collected node (its
-// content is now baked into the composite). Popups stay untouched — they
-// can legitimately extend past the window's bounds.
-//
-// Always starts by calling `oxide_toplevel_restore_corner_mask` (below) on
-// this same tree before attempting anything else, so a transient failure
-// (texture not ready, swapchain acquire failure, …) never leaves the window
-// partially hidden — it always lands back in a fully-visible, square-
-// cornered state for that commit on any bail-out.
-//
-// `*swapchain_inout`/`*composite_swapchain_inout` are each a per-toplevel
-// `struct wlr_swapchain*` (opaque `void*` — NULL initially): the former
-// holds the final masked result, the latter the intermediate pre-mask
-// composite. Both are recreated by this call whenever the size they need no
-// longer matches `*_w_inout`/`*_h_inout`; the caller owns destroying both
-// (`oxide_swapchain_destroy` below, once each) when the window is destroyed.
-//
-// Returns false (no-op beyond the restore above) on any failure — masking is
-// best-effort, never fatal.
-bool oxide_toplevel_apply_corner_mask(struct wlr_renderer *renderer,
+// Renders `root_surface`'s current texture through the corner-radius shader
+// into a compositor-owned GPU buffer, then swaps it into whichever
+// `wlr_scene_buffer` under `scene_tree` is backed by that exact surface
+// (never a popup/subsurface). `*swapchain_inout` is a per-toplevel
+// `struct wlr_swapchain*` (opaque `void*` — NULL initially), recreated by
+// this call whenever the surface's buffer size no longer matches
+// `*swapchain_w_inout`/`*swapchain_h_inout`; the caller owns destroying it
+// (`oxide_swapchain_destroy` below) when the window itself is destroyed.
+// The destination display size restated on the scene buffer (required on a
+// fractionally-scaled output, since this call's own buffer swap bypasses
+// wlroots' client-viewport-driven auto-scaling) is read from
+// `root_surface`'s own committed logical size, not passed in — the
+// authoritative value is whatever the client itself intended when it
+// committed this content.
+// Returns false (no-op) on any failure — masking is best-effort, never fatal.
+bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, void *corner_program,
         struct wlr_scene_tree *scene_tree, struct wlr_surface *root_surface,
         int radius, void **swapchain_inout, int *swapchain_w_inout,
-        int *swapchain_h_inout, void **composite_swapchain_inout,
-        int *composite_swapchain_w_inout, int *composite_swapchain_h_inout);
-// Re-enables every buffer node under `scene_tree` that a previous
-// `oxide_toplevel_apply_corner_mask` call may have hidden, and puts the root
-// surface's own scene buffer node back to showing the client's own current
-// buffer at its own position/size — i.e. undoes masking entirely. Safe to
-// call on a window that was never masked (a no-op beyond one scene-tree
-// walk). Called both internally (see above) and from Rust whenever
-// `corner_radius` turns off for a window that was masked.
-void oxide_toplevel_restore_corner_mask(struct wlr_scene_tree *scene_tree,
-        struct wlr_surface *root_surface);
-// Free a per-toplevel swapchain (a no-op if it was never created — NULL
-// means it was never needed). Call once each for corner_swapchain and
-// composite_swapchain on window destroy.
+        int *swapchain_h_inout);
+// Free a per-toplevel corner_swapchain (a no-op if it was never created —
+// NULL means the window was never masked). Call on window destroy.
 void oxide_swapchain_destroy(void *swapchain);
 
 #endif // OXIN_SHIM_H
