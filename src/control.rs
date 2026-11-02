@@ -1,11 +1,12 @@
 //! Tiny line-based local control socket used by the bundled `0xinctl`.
 
-use crate::ffi::{oxide_event_loop_add_readable, oxide_output_name};
+use crate::ffi::{
+    oxide_event_loop_add_readable, oxide_headless_add_output, oxide_headless_remove_output,
+};
 use crate::state::Server;
 use crate::wallpaper;
 use crate::wlr;
 use std::env;
-use std::ffi::CStr;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -98,6 +99,12 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
         wlr::wl_display_terminate(server.display);
         return "ok\n".into();
     }
+    if let Some(argument) = request.strip_prefix("headless-output ") {
+        return match headless_output(server, argument) {
+            Ok(()) => "ok\n".into(),
+            Err(error) => format!("error {error}\n"),
+        };
+    }
     if request == "reload" {
         return match crate::reload::reload(server) {
             Ok(()) => "ok\n".into(),
@@ -115,7 +122,8 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
     }
     let Some(argument) = request.strip_prefix("wallpaper ") else {
         return "error expected `quit`, `config-error`, `reload`, `wallpaper PATH`, \
-                `wallpaper clear`, or `rotate NAME normal|90|180|270`\n"
+                `wallpaper clear`, `rotate NAME normal|90|180|270`, or \
+                `headless-output add WxH|remove NAME`\n"
             .into();
     };
     let result = if argument == "clear" {
@@ -132,25 +140,64 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
 }
 
 /// One `output NAME WORKSPACE` line per connected monitor, then one
-/// `workspace N occupied|empty` line per workspace (both 1-indexed to match
-/// the user-facing `bind = MOD, N, workspace, N` convention). Exempt from the
-/// lock check above: unlike the mutating commands, showing workspace state
-/// isn't a lock-screen security concern.
+/// `workspace N occupied|empty OUTPUT` line per workspace that exists, in
+/// number order, naming the output it belongs to (1-indexed, matching
+/// `oxin.action.workspace(N)`). Workspaces are made on demand, so the numbers
+/// can have gaps, and only one that is on screen can be empty. Exempt from
+/// the lock check above: unlike the mutating commands, showing workspace
+/// state isn't a lock-screen security concern.
 unsafe fn query_workspaces(server: &Server) -> String {
     let mut out = String::from("ok\n");
     for output in &server.outputs {
-        let name = CStr::from_ptr(oxide_output_name(output.wlr_output)).to_string_lossy();
-        out.push_str(&format!("output {name} {}\n", output.workspace + 1));
+        out.push_str(&format!(
+            "output {} {}\n",
+            output.name,
+            output.workspace + 1
+        ));
     }
-    for (index, workspace) in server.workspaces.iter().enumerate() {
+    for (id, workspace) in server.workspaces.iter() {
         let state = if workspace.windows.is_empty() {
             "empty"
         } else {
             "occupied"
         };
-        out.push_str(&format!("workspace {} {state}\n", index + 1));
+        out.push_str(&format!(
+            "workspace {} {state} {}\n",
+            id + 1,
+            workspace.monitor
+        ));
     }
     out
+}
+
+/// `headless-output add WxH` / `headless-output remove NAME`: plug and unplug
+/// a monitor on the headless backend, so what that does to workspaces can be
+/// tested without hardware. Refused for anything but a headless output.
+unsafe fn headless_output(server: &mut Server, argument: &str) -> Result<(), String> {
+    if let Some(size) = argument.strip_prefix("add ") {
+        let (w, h) = size
+            .split_once('x')
+            .and_then(|(w, h)| Some((w.parse::<i32>().ok()?, h.parse::<i32>().ok()?)))
+            .filter(|&(w, h)| w > 0 && h > 0)
+            .ok_or("expected `headless-output add WIDTHxHEIGHT`")?;
+        if !oxide_headless_add_output(server.backend, w, h) {
+            return Err("no headless backend (start with WLR_BACKENDS=headless)".into());
+        }
+        return Ok(());
+    }
+    if let Some(name) = argument.strip_prefix("remove ") {
+        let output = server
+            .outputs
+            .iter()
+            .find(|o| o.name == name)
+            .ok_or_else(|| format!("no output named {name}"))?
+            .wlr_output;
+        if !oxide_headless_remove_output(output) {
+            return Err(format!("{name} is not a headless output"));
+        }
+        return Ok(());
+    }
+    Err("expected `headless-output add WxH` or `headless-output remove NAME`".into())
 }
 
 /// `NAME normal|90|180|270` -> (name, WL_OUTPUT_TRANSFORM_* value). Only the

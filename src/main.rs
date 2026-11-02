@@ -35,6 +35,7 @@ mod state;
 mod tiling;
 mod toplevel;
 mod wallpaper;
+mod workspaces;
 
 use decoration::handle_new_decoration;
 use ffi::*;
@@ -46,7 +47,8 @@ use keybindings::handle_text_input_visibility;
 use layer_shell::handle_new_layer_surface;
 use lua::link::LuaLink;
 use output::{handle_new_output, handle_session_active};
-use state::{GrabMode, Server, Workspace, WORKSPACE_COUNT};
+use state::{GrabMode, Server, Workspaces};
+use std::collections::HashMap;
 use std::env;
 use std::ffi::CStr;
 use std::os::raw::c_void;
@@ -164,7 +166,6 @@ fn main() {
         // the error.
         let lua_session = lua::session::start();
         let config = lua_session.config;
-        let first_split_vertical = config.first_split_vertical;
         let (mut lua_vm, mut lua_registry) = (lua_session.vm, lua_session.registry);
 
         // `server` lives for the whole of main(), which blocks in wl_display_run
@@ -196,19 +197,15 @@ fn main() {
             lock_new_surface_listener: std::ptr::null_mut(),
             lock_unlock_listener: std::ptr::null_mut(),
             lock_destroy_listener: std::ptr::null_mut(),
-            workspaces: (0..WORKSPACE_COUNT)
-                .map(|_| Workspace {
-                    windows: Vec::new(),
-                    focused: 0,
-                    tree: None,
-                    first_split_vertical,
-                    solo: None,
-                })
-                .collect(),
+            // None until the first output arrives and asks for one: like
+            // Hyprland's, workspaces are made on demand (src/workspaces.rs).
+            workspaces: Workspaces::default(),
+            remembered_workspace: HashMap::new(),
             outputs: Vec::new(),
             config,
             lua: LuaLink::disabled(),
             event_loop,
+            backend,
             hold_source: std::ptr::null_mut(),
             held_keysym: 0,
             held_modifiers: 0,

@@ -45,12 +45,23 @@ pub enum Action {
     ToggleSolo,
     /// Toggle the focused window between tiled and floating.
     ToggleFloating,
-    /// Switch to workspace (0-based index).
+    /// Focus workspace (0-based number): shown on the output it belongs to,
+    /// made on the focused one if it does not exist yet.
     Workspace(usize),
-    /// Move the focused window to a workspace (0-based index).
-    MoveToWorkspace(usize),
+    /// Move the focused window to a workspace (0-based number). With
+    /// `follow`, focus goes with it, as in Hyprland's `movetoworkspace`;
+    /// without, as in its `movetoworkspacesilent`.
+    MoveToWorkspace {
+        workspace: usize,
+        follow: bool,
+    },
+    /// Move the focused window to the next/previous workspace number on this
+    /// output (Hyprland's `r+1` / `r-1`), and follow it.
     MoveToWorkspaceNext,
     MoveToWorkspacePrevious,
+    /// Focus the next/previous workspace number on this output, new ones
+    /// included, skipping those another output has (Hyprland's `r+1` /
+    /// `r-1`).
     WorkspaceNext,
     WorkspacePrevious,
     KeyboardShow,

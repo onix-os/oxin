@@ -84,6 +84,12 @@ extern "C" {
     ) -> *mut ShimListener;
     pub(crate) fn oxide_output_enable(output: *mut wlr::wlr_output, scale: f32);
     pub(crate) fn oxide_output_name(output: *mut wlr::wlr_output) -> *const c_char;
+    pub(crate) fn oxide_headless_add_output(
+        backend: *mut wlr::wlr_backend,
+        width: i32,
+        height: i32,
+    ) -> bool;
+    pub(crate) fn oxide_headless_remove_output(output: *mut wlr::wlr_output) -> bool;
     pub(crate) fn oxide_scene_add_layer_tree(
         scene: *mut wlr::wlr_scene,
     ) -> *mut wlr::wlr_scene_tree;
@@ -284,6 +290,7 @@ extern "C" {
     );
     pub(crate) fn oxide_cursor_set_keyboard_visible(cursor: *mut wlr::wlr_cursor, visible: bool);
     pub(crate) fn oxide_cursor_set_keyboard_height(cursor: *mut wlr::wlr_cursor, height: i32);
+    pub(crate) fn oxide_cursor_warp(cursor: *mut wlr::wlr_cursor, x: f64, y: f64);
     pub(crate) fn oxide_cursor_set_locked(cursor: *mut wlr::wlr_cursor, locked: bool);
     pub(crate) fn oxide_session_lock_manager_create(display: *mut wlr::wl_display) -> *mut c_void;
     pub(crate) fn oxide_session_lock_manager_add_new_lock(

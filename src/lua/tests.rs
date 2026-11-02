@@ -807,7 +807,10 @@ mod registrars {
     #[test]
     fn workspace_numbers_are_range_checked() {
         assert!(load("oxin.keys['MOD+z'] = oxin.action.workspace(0)").is_err());
-        assert!(load("oxin.keys['MOD+z'] = oxin.action.workspace(99)").is_err());
+        assert!(load("oxin.keys['MOD+z'] = oxin.action.workspace(-1)").is_err());
+        // No upper bound to speak of: workspaces are made on demand.
+        assert!(load("oxin.keys['MOD+z'] = oxin.action.workspace(99)").is_ok());
+        assert!(load("oxin.keys['MOD+z'] = oxin.action.workspace(4294967296)").is_err());
     }
 
     #[test]
@@ -975,10 +978,61 @@ mod registrars {
             );
             assert_eq!(
                 bind_for(&cfg, MOD_LOGO | MOD_SHIFT, &name),
-                Some(&Action::MoveToWorkspace(i - 1)),
+                Some(&Action::MoveToWorkspace {
+                    workspace: i - 1,
+                    follow: true,
+                }),
                 "move to workspace {i}",
             );
         }
+    }
+
+    #[test]
+    fn moving_a_window_follows_it_unless_told_not_to() {
+        let cfg = load(
+            r#"
+                oxin.keys["MOD+a"] = oxin.action.move_to_workspace(12)
+                oxin.keys["MOD+b"] = oxin.action.move_to_workspace(12, { follow = false })
+                oxin.keys["MOD+c"] = oxin.action.move_to_workspace(12, { follow = true })
+            "#,
+        )
+        .unwrap();
+        let moving = |follow| {
+            Some(Action::MoveToWorkspace {
+                workspace: 11,
+                follow,
+            })
+        };
+        assert_eq!(bind_for(&cfg, MOD_LOGO, "a").cloned(), moving(true));
+        assert_eq!(bind_for(&cfg, MOD_LOGO, "b").cloned(), moving(false));
+        assert_eq!(bind_for(&cfg, MOD_LOGO, "c").cloned(), moving(true));
+    }
+
+    #[test]
+    fn a_misspelt_move_option_is_refused() {
+        let err =
+            load(r#"oxin.keys["MOD+a"] = oxin.action.move_to_workspace(2, { folow = false })"#)
+                .unwrap_err();
+        assert!(
+            err.contains("unknown option") && err.contains("follow"),
+            "{err}"
+        );
+        let err =
+            load(r#"oxin.keys["MOD+a"] = oxin.action.move_to_workspace(2, { follow = "no" })"#)
+                .unwrap_err();
+        assert!(err.contains("true or false"), "{err}");
+    }
+
+    #[test]
+    fn workspaces_past_nine_exist_on_demand() {
+        let cfg = load(r#"oxin.keys["MOD+F1"] = oxin.action.workspace(42)"#).unwrap();
+        assert_eq!(bind_for(&cfg, MOD_LOGO, "F1"), Some(&Action::Workspace(41)));
+        // The built-in keymap reaches 10 with MOD+0, as Hyprland's does.
+        let defaults = load("").unwrap();
+        assert_eq!(
+            bind_for(&defaults, MOD_LOGO, "0"),
+            Some(&Action::Workspace(9))
+        );
     }
 }
 

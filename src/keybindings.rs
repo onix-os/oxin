@@ -4,12 +4,10 @@ use crate::config::{Action, Direction, MOD_ALT, MOD_CTRL, MOD_MASK};
 use crate::ffi::*;
 use crate::layout::tree_resize;
 use crate::state::*;
-use crate::tiling::{
-    active_output, active_workspace, refresh, spatial_neighbor, tiled_position, tree_track,
-    tree_untrack,
-};
+use crate::tiling::{active_output, active_workspace, refresh, spatial_neighbor, tiled_position};
 use crate::toplevel::{clamp_floating, set_floating, set_fullscreen, set_solo};
 use crate::wlr;
+use crate::workspaces;
 use std::os::raw::c_void;
 use std::process::Command;
 
@@ -18,9 +16,10 @@ const KEY_F1: u32 = 0xffbe;
 const KEY_F12: u32 = 0xffc9;
 
 /// Give keyboard focus to window `idx` (wrapped) of the focused output's
-/// workspace.
+/// workspace. Never while locked: the lock surface owns the keyboard, and a
+/// window mapping behind it must not take keys typed into it.
 pub(crate) unsafe fn focus_index(server: &mut Server, idx: usize) {
-    if server.outputs.is_empty() {
+    if server.outputs.is_empty() || server.locked {
         return;
     }
     let a = active_workspace(server);
@@ -42,61 +41,6 @@ unsafe fn close_focused(server: &Server) {
     if let Some(&tl) = ws.windows.get(ws.focused) {
         wlr::wlr_xdg_toplevel_send_close((*tl).xdg_toplevel);
     }
-}
-
-/// Display `target` on the focused output. If it's already shown on another
-/// output, swap the two outputs' workspaces (so no workspace is on two monitors).
-pub(crate) unsafe fn switch_workspace(server: &mut Server, target: usize) {
-    if server.outputs.is_empty() || target >= server.workspaces.len() {
-        return;
-    }
-    let fo = active_output(server);
-    let current = server.outputs[fo].workspace;
-    if target == current {
-        return;
-    }
-    if let Some(other) = server.outputs.iter().position(|o| o.workspace == target) {
-        server.outputs[other].workspace = current; // swap: that monitor takes ours
-    }
-    server.outputs[fo].workspace = target;
-    refresh(server);
-    let f = server.workspaces[target].focused;
-    focus_index(server, f);
-    eprintln!("0xin: output {} -> workspace {}", fo, target + 1);
-    crate::lua::run_workspace(server, current, target);
-}
-
-/// Move the focused output's focused window to another workspace.
-unsafe fn move_to_workspace(server: &mut Server, target: usize) {
-    if server.outputs.is_empty() || target >= server.workspaces.len() {
-        return;
-    }
-    let a = active_workspace(server);
-    if target == a || server.workspaces[a].windows.is_empty() {
-        return;
-    }
-    let focused = server.workspaces[a].focused;
-    let tl = server.workspaces[a].windows[focused];
-    let tiled = !(*tl).floating && !(*tl).fullscreen;
-    if tiled {
-        tree_untrack(&mut server.workspaces[a], tl);
-    }
-    if server.workspaces[a].solo == Some(tl) {
-        server.workspaces[a].solo = None;
-    }
-    server.workspaces[a].windows.remove(focused);
-    let len = server.workspaces[a].windows.len();
-    if server.workspaces[a].focused >= len && len > 0 {
-        server.workspaces[a].focused = len - 1;
-    }
-    server.workspaces[target].windows.push(tl);
-    if tiled {
-        tree_track(&mut server.workspaces[target], tl);
-    }
-    refresh(server); // recomputes visibility (target may or may not be displayed)
-    let f = server.workspaces[a].focused;
-    focus_index(server, f);
-    eprintln!("0xin: moved window to workspace {}", target + 1);
 }
 
 /// How far one Mod+Shift+hjkl press moves a floating window, in pixels.
@@ -397,29 +341,22 @@ pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
             }
         }
         Action::ToggleFloating => {}
-        Action::Workspace(ws) => switch_workspace(server, ws),
-        Action::MoveToWorkspace(ws) => move_to_workspace(server, ws),
-        Action::MoveToWorkspaceNext if n > 0 => {
-            let current = active_workspace(server);
-            move_to_workspace(server, (current + 1) % server.workspaces.len());
+        Action::Workspace(ws) => workspaces::focus(server, ws),
+        Action::MoveToWorkspace { workspace, follow } => {
+            workspaces::move_focused_window(server, workspace, follow)
         }
-        Action::MoveToWorkspacePrevious if n > 0 => {
-            let current = active_workspace(server);
-            move_to_workspace(
-                server,
-                (current + server.workspaces.len() - 1) % server.workspaces.len(),
-            );
+        // Hyprland's `r+1` / `r-1`: numbers on this output, new ones
+        // included, skipping those another output has.
+        Action::MoveToWorkspaceNext | Action::MoveToWorkspacePrevious if n > 0 => {
+            let forward = matches!(action, Action::MoveToWorkspaceNext);
+            let target = workspaces::relative(server, active_output(server), forward);
+            workspaces::move_focused_window(server, target, true);
         }
         Action::MoveToWorkspaceNext | Action::MoveToWorkspacePrevious => {}
-        Action::WorkspaceNext if !server.outputs.is_empty() => {
-            let current = active_workspace(server);
-            let count = server.workspaces.len() as i32;
-            switch_workspace(server, (current as i32 + 1).rem_euclid(count) as usize);
-        }
-        Action::WorkspacePrevious if !server.outputs.is_empty() => {
-            let current = active_workspace(server);
-            let count = server.workspaces.len() as i32;
-            switch_workspace(server, (current as i32 - 1).rem_euclid(count) as usize);
+        Action::WorkspaceNext | Action::WorkspacePrevious if !server.outputs.is_empty() => {
+            let forward = matches!(action, Action::WorkspaceNext);
+            let target = workspaces::relative(server, active_output(server), forward);
+            workspaces::focus(server, target);
         }
         Action::WorkspaceNext | Action::WorkspacePrevious => {}
         Action::KeyboardShow => set_keyboard_visible(server, true),

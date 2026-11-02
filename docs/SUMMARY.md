@@ -42,3 +42,4 @@
 - [Stage 29 — Touchpad Gestures](phases/stage-29-touchpad-gestures.md)
 - [Stage 30 — Popups and Menus](phases/stage-30-popups.md)
 - [Stage 31 — Live Config Reload](phases/stage-31-live-reload.md)
+- [Stage 32 — Workspaces the Hyprland Way](phases/stage-32-hyprland-workspaces.md)

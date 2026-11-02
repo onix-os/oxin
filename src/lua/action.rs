@@ -77,7 +77,7 @@ pub(crate) fn build<'gc>(ctx: Context<'gc>) -> Result<Table<'gc>, Error<'gc>> {
     directional(ctx, action, "resize", Action::ResizeWindow)?;
 
     workspace_taking(ctx, action, "workspace", Action::Workspace)?;
-    workspace_taking(ctx, action, "move_to_workspace", Action::MoveToWorkspace)?;
+    move_to_workspace(ctx, action)?;
 
     // Reading a name that is not here is a mistake, not a `nil`.
     let meta = Table::new(&ctx);
@@ -157,23 +157,91 @@ fn workspace_taking<'gc>(
         name,
         Callback::from_fn(&ctx, move |ctx, _, mut stack| {
             let n: i64 = stack.consume(ctx)?;
-            if !(1..=crate::state::WORKSPACE_COUNT as i64).contains(&n) {
-                return Err(Error::from_value(
-                    ctx.intern(
-                        format!(
-                            "oxin.action.{name}: workspaces are numbered 1 to {}, got {n}",
-                            crate::state::WORKSPACE_COUNT
-                        )
-                        .as_bytes(),
-                    )
-                    .into_value(ctx),
-                ));
-            }
-            stack.replace(ctx, wrap(ctx, make(n as usize - 1)));
+            let id = workspace_number(name, n).map_err(|m| raise(ctx, m))?;
+            stack.replace(ctx, wrap(ctx, make(id)));
             Ok(CallbackReturn::Return)
         }),
     );
     Ok(())
+}
+
+/// `oxin.action.move_to_workspace(3)` follows the window there, as Hyprland's
+/// `movetoworkspace` does; `oxin.action.move_to_workspace(3, { follow =
+/// false })` leaves it and stays, as its `movetoworkspacesilent` does.
+fn move_to_workspace<'gc>(ctx: Context<'gc>, action: Table<'gc>) -> Result<(), Error<'gc>> {
+    const NAME: &str = "move_to_workspace";
+    action.set_field(
+        ctx,
+        NAME,
+        Callback::from_fn(&ctx, |ctx, _, mut stack| {
+            let (n, options): (i64, Value) = stack.consume(ctx)?;
+            let workspace = workspace_number(NAME, n).map_err(|m| raise(ctx, m))?;
+            let follow = match options {
+                Value::Nil => true,
+                Value::Table(t) => {
+                    // A misspelt option would otherwise be a silent default.
+                    for (key, _) in t.iter(ctx) {
+                        if !matches!(key, Value::String(s) if s.as_bytes() == b"follow") {
+                            return Err(raise(
+                                ctx,
+                                format!(
+                                    "oxin.action.{NAME}: unknown option {}; the only one is \
+                                     `follow`",
+                                    key.display()
+                                ),
+                            ));
+                        }
+                    }
+                    match t.get_value(ctx, "follow") {
+                        Value::Nil => true,
+                        Value::Boolean(b) => b,
+                        other => {
+                            return Err(raise(
+                                ctx,
+                                format!(
+                                    "oxin.action.{NAME}: follow must be true or false, got a {}",
+                                    other.type_name()
+                                ),
+                            ))
+                        }
+                    }
+                }
+                other => {
+                    return Err(raise(
+                        ctx,
+                        format!(
+                            "oxin.action.{NAME}: the second argument is an options table \
+                             ({{ follow = false }}), got a {}",
+                            other.type_name()
+                        ),
+                    ))
+                }
+            };
+            stack.replace(
+                ctx,
+                wrap(ctx, Action::MoveToWorkspace { workspace, follow }),
+            );
+            Ok(CallbackReturn::Return)
+        }),
+    );
+    Ok(())
+}
+
+/// A config's 1-based workspace number as the 0-based one the enum carries.
+/// Any number may be used — workspaces are made on demand — up to the
+/// 32-bit limit Hyprland also has.
+fn workspace_number(name: &str, n: i64) -> Result<usize, String> {
+    if !(1..=crate::state::MAX_WORKSPACE as i64).contains(&n) {
+        return Err(format!(
+            "oxin.action.{name}: workspaces are numbered from 1 to {}, got {n}",
+            crate::state::MAX_WORKSPACE
+        ));
+    }
+    Ok(n as usize - 1)
+}
+
+fn raise<'gc>(ctx: Context<'gc>, message: String) -> Error<'gc> {
+    Error::from_value(ctx.intern(message.as_bytes()).into_value(ctx))
 }
 
 /// Accepts the long names and the single letters the `.conf` format used.

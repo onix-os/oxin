@@ -94,11 +94,16 @@ when a compositor misbehaves is "is it me or a plugin?".
 
 ## Workspaces and outputs
 
-Nine workspaces, with one invariant: **a workspace is never visible on two
-outputs at once**. Switching to a workspace already shown on another monitor
-swaps the two monitors' workspaces instead of duplicating it. New windows
-open on the monitor the cursor is on (focus-follows-monitor). The model
-stays predictable regardless of how many outputs are attached.
+Hyprland's model, so habits carry over between the two
+([Stage 32](phases/stage-32-hyprland-workspaces.md)). **Every workspace
+belongs to one monitor**, and is only ever shown there. Switching to a
+workspace on another monitor moves focus (and the cursor) to that monitor
+rather than pulling the workspace across. Workspaces exist on demand: asking
+for one that does not exist makes it on the focused monitor, and one that is
+empty and off screen is dropped. A monitor that is plugged in gets a fresh
+workspace; one that is unplugged hands its workspaces to the remaining one
+and gets them back, showing the same workspace, when it returns. New windows
+open on the monitor the cursor is on (focus-follows-monitor).
 
 ## Floating windows
 

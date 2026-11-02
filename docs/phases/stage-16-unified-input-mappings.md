@@ -65,6 +65,10 @@ Workspace next/previous wraps around the existing nine-workspace ring and uses
 the same focus, scene visibility, and multi-output rules as numbered keyboard
 bindings.
 
+> Since [Stage 32](stage-32-hyprland-workspaces.md), next and previous follow
+> Hyprland's `r+1` / `r-1` instead of a ring of nine, and there is no swap:
+> each workspace belongs to one monitor.
+
 ## Virtual-keyboard controller
 
 Virtual-keyboard policy is no longer tied to a particular gesture or process

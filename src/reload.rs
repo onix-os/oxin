@@ -77,7 +77,7 @@ unsafe fn apply(server: &mut Server, old: &Config) {
     // New splits only. Reshaping a layout the user has already arranged would
     // be a surprise, not a setting.
     let vertical = server.config.first_split_vertical;
-    for ws in &mut server.workspaces {
+    for ws in server.workspaces.values_mut() {
         ws.first_split_vertical = vertical;
     }
 
@@ -88,7 +88,7 @@ unsafe fn apply(server: &mut Server, old: &Config) {
     {
         let windows: Vec<_> = server
             .workspaces
-            .iter()
+            .values()
             .flat_map(|ws| ws.windows.iter().copied())
             .collect();
         for tl in windows {

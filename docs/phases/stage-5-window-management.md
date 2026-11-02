@@ -28,6 +28,10 @@ of some geometric ambiguity explored below.
 
 ## Workspaces and multi-output
 
+> Superseded by [Stage 32](stage-32-hyprland-workspaces.md): workspaces now
+> belong to a monitor and are made on demand, as in Hyprland. The swap and
+> the "lowest free" rule below are how it worked until then.
+
 Nine workspaces, switchable and movable-to from the keyboard. Once
 multi-monitor entered the picture, tiling became **per-output**: each
 `Output` tracks which workspace it's showing, `refresh()` hides any

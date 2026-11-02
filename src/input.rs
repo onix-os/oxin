@@ -95,7 +95,7 @@ pub(crate) unsafe extern "C" fn handle_click_focus(userdata: *mut c_void, data: 
     if server.locked {
         return;
     }
-    for ws in server.workspaces.iter_mut() {
+    for ws in server.workspaces.values_mut() {
         let hit = ws
             .windows
             .iter()
@@ -109,7 +109,7 @@ pub(crate) unsafe extern "C" fn handle_click_focus(userdata: *mut c_void, data: 
 
 /// The toplevel whose root surface is `surface`, if we track one.
 unsafe fn toplevel_from_surface(server: &Server, surface: *mut c_void) -> Option<*mut Toplevel> {
-    for ws in &server.workspaces {
+    for ws in server.workspaces.values() {
         for &tl in &ws.windows {
             if oxide_xdg_toplevel_surface((*tl).xdg_toplevel) == surface {
                 return Some(tl);
@@ -135,11 +135,7 @@ pub(crate) unsafe extern "C" fn handle_double_tap(userdata: *mut c_void, data: *
     let Some(tl) = toplevel_from_surface(server, data) else {
         return;
     };
-    let Some(wi) = server
-        .workspaces
-        .iter()
-        .position(|ws| ws.windows.contains(&tl))
-    else {
+    let Some(wi) = crate::tiling::workspace_of(server, tl) else {
         return;
     };
     let idx = server.workspaces[wi]

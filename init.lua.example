@@ -87,7 +87,12 @@ oxin.keys["MOD+f"] = oxin.action.fullscreen
 oxin.keys["MOD+s"] = oxin.action.solo
 oxin.keys["MOD+v"] = oxin.action.float
 
--- Because this is a real language, nine workspaces take two lines.
+-- Because this is a real language, nine workspace keys take two lines.
+-- Workspaces work as in Hyprland: one is made the first time you go to it,
+-- on the focused monitor, and dropped once it is empty and off screen, so
+-- any number works. Each belongs to one monitor; going to a workspace on
+-- another monitor moves focus there. Moving a window takes you along; add
+-- `{ follow = false }` to stay where you are.
 for i = 1, 9 do
   oxin.keys["MOD+" .. i]       = oxin.action.workspace(i)
   oxin.keys["MOD+SHIFT+" .. i] = oxin.action.move_to_workspace(i)
@@ -166,7 +171,8 @@ end
 --   end
 -- end)
 
--- Runs after a workspace switch. `ev` has `from` and `to`, both 1-based.
+-- Runs after the focused workspace changes. `ev` has `from` and `to`, both
+-- 1-based. With two monitors, `from` and `to` can be on different ones.
 -- oxin.on.workspace(function(ev)
 --   oxin.spawn("notify-send 'workspace " .. ev.to .. "'")
 -- end)
@@ -177,4 +183,5 @@ end
 -- Available inside a binding or a handler, once the compositor is up:
 --   oxin.spawn(cmd)     launch a command the way a keybinding would
 --   oxin.workspace()    the workspace on the focused monitor, 1-based
---   oxin.workspaces()   every workspace, as { number = N, windows = N }
+--   oxin.workspaces()   the workspaces that exist, in number order, as
+--                       { number = N, windows = N, monitor = "DP-1" }

@@ -17,7 +17,8 @@ switches workspaces without touching a keybinding.*
 **Partially implemented.** Stage 20 introduces the first plain-text Unix
 control socket and bundled `0xinctl` client for live wallpaper replacement.
 A later addition adds `0xinctl workspaces`, a read-only query returning each
-output's current workspace and every workspace's occupied/empty state — the
+output's current workspace and, for every workspace that exists, its
+occupied/empty state and owning output (see [Stage 32](stage-32-hyprland-workspaces.md)) — the
 "querying" half of the original deliverable, intended for status bars such
 as Patin's. Switching workspaces from outside the compositor, broader state
 subscriptions, and config reload remain open.

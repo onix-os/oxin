@@ -70,19 +70,23 @@ pub(crate) fn install<'gc>(ctx: Context<'gc>, oxin: Table<'gc>) -> Result<(), Er
                 ctx,
                 &at,
                 with_server("oxin.workspaces", |server| {
+                    // Only the ones that exist, in number order: like
+                    // Hyprland's, workspaces are made on demand.
                     server
                         .workspaces
                         .iter()
-                        .enumerate()
-                        .map(|(i, ws)| (i as i64 + 1, ws.windows.len() as i64))
+                        .map(|(id, ws)| {
+                            (id as i64 + 1, ws.windows.len() as i64, ws.monitor.clone())
+                        })
                         .collect::<Vec<_>>()
                 }),
             )?;
             let list = Table::new(&ctx);
-            for (i, (number, windows)) in rows.into_iter().enumerate() {
+            for (i, (number, windows, monitor)) in rows.into_iter().enumerate() {
                 let row = Table::new(&ctx);
                 row.set(ctx, "number", number)?;
                 row.set(ctx, "windows", windows)?;
+                row.set(ctx, "monitor", monitor.as_str())?;
                 list.set(ctx, i as i64 + 1, row)?;
             }
             stack.replace(ctx, list);

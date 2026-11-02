@@ -13,7 +13,7 @@ fn socket_path() -> Result<PathBuf, String> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: 0xinctl quit\n       0xinctl config-error\n       0xinctl reload\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270\n       0xinctl workspaces"
+        "usage: 0xinctl quit\n       0xinctl config-error\n       0xinctl reload\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270\n       0xinctl workspaces\n       0xinctl headless-output add WIDTHxHEIGHT\n       0xinctl headless-output remove NAME"
     );
     std::process::exit(2);
 }
@@ -38,6 +38,9 @@ fn main() {
             "wallpaper clear\n".to_string()
         }
         ("wallpaper", Some(argument), None) => format!("wallpaper {argument}\n"),
+        ("headless-output", Some(verb), Some(argument)) if verb == "add" || verb == "remove" => {
+            format!("headless-output {verb} {argument}\n")
+        }
         ("rotate", Some(name), Some(transform))
             if matches!(transform.as_str(), "normal" | "90" | "180" | "270") =>
         {

@@ -36,6 +36,10 @@ visibility, and follows the existing multi-output swap rule. The nine
 workspaces form a ring: previous from workspace 1 selects workspace 9, while
 next from workspace 9 selects workspace 1.
 
+> Since [Stage 32](stage-32-hyprland-workspaces.md), next and previous follow
+> Hyprland's `r+1` / `r-1` instead of a ring of nine, and there is no swap:
+> each workspace belongs to one monitor.
+
 ## Configuration
 
 Stage 16 expresses the opt-in behavior as mappings to shared actions:

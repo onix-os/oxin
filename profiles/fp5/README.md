@@ -172,7 +172,8 @@ bottom edge. Ordinary taps reach wvkbd first and remain keys; only the completed
 swipe is claimed by 0xin, matching SXMO's bottom-edge gesture style.
 
 Swipe inward from the left edge for the previous workspace or from the right
-edge for the next workspace. The nine-workspace ring wraps at either end.
+edge for the next workspace. As in Hyprland, next always goes on to a higher
+number (making it if needed) and previous stops at the first.
 Touches must begin within the narrow edge activation strip; horizontal gestures
 started elsewhere remain application input. When wvkbd is visible, these strips
 stop at its top edge so the keyboard's left- and right-edge keys remain usable.
@@ -195,8 +196,8 @@ Window management is available directly on the central application surface:
   with its spatial neighbor in that direction.
 - Swipe up or down with three fingers to close the focused window.
 - Swipe left with three fingers to send the focused window to the previous
-  workspace; swipe right to send it to the next workspace. The workspace
-  ring wraps at either end, and the display stays on its current workspace.
+  workspace; swipe right to send it to the next workspace. The display
+  follows the window there, as Hyprland's `movetoworkspace` does.
 
 The first finger initially remains application input. When the second finger
 arrives, 0xin cancels that client touch sequence and owns the multi-finger

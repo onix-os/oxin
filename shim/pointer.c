@@ -1,6 +1,7 @@
 #define WLR_USE_UNSTABLE
 #include <math.h>
 #include <stdlib.h>
+#include <time.h>
 #include <xkbcommon/xkbcommon.h>
 #include <wlr/backend.h>
 #include <wlr/types/wlr_compositor.h>
@@ -296,6 +297,16 @@ void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor,
         bool visible) {
     struct oxide_pointer *p = cursor->data;
     p->keyboard_visible = visible;
+}
+
+void oxide_cursor_warp(struct wlr_cursor *cursor, double x, double y) {
+    struct oxide_pointer *p = cursor->data;
+    wlr_cursor_warp(cursor, NULL, x, y);
+    // A warp is not a motion event, so nothing would update which surface
+    // has pointer focus until the pointer next moved. Process it as one.
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    process_motion(p, (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000));
 }
 
 void oxide_cursor_set_keyboard_height(struct wlr_cursor *cursor, int height) {

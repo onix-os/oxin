@@ -14,10 +14,15 @@ automatically to fill the screen instead of floating and overlapping.
 
 - **Spiral / dwindle tiling** — each new window splits the remaining space, alternating
   vertical (left/right) then horizontal (top/bottom).
-- **9 workspaces** — switch between them and move windows across them from the keyboard.
-- **Multi-monitor** with **focus-follows-monitor** — new windows open on the monitor
-  your cursor is on; each monitor shows its own workspace. Position/scale per
-  named output are configurable (`oxin.monitors["DP-1"] = {…}`), otherwise auto-placed.
+- **Workspaces the Hyprland way** — made on demand (any number, not a fixed nine) and
+  dropped when empty; switch between them and move windows across them from the
+  keyboard, and the window takes you along unless you ask it not to.
+- **Multi-monitor** with **focus-follows-monitor** — each workspace belongs to one
+  monitor, and switching to one on another monitor moves focus there. A monitor
+  plugged in gets a fresh workspace; one unplugged hands its workspaces to the
+  others and gets them back when it returns. New windows open on the monitor your
+  cursor is on. Position/scale per named output are configurable
+  (`oxin.monitors["DP-1"] = {…}`), otherwise auto-placed.
 - **Keyboard-driven**, configured and scripted in **Lua** (`~/.config/0xin/init.lua`)
   through an embedded pure-Rust interpreter: settings are assigned, keybindings and
   behaviour are registered, and a binding can be a Lua function. A broken config is
@@ -247,11 +252,14 @@ oxin.keys["MOD+SHIFT+q"] = oxin.action.quit
 oxin.keys["MOD+h"]       = oxin.action.focus("left")
 oxin.keys["MOD+SHIFT+h"] = oxin.action.move("left")
 
--- It is a real language, so nine workspaces take two lines.
+-- It is a real language, so nine workspace keys take two lines. Workspaces
+-- themselves are made on demand, so any number works.
 for i = 1, 9 do
   oxin.keys["MOD+" .. i]       = oxin.action.workspace(i)
   oxin.keys["MOD+SHIFT+" .. i] = oxin.action.move_to_workspace(i)
 end
+-- Moving a window takes you along, as in Hyprland; this one stays put.
+oxin.keys["MOD+CTRL+1"] = oxin.action.move_to_workspace(1, { follow = false })
 
 -- A chord can have both a tap and a hold; they are separate tables.
 oxin.keys["XF86PowerOff"] = oxin.action.spawn("swaylock")
@@ -368,8 +376,9 @@ with:
 0xinctl quit
 ```
 
-Query workspace state — which workspace each output is showing, and which
-workspaces have at least one window — for building status bars and scripts:
+Query workspace state — which workspace each output is showing, and every
+workspace that exists, whether it has windows and which output it belongs to —
+for building status bars and scripts:
 
 ```sh
 0xinctl workspaces
@@ -377,11 +386,15 @@ workspaces have at least one window — for building status bars and scripts:
 
 ```
 ok
-output DSI-1 1
-workspace 1 occupied
-workspace 2 empty
-...
+output eDP-1 1
+output HDMI-A-1 3
+workspace 1 occupied eDP-1
+workspace 2 occupied eDP-1
+workspace 3 empty HDMI-A-1
 ```
+
+Workspaces are made on demand and dropped when empty and off screen, so the
+numbers can have gaps, and only one that is on screen can be empty.
 
 0xin implements `ext-session-lock-v1` for secure lock clients such as Patin's
 touch-capable `patin-lock` or `swaylock`. Accepting a lock immediately covers

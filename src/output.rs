@@ -6,6 +6,7 @@ use crate::state::*;
 use crate::tiling::{arrange_layers, refresh};
 use crate::wallpaper;
 use crate::wlr;
+use crate::workspaces;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 
@@ -48,14 +49,6 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
     let (mut x, mut y, mut w, mut h) = (0, 0, 0, 0);
     oxide_output_layout_get_box(server.output_layout, output, &mut x, &mut y, &mut w, &mut h);
 
-    // Give the output the lowest-numbered workspace not already on a monitor.
-    let mut workspace = 0;
-    for cand in 0..WORKSPACE_COUNT {
-        if !server.outputs.iter().any(|o| o.workspace == cand) {
-            workspace = cand;
-            break;
-        }
-    }
     // Background node for this output, placed at its layout origin.
     let (r, g, b) = server.config.background;
     let background =
@@ -82,6 +75,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
 
     server.outputs.push(Output {
         wlr_output: output,
+        name: name.clone(),
         x,
         y,
         w,
@@ -92,7 +86,9 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         uy: y,
         uw: w,
         uh: h,
-        workspace,
+        // Chosen by `output_connected` below, which needs this output in the
+        // list to hand workspaces to it.
+        workspace: usize::MAX,
         frame_listener,
         destroy_listener,
         background,
@@ -103,6 +99,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         repaint_frames: REPAINT_FRAMES,
     });
     let idx = server.outputs.len() - 1;
+    workspaces::output_connected(server, idx);
     if server.locked {
         session_lock::ensure_output_fallback(server, idx);
     }
@@ -121,6 +118,12 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
     arrange_layers(server, idx);
 
     refresh(server); // tile any windows already belonging to this workspace
+                     // The first output after none at all (startup, or every monitor having
+                     // been unplugged): keyboard focus has nowhere else to come from.
+    if server.outputs.len() == 1 {
+        let ws = server.outputs[idx].workspace;
+        workspaces::focus_windows_of(server, ws);
+    }
 
     // Kick the first paint via a scheduled frame rather than rendering now: the
     // output may not be ready this instant (esp. on VT resume). The frame handler
@@ -129,19 +132,22 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
 
     eprintln!(
         "0xin: output {name} online @ {x},{y} {w}x{h} — workspace {}",
-        workspace + 1
+        server.outputs[idx].workspace + 1
     );
 }
 
 /// An output was removed (monitor unplugged, or logind disabled the seat on a VT
-/// switch). Remove its listeners + background before wlroots finishes it (else it
-/// asserts a non-empty frame listener list), then drop it from our list.
+/// switch). Its workspaces go to the first remaining output (or wait for the
+/// next one), the cursor and keyboard focus follow, as in Hyprland. Remove
+/// its listeners + background before wlroots finishes it (else it asserts a
+/// non-empty frame listener list), then drop it from our list.
 unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_void) {
     let server = &mut *(userdata as *mut Server);
     let output = data as *mut wlr::wlr_output;
     let Some(pos) = server.outputs.iter().position(|o| o.wlr_output == output) else {
         return;
     };
+    workspaces::output_disconnecting(server, pos);
     let o = &server.outputs[pos];
     // Remove the frame listener first (so no more frame callbacks), then it's
     // safe to free the FrameCtx it referenced.
@@ -158,10 +164,25 @@ unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_v
         oxide_scene_rect_destroy(o.lock_fallback);
     }
     let frame_ctx = o.frame_ctx;
+    let name = std::mem::take(&mut server.outputs[pos].name);
     server.outputs.remove(pos);
     drop(Box::from_raw(frame_ctx));
     refresh(server);
-    eprintln!("0xin: output removed — {} left", server.outputs.len());
+    if server.outputs.is_empty() {
+        if !server.locked {
+            oxide_seat_clear_keyboard_focus(server.seat);
+        }
+    } else {
+        // The first remaining output took the workspaces; the cursor goes to
+        // its middle, which makes it the focused output.
+        workspaces::warp_to(server, 0);
+        let ws = server.outputs[0].workspace;
+        workspaces::focus_windows_of(server, ws);
+    }
+    eprintln!(
+        "0xin: output {name} removed — {} left",
+        server.outputs.len()
+    );
 }
 
 /// Called by the shim on every session active change (VT switch away/back).
@@ -180,7 +201,7 @@ pub(crate) unsafe extern "C" fn handle_session_active(userdata: *mut c_void, _da
     // surfaces (the client still has a valid buffer — confirmed — but the node
     // never draws it). Recreating the node, exactly like a freshly-mapped
     // window, makes it present the surface's current buffer again.
-    for ws in &mut server.workspaces {
+    for ws in server.workspaces.values_mut() {
         for &tl in &ws.windows {
             oxide_scene_tree_destroy((*tl).scene_tree);
             // Rebuild into the layer matching the window's state, so a

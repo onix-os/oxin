@@ -9,18 +9,17 @@ use crate::layout::{tree_insert_at, tree_leaf_count, tree_rects, tree_remove};
 use crate::state::*;
 use crate::wlr;
 
-/// Recompute the whole picture: hide windows whose workspace isn't on any
-/// output, then tile each output's workspace from its split tree. Called
-/// after any change to windows, workspaces or outputs.
+/// Recompute the whole picture: drop workspaces that no longer exist, hide
+/// windows whose workspace isn't on any output, then tile each output's
+/// workspace from its split tree. Called after any change to windows,
+/// workspaces or outputs.
 pub(crate) unsafe fn refresh(server: &mut Server) {
+    crate::workspaces::prune(server);
     // A window is visible iff its workspace is currently shown on some output.
-    let mut shown = [false; WORKSPACE_COUNT];
-    for o in &server.outputs {
-        shown[o.workspace] = true;
-    }
-    for (wi, ws) in server.workspaces.iter().enumerate() {
+    for (wi, ws) in server.workspaces.iter() {
+        let shown = server.outputs.iter().any(|o| o.workspace == wi);
         for &tl in &ws.windows {
-            let visible = shown[wi]
+            let visible = shown
                 && match ws.solo {
                     Some(solo_tl) => tl == solo_tl || (*tl).fullscreen,
                     None => true,
@@ -49,11 +48,21 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
 
         // Three kinds of window: fullscreen ones cover the output's full box
         // (over bars — their scene trees live in tree_fullscreen, above
-        // layer-shell top); floating ones keep whatever rect they already
-        // have (we never place them here — their size is the client's own);
-        // the rest tile in the usable area as usual.
+        // layer-shell top); floating ones keep the rect they already have
+        // (their size is the client's own; only their recorded position is
+        // applied here); the rest tile in the usable area as usual.
         for &tl in ws.windows.iter().filter(|&&tl| (*tl).fullscreen) {
             place(tl, o.x, o.y, o.w, o.h);
+        }
+        // Re-applied because moving a workspace to another output changes
+        // the recorded position without touching the scene
+        // (`workspaces::move_to_output`).
+        for &tl in ws
+            .windows
+            .iter()
+            .filter(|&&tl| (*tl).floating && !(*tl).fullscreen)
+        {
+            oxide_scene_tree_set_position((*tl).scene_tree, (*tl).x, (*tl).y);
         }
 
         if let Some(solo_tl) = ws.solo {
@@ -118,7 +127,8 @@ pub(crate) unsafe fn workspace_of(server: &Server, tl: *mut Toplevel) -> Option<
     server
         .workspaces
         .iter()
-        .position(|ws| ws.windows.contains(&tl))
+        .find(|(_, ws)| ws.windows.contains(&tl))
+        .map(|(id, _)| id)
 }
 
 /// The rect a new tiled window would get if it mapped onto `ws` right now:
@@ -278,7 +288,7 @@ pub(crate) unsafe fn active_workspace(server: &Server) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::config::Config;
     use crate::layout::spiral_rects;
@@ -335,7 +345,7 @@ mod tests {
 
     // spatial_neighbor only reads Toplevel.{x,y,w,h} and Server.workspaces, so
     // every other field can be a dangling/null placeholder for this test.
-    unsafe fn toplevel_at(x: i32, y: i32, w: i32, h: i32) -> *mut Toplevel {
+    pub(crate) unsafe fn toplevel_at(x: i32, y: i32, w: i32, h: i32) -> *mut Toplevel {
         Box::into_raw(Box::new(Toplevel {
             server: ptr::null_mut(),
             xdg_toplevel: ptr::null_mut(),
@@ -357,7 +367,9 @@ mod tests {
         }))
     }
 
-    unsafe fn server_with(windows: Vec<*mut Toplevel>) -> Server {
+    /// A server with no outputs and one workspace (number 0) holding
+    /// `windows`; every pointer is null.
+    pub(crate) unsafe fn server_with(windows: Vec<*mut Toplevel>) -> Server {
         Server {
             display: ptr::null_mut(),
             session: ptr::null_mut(),
@@ -385,17 +397,19 @@ mod tests {
             lock_new_surface_listener: ptr::null_mut(),
             lock_unlock_listener: ptr::null_mut(),
             lock_destroy_listener: ptr::null_mut(),
-            workspaces: vec![Workspace {
-                windows,
-                focused: 0,
-                tree: None,
-                first_split_vertical: true,
-                solo: None,
-            }],
+            workspaces: {
+                let mut workspaces = Workspaces::default();
+                let mut ws = Workspace::new("TEST-1", true);
+                ws.windows = windows;
+                workspaces.insert(0, ws);
+                workspaces
+            },
+            remembered_workspace: Default::default(),
             outputs: Vec::new(),
             config: Config::default(),
             lua: crate::lua::link::LuaLink::disabled(),
             event_loop: ptr::null_mut(),
+            backend: ptr::null_mut(),
             hold_source: ptr::null_mut(),
             held_keysym: 0,
             held_modifiers: 0,

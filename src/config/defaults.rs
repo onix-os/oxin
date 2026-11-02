@@ -97,18 +97,22 @@ pub(crate) fn default_binds(modifier: u32) -> Vec<Bind> {
             action: Action::ToggleFloating,
         },
     ];
-    for i in 0..9u32 {
-        let name = (b'1' + i as u8) as char;
-        let name = name.to_string();
+    // 1–9, and 0 for workspace 10, as in Hyprland's example config. More
+    // exist on demand; these are only the ones with a key.
+    for i in 0..10usize {
+        let name = ((i + 1) % 10).to_string();
         binds.push(Bind {
             mods: m,
             keysym: key(&name),
-            action: Action::Workspace(i as usize),
+            action: Action::Workspace(i),
         });
         binds.push(Bind {
             mods: ms,
             keysym: key(&name),
-            action: Action::MoveToWorkspace(i as usize),
+            action: Action::MoveToWorkspace {
+                workspace: i,
+                follow: true,
+            },
         });
     }
     binds

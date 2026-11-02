@@ -6,13 +6,17 @@ use crate::ffi::ShimListener;
 use crate::layout::Node;
 use crate::lua::link::LuaLink;
 use crate::wlr;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::{Index, IndexMut};
 use std::os::fd::OwnedFd;
 use std::os::raw::c_void;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 
-/// Number of virtual workspaces.
-pub(crate) const WORKSPACE_COUNT: usize = 9;
+/// Highest workspace number a config may name (1-based). Workspaces are made
+/// on demand, so this is only a bound on the number, not on how many exist —
+/// the same 32-bit limit Hyprland puts on workspace IDs.
+pub(crate) const MAX_WORKSPACE: usize = i32::MAX as usize;
 
 /// What an active pointer grab is doing to the grabbed floating window
 /// (Mod+left-drag moves, Mod+right-drag resizes).
@@ -71,8 +75,13 @@ pub(crate) struct Server {
     pub(crate) lock_new_surface_listener: *mut ShimListener,
     pub(crate) lock_unlock_listener: *mut ShimListener,
     pub(crate) lock_destroy_listener: *mut ShimListener,
-    /// Virtual workspaces; each is shown on at most one output at a time.
-    pub(crate) workspaces: Vec<Workspace>,
+    /// The workspaces that exist (see `Workspaces`); each belongs to one
+    /// output and is shown on at most that one.
+    pub(crate) workspaces: Workspaces,
+    /// The workspace each disconnected output was showing, by connector name,
+    /// so plugging the same monitor back in shows it again. An entry goes
+    /// when its workspace stops existing (`workspaces::prune`).
+    pub(crate) remembered_workspace: HashMap<String, usize>,
     /// Connected outputs (monitors), each displaying one workspace.
     pub(crate) outputs: Vec<Output>,
     /// User configuration: modifier, gap, background, keybindings.
@@ -82,6 +91,9 @@ pub(crate) struct Server {
     /// `Server` rather than as fields.
     pub(crate) lua: LuaLink,
     pub(crate) event_loop: *mut wlr::wl_event_loop,
+    /// The backend, for `0xinctl headless-output` (adding and removing
+    /// outputs on the headless backend, to test monitor hotplug).
+    pub(crate) backend: *mut wlr::wlr_backend,
     pub(crate) hold_source: *mut c_void,
     pub(crate) held_keysym: u32,
     pub(crate) held_modifiers: u32,
@@ -114,6 +126,13 @@ pub(crate) struct Server {
 /// — kept in sync by `tiling::tree_track`/`tree_untrack` every time a window
 /// starts or stops tiling. `None` iff no window is currently tiled.
 pub(crate) struct Workspace {
+    /// Connector name of the output this workspace belongs to (Hyprland's
+    /// model: a workspace lives on one monitor, shown or not). Names, not
+    /// output indices, because an output can go away and come back.
+    pub(crate) monitor: String,
+    /// The output this workspace was on when that output was unplugged; it
+    /// moves back there when the same connector reappears.
+    pub(crate) return_to: Option<String>,
     pub(crate) windows: Vec<*mut Toplevel>,
     pub(crate) focused: usize,
     pub(crate) tree: Option<Node>,
@@ -126,10 +145,90 @@ pub(crate) struct Workspace {
     pub(crate) solo: Option<*mut Toplevel>,
 }
 
+impl Workspace {
+    pub(crate) fn new(monitor: &str, first_split_vertical: bool) -> Self {
+        Workspace {
+            monitor: monitor.to_owned(),
+            return_to: None,
+            windows: Vec::new(),
+            focused: 0,
+            tree: None,
+            first_split_vertical,
+            solo: None,
+        }
+    }
+}
+
+/// Every workspace that exists, keyed by number: 0-based here, 1-based
+/// wherever a user sees it. As in Hyprland, a workspace is made the first
+/// time something asks for it and dropped once it is empty and off screen
+/// (`workspaces::prune`), so the numbers in use can have gaps. Indexing by a
+/// number that does not exist is a bug and panics.
+#[derive(Default)]
+pub(crate) struct Workspaces(BTreeMap<usize, Workspace>);
+
+impl Workspaces {
+    pub(crate) fn contains(&self, id: usize) -> bool {
+        self.0.contains_key(&id)
+    }
+
+    pub(crate) fn get(&self, id: usize) -> Option<&Workspace> {
+        self.0.get(&id)
+    }
+
+    pub(crate) fn insert(&mut self, id: usize, workspace: Workspace) {
+        self.0.insert(id, workspace);
+    }
+
+    /// Keep only the workspaces `keep` says yes to, by number.
+    pub(crate) fn retain(&mut self, mut keep: impl FnMut(usize, &Workspace) -> bool) {
+        self.0.retain(|&id, ws| keep(id, ws));
+    }
+
+    /// Numbers in ascending order.
+    pub(crate) fn ids(&self) -> impl Iterator<Item = usize> + '_ {
+        self.0.keys().copied()
+    }
+
+    /// `(number, workspace)` in ascending order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (usize, &Workspace)> {
+        self.0.iter().map(|(&id, ws)| (id, ws))
+    }
+
+    pub(crate) fn values(&self) -> impl Iterator<Item = &Workspace> {
+        self.0.values()
+    }
+
+    pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut Workspace> {
+        self.0.values_mut()
+    }
+}
+
+impl Index<usize> for Workspaces {
+    type Output = Workspace;
+
+    fn index(&self, id: usize) -> &Workspace {
+        self.0
+            .get(&id)
+            .unwrap_or_else(|| panic!("workspace {} does not exist", id + 1))
+    }
+}
+
+impl IndexMut<usize> for Workspaces {
+    fn index_mut(&mut self, id: usize) -> &mut Workspace {
+        self.0
+            .get_mut(&id)
+            .unwrap_or_else(|| panic!("workspace {} does not exist", id + 1))
+    }
+}
+
 /// One connected output (monitor): its box in layout coordinates, the workspace
 /// it currently displays, and the resources to release when it's destroyed.
 pub(crate) struct Output {
     pub(crate) wlr_output: *mut wlr::wlr_output,
+    /// Connector name ("eDP-1", "HDMI-A-1"): what a workspace records as its
+    /// output, and how the same monitor is recognised when it comes back.
+    pub(crate) name: String,
     pub(crate) x: i32,
     pub(crate) y: i32,
     pub(crate) w: i32,
@@ -144,6 +243,7 @@ pub(crate) struct Output {
     pub(crate) uy: i32,
     pub(crate) uw: i32,
     pub(crate) uh: i32,
+    /// The workspace on screen here; it always belongs to this output.
     pub(crate) workspace: usize,
     /// Listeners + background node + frame context to tear down on destroy.
     pub(crate) frame_listener: *mut ShimListener,

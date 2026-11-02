@@ -118,6 +118,12 @@ void oxide_output_enable(struct wlr_output *output, float scale);
 // The connector name (e.g. "eDP-1", "HDMI-A-1"), for matching against a
 // `monitor = NAME, ...` config entry.
 const char *oxide_output_name(struct wlr_output *output);
+// Add an output to the headless backend inside `backend` (false if there is
+// none), or destroy a headless output (false if it is not one). For testing
+// monitor hotplug with `0xinctl headless-output`.
+bool oxide_headless_add_output(struct wlr_backend *backend, int width,
+        int height);
+bool oxide_headless_remove_output(struct wlr_output *output);
 // Create an ordered child tree directly under the scene root. Rust calls this
 // once per z-layer at startup (bg_fallback, layer_bg, layer_bottom, normal,
 // layer_top, layer_overlay); creation order is paint order (later = on top).
@@ -367,6 +373,9 @@ void oxide_cursor_set_pointer_gestures(struct wlr_cursor *cursor,
         struct wlr_pointer_gestures_v1 *gestures);
 void oxide_cursor_set_keyboard_visible(struct wlr_cursor *cursor, bool visible);
 void oxide_cursor_set_keyboard_height(struct wlr_cursor *cursor, int height);
+// Move the cursor to layout coordinates (x, y) and update pointer focus as a
+// motion would. Moving the cursor is how focus moves to another output.
+void oxide_cursor_warp(struct wlr_cursor *cursor, double x, double y);
 // Disable compositor gestures and cancel active touch sequences while locked;
 // restore the configured gesture mask when unlocked.
 void oxide_cursor_set_locked(struct wlr_cursor *cursor, bool locked);

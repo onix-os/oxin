@@ -116,6 +116,25 @@ Add `WAYLAND_DEBUG=server` to 0xin's environment to see the protocol exchange
 itself, which is how Stage 30 confirmed menus were really being repositioned
 rather than recreated.
 
+### Plugging monitors in and out, headless
+
+`WLR_HEADLESS_OUTPUTS=2` starts with two outputs. To test what hotplug does
+to workspaces, `0xinctl headless-output` adds and removes them while 0xin
+runs. It only works for headless outputs and refuses real ones. Each added
+output gets a new name (`HEADLESS-2`, `HEADLESS-3`, …), so it tests a *new*
+monitor arriving; a monitor *returning* under the same connector name is
+covered by the unit tests in `src/workspaces.rs`.
+
+```sh
+WAYLAND_DISPLAY=$SOCK 0xinctl headless-output add 1280x720
+WAYLAND_DISPLAY=$SOCK 0xinctl workspaces        # which output shows what
+WAYLAND_DISPLAY=$SOCK 0xinctl headless-output remove HEADLESS-2
+```
+
+An `oxin.on.window` rule returning `{ workspace = N }` for a given title puts
+quickshell windows on chosen workspaces without any input, and
+`grim -o HEADLESS-2` screenshots one output.
+
 ## Multi-output, nested
 
 The nested Wayland backend honors `WLR_WL_OUTPUTS=2`, opening two host

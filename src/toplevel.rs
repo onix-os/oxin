@@ -351,11 +351,19 @@ unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
             }
         }
         if let Some(ws) = rule.workspace {
-            // 1-based in a config, 0-based here.
-            a = (ws - 1).clamp(0, server.workspaces.len() as i64 - 1) as usize;
+            // 1-based in a config, 0-based here. Any number will do: one
+            // that does not exist yet is made on the focused output.
+            a = (ws - 1).clamp(0, MAX_WORKSPACE as i64 - 1) as usize;
         }
     }
 
+    let here = active_output(server);
+    crate::workspaces::ensure(server, a, here);
+    if (*tl).floating {
+        // Centred on the focused output above; a rule may have sent it to a
+        // workspace that belongs to another one.
+        crate::workspaces::carry_floating_to(server, tl, here, a);
+    }
     server.workspaces[a].windows.push(tl);
     if !(*tl).floating {
         tree_track(&mut server.workspaces[a], tl);
@@ -410,7 +418,7 @@ unsafe fn remove_window(server: &mut Server, tl: *mut Toplevel) {
         server.grab = GrabMode::None;
         server.grab_tl = ptr::null_mut();
     }
-    for ws in server.workspaces.iter_mut() {
+    for ws in server.workspaces.values_mut() {
         if let Some(pos) = ws.windows.iter().position(|&w| w == tl) {
             if !(*tl).floating && !(*tl).fullscreen {
                 tree_untrack(ws, tl);

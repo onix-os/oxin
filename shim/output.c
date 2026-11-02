@@ -4,6 +4,8 @@
 #include <string.h>
 #include <time.h>
 #include <wlr/backend.h>
+#include <wlr/backend/headless.h>
+#include <wlr/backend/multi.h>
 #include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_output.h>
@@ -247,4 +249,38 @@ void oxide_scene_output_render(struct wlr_scene_output *scene_output) {
 void oxide_output_get_size(struct wlr_output *output, int *width, int *height) {
     *width = output->width;
     *height = output->height;
+}
+
+// Hotplug on the headless backend, for testing what plugging and unplugging a
+// monitor does without one (`0xinctl headless-output`). wlr_backend_autocreate
+// returns a multi-backend, so the headless one is looked for inside it.
+static void find_headless(struct wlr_backend *backend, void *data) {
+    struct wlr_backend **found = data;
+    if (*found == NULL && wlr_backend_is_headless(backend)) {
+        *found = backend;
+    }
+}
+
+bool oxide_headless_add_output(struct wlr_backend *backend, int width,
+        int height) {
+    struct wlr_backend *headless = NULL;
+    if (wlr_backend_is_multi(backend)) {
+        wlr_multi_for_each_backend(backend, find_headless, &headless);
+    } else if (wlr_backend_is_headless(backend)) {
+        headless = backend;
+    }
+    if (headless == NULL) {
+        return false;
+    }
+    return wlr_headless_add_output(headless, width, height) != NULL;
+}
+
+bool oxide_headless_remove_output(struct wlr_output *output) {
+    // Only headless outputs are ours to destroy; a real one belongs to its
+    // backend, which destroys it when the monitor is unplugged.
+    if (!wlr_output_is_headless(output)) {
+        return false;
+    }
+    wlr_output_destroy(output);
+    return true;
 }
