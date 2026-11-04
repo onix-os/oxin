@@ -11,7 +11,15 @@ fn socket_path() -> Result<PathBuf, String> {
     Ok(PathBuf::from(runtime).join(format!("0xin-control-{safe_display}.sock")))
 }
 
-const USAGE: &str = "usage: 0xinctl quit\n       0xinctl config-error\n       0xinctl reload\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270\n       0xinctl workspaces\n       0xinctl headless-output add WIDTHxHEIGHT\n       0xinctl headless-output remove NAME\n       0xinctl --version|-V\n       0xinctl --help|-h";
+fn events_socket_path() -> Result<PathBuf, String> {
+    let runtime =
+        env::var_os("XDG_RUNTIME_DIR").ok_or_else(|| "XDG_RUNTIME_DIR is not set".to_string())?;
+    let display = env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "default".into());
+    let safe_display = display.replace('/', "_");
+    Ok(PathBuf::from(runtime).join(format!("0xin-events-{safe_display}.sock")))
+}
+
+const USAGE: &str = "usage: 0xinctl quit\n       0xinctl config-error\n       0xinctl reload\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270\n       0xinctl workspaces\n       0xinctl events\n       0xinctl headless-output add WIDTHxHEIGHT\n       0xinctl headless-output remove NAME\n       0xinctl --version|-V\n       0xinctl --help|-h";
 
 fn usage() -> ! {
     eprintln!("{USAGE}");
@@ -31,6 +39,23 @@ fn main() {
     }
     if command == "--help" || command == "-h" {
         println!("{USAGE}");
+        return;
+    }
+    // Stays connected and prints whatever the compositor pushes, instead of
+    // sending a request — bypasses the request/response match entirely.
+    if command == "events" {
+        let path = events_socket_path().unwrap_or_else(|error| {
+            eprintln!("0xinctl: {error}");
+            std::process::exit(1);
+        });
+        let mut stream = UnixStream::connect(&path).unwrap_or_else(|error| {
+            eprintln!("0xinctl: cannot connect to {}: {error}", path.display());
+            std::process::exit(1);
+        });
+        std::io::copy(&mut stream, &mut std::io::stdout()).unwrap_or_else(|error| {
+            eprintln!("0xinctl: events stream failed: {error}");
+            std::process::exit(1);
+        });
         return;
     }
     let request = match (command.as_str(), args.next(), args.next()) {

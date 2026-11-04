@@ -21,6 +21,7 @@ mod config;
 mod config_watch;
 mod control;
 mod decoration;
+mod events;
 mod ffi;
 mod input;
 mod keybindings;
@@ -221,6 +222,9 @@ fn main() {
             held_action: None,
             control_listener: None,
             control_path: None,
+            event_listener: None,
+            event_path: None,
+            event_subscribers: Vec::new(),
             watch_fd: None,
             watch_timer: std::ptr::null_mut(),
             keyboard_visible: false,
@@ -327,6 +331,9 @@ fn main() {
         if let Err(error) = control::setup(&mut server, event_loop, server_ptr) {
             eprintln!("0xin: control socket disabled: {error}");
         }
+        if let Err(error) = events::setup(&mut server, event_loop, server_ptr) {
+            eprintln!("0xin: events socket disabled: {error}");
+        }
         // Saving init.lua (or a plugin) reloads it. Losing this only loses the
         // convenience; `0xinctl reload` still works.
         if let Err(error) = config_watch::setup(&mut server, event_loop, server_ptr) {
@@ -359,6 +366,7 @@ fn main() {
         // don't unregister, and the OS reclaims everything on process exit.
         wlr::wl_display_destroy_clients(display);
         control::cleanup(&server);
+        events::cleanup(&server);
         eprintln!("0xin: shut down");
     }
 }

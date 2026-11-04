@@ -299,6 +299,11 @@ pub(crate) unsafe fn focus(server: &mut Server, id: usize) {
         server.outputs[target].name,
         id + 1
     );
+    crate::events::emit(
+        server,
+        "workspace",
+        &format!("{} {}", id + 1, server.outputs[target].name),
+    );
     if from != id {
         crate::lua::run_workspace(server, from, id);
     }

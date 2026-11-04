@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::{Index, IndexMut};
 use std::os::fd::OwnedFd;
 use std::os::raw::c_void;
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 
 /// Highest workspace number a config may name (1-based). Workspaces are made
@@ -101,6 +101,12 @@ pub(crate) struct Server {
     /// Nonblocking local IPC endpoint used by 0xinctl.
     pub(crate) control_listener: Option<UnixListener>,
     pub(crate) control_path: Option<PathBuf>,
+    /// Push-event endpoint (`0xinctl events`): one line per state change to
+    /// every connected subscriber, as opposed to `control_listener`'s
+    /// one-shot request/response.
+    pub(crate) event_listener: Option<UnixListener>,
+    pub(crate) event_path: Option<PathBuf>,
+    pub(crate) event_subscribers: Vec<UnixStream>,
     /// inotify fd watching the config's directories for live reload (Stage
     /// 31); `None` if the watcher could not be set up.
     pub(crate) watch_fd: Option<OwnedFd>,

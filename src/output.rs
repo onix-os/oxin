@@ -134,6 +134,7 @@ pub(crate) unsafe extern "C" fn handle_new_output(userdata: *mut c_void, data: *
         "0xin: output {name} online @ {x},{y} {w}x{h} — workspace {}",
         server.outputs[idx].workspace + 1
     );
+    crate::events::emit(server, "monitoradded", &name);
 }
 
 /// An output was removed (monitor unplugged, or logind disabled the seat on a VT
@@ -183,6 +184,7 @@ unsafe extern "C" fn handle_output_destroy(userdata: *mut c_void, data: *mut c_v
         "0xin: output {name} removed — {} left",
         server.outputs.len()
     );
+    crate::events::emit(server, "monitorremoved", &name);
 }
 
 /// Called by the shim on every session active change (VT switch away/back).

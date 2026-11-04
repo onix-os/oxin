@@ -51,6 +51,7 @@ pub(crate) unsafe fn reload(server: &mut Server) -> Result<(), String> {
             registry.config_error = Some(format!(
                 "reload failed; still running the previous config:\n{message}"
             ));
+            crate::events::emit(server, "configreloaded", "");
             return Err(message);
         }
     };
@@ -65,6 +66,7 @@ pub(crate) unsafe fn reload(server: &mut Server) -> Result<(), String> {
     let old = mem::replace(&mut server.config, session.config);
 
     apply(server, &old);
+    crate::events::emit(server, "configreloaded", "");
     Ok(())
 }
 

@@ -380,6 +380,18 @@ unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
         server.workspaces[a].windows.len(),
         if (*tl).floating { "floating" } else { "tiled" }
     );
+    let record = window_record(tl, a);
+    crate::events::emit(
+        server,
+        "openwindow",
+        &format!(
+            "{} {} {} {}",
+            record.workspace,
+            if record.floating { "floating" } else { "tiled" },
+            record.app_id.as_deref().unwrap_or(""),
+            record.title.as_deref().unwrap_or(""),
+        ),
+    );
     // A client may request fullscreen before it maps (e.g. launched with
     // --fullscreen); the request struct is meant to be checked on map.
     if oxide_xdg_toplevel_requested_fullscreen((*tl).xdg_toplevel) {
@@ -391,6 +403,24 @@ unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
 unsafe extern "C" fn handle_unmap(userdata: *mut c_void, _data: *mut c_void) {
     let tl = userdata as *mut Toplevel;
     let server = &mut *(*tl).server;
+    // Captured before `remove_window` frees the tracking that identifies it.
+    let owner = server
+        .workspaces
+        .iter()
+        .find(|(_, ws)| ws.windows.contains(&tl))
+        .map(|(id, _)| id);
+    if let Some(id) = owner {
+        let record = window_record(tl, id);
+        crate::events::emit(
+            server,
+            "closewindow",
+            &format!(
+                "{} {}",
+                record.app_id.as_deref().unwrap_or(""),
+                record.title.as_deref().unwrap_or(""),
+            ),
+        );
+    }
     remove_window(server, tl);
 }
 

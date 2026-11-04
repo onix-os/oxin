@@ -93,6 +93,7 @@ unsafe extern "C" fn handle_new_lock(userdata: *mut c_void, data: *mut c_void) {
     // to acknowledge the lock before the client maps its prettier surfaces.
     oxide_session_lock_send_locked(lock);
     eprintln!("0xin: session locked");
+    crate::events::emit(server, "lock", "");
 }
 
 unsafe extern "C" fn handle_new_surface(userdata: *mut c_void, data: *mut c_void) {
@@ -161,6 +162,7 @@ unsafe extern "C" fn handle_unlock(userdata: *mut c_void, _data: *mut c_void) {
         focus_index(server, focused);
     }
     eprintln!("0xin: session unlocked");
+    crate::events::emit(server, "unlock", "");
 }
 
 unsafe extern "C" fn handle_lock_destroy(userdata: *mut c_void, _data: *mut c_void) {
