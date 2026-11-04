@@ -66,6 +66,15 @@ fn main() {
             println!("0xin {}", env!("CARGO_PKG_VERSION"));
             return;
         }
+        if flag == "--help" || flag == "-h" {
+            println!(
+                "0xin — a dynamic tiling Wayland compositor.\n\n\
+                 usage: 0xin [--version|-V] [--help|-h]\n\n\
+                 Runtime control (reload, quit, wallpaper, workspaces, rotate, headless\n\
+                 outputs) goes through `0xinctl`, not flags on this binary."
+            );
+            return;
+        }
     }
 
     unsafe {

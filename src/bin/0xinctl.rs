@@ -11,10 +11,10 @@ fn socket_path() -> Result<PathBuf, String> {
     Ok(PathBuf::from(runtime).join(format!("0xin-control-{safe_display}.sock")))
 }
 
+const USAGE: &str = "usage: 0xinctl quit\n       0xinctl config-error\n       0xinctl reload\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270\n       0xinctl workspaces\n       0xinctl headless-output add WIDTHxHEIGHT\n       0xinctl headless-output remove NAME\n       0xinctl --version|-V\n       0xinctl --help|-h";
+
 fn usage() -> ! {
-    eprintln!(
-        "usage: 0xinctl quit\n       0xinctl config-error\n       0xinctl reload\n       0xinctl wallpaper PATH\n       0xinctl wallpaper clear\n       0xinctl rotate NAME normal|90|180|270\n       0xinctl workspaces\n       0xinctl headless-output add WIDTHxHEIGHT\n       0xinctl headless-output remove NAME"
-    );
+    eprintln!("{USAGE}");
     std::process::exit(2);
 }
 
@@ -27,6 +27,10 @@ fn main() {
     // script can report the installed version even when nothing is up.
     if command == "--version" || command == "-V" {
         println!("0xinctl {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if command == "--help" || command == "-h" {
+        println!("{USAGE}");
         return;
     }
     let request = match (command.as_str(), args.next(), args.next()) {
