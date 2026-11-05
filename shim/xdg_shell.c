@@ -4,6 +4,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
 #include <wlr/util/log.h>
@@ -200,6 +201,37 @@ struct wlr_scene_tree *oxide_scene_add_xdg_toplevel(struct wlr_scene_tree *tree,
 struct oxide_listener *oxide_xdg_add_commit(struct wlr_xdg_toplevel *toplevel,
         oxide_callback callback, void *userdata) {
     return signal_add(&toplevel->base->surface->events.commit, callback, userdata);
+}
+
+// A new wl_subsurface was added to `surface`'s current state. Used to track
+// corner-radius masking for subsurfaces independently of their parent's own
+// commits (see shim/gles2_corner.c's module comment) — `surface` is a
+// toplevel's own root surface the first time this fires, and recursively any
+// subsurface found, since a subsurface can itself have subsurfaces.
+struct oxide_listener *oxide_surface_add_new_subsurface(
+        struct wlr_surface *surface, oxide_callback callback, void *userdata) {
+    return signal_add(&surface->events.new_subsurface, callback, userdata);
+}
+
+// The wlr_surface behind a wlr_subsurface, as handed to a new_subsurface
+// callback's `data`.
+struct wlr_surface *oxide_subsurface_surface(void *subsurface) {
+    return ((struct wlr_subsurface *)subsurface)->surface;
+}
+
+struct oxide_listener *oxide_subsurface_add_destroy(void *subsurface,
+        oxide_callback callback, void *userdata) {
+    return signal_add(&((struct wlr_subsurface *)subsurface)->events.destroy,
+            callback, userdata);
+}
+
+// A generic per-surface commit listener — oxide_xdg_add_commit above is the
+// same thing for a toplevel's own root surface specifically; this is for any
+// wlr_surface, used for subsurfaces, which can commit independently of their
+// parent when desynchronized (wl_subsurface.set_desync).
+struct oxide_listener *oxide_surface_add_commit(struct wlr_surface *surface,
+        oxide_callback callback, void *userdata) {
+    return signal_add(&surface->events.commit, callback, userdata);
 }
 
 // True only for the client's very first commit — the one the compositor must

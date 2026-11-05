@@ -428,19 +428,45 @@ extern "C" {
     pub(crate) fn oxide_gles2_corner_program_create(
         renderer: *mut wlr::wlr_renderer,
     ) -> *mut c_void;
-    // Best-effort: returns false and leaves the previous buffer in place on
-    // any failure. `swapchain_inout`/`_w_inout`/`_h_inout` are the caller's
-    // per-Toplevel corner_swapchain/_w/_h fields, updated in place.
+    // Masks every scene buffer under `scene_tree` (root surface + any
+    // subsurfaces) against one shared rounded-rect test. `only` NULL masks
+    // everything found (a full sweep) and prunes any pool entry whose
+    // subsurface no longer exists; non-NULL (a `wlr_surface*`) masks just
+    // that one buffer, no pruning — for a single subsurface's own commit.
+    // `pool_inout` is the caller's per-Toplevel corner_masks field (opaque,
+    // NULL initially), updated in place. Best-effort: returns false and
+    // leaves affected buffers' previous content in place on any failure.
     pub(crate) fn oxide_toplevel_apply_corner_radius(
         renderer: *mut wlr::wlr_renderer,
         allocator: *mut wlr::wlr_allocator,
         corner_program: *mut c_void,
         scene_tree: *mut wlr::wlr_scene_tree,
-        root_surface: *mut c_void,
+        xdg_toplevel: *mut wlr::wlr_xdg_toplevel,
+        only: *mut c_void,
         radius: i32,
-        swapchain_inout: *mut *mut c_void,
-        swapchain_w_inout: *mut i32,
-        swapchain_h_inout: *mut i32,
+        pool_inout: *mut *mut c_void,
     ) -> bool;
-    pub(crate) fn oxide_swapchain_destroy(swapchain: *mut c_void);
+    pub(crate) fn oxide_corner_mask_pool_forget(pool: *mut c_void, surface: *mut c_void);
+    pub(crate) fn oxide_corner_mask_pool_destroy(pool: *mut c_void);
+
+    // Subsurface tracking for corner-radius masking (see gles2_corner.c's
+    // module comment): a subsurface can commit independently of its parent,
+    // so masking needs its own listener per subsurface rather than relying
+    // on the root's commit alone.
+    pub(crate) fn oxide_surface_add_new_subsurface(
+        surface: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_subsurface_surface(subsurface: *mut c_void) -> *mut c_void;
+    pub(crate) fn oxide_subsurface_add_destroy(
+        subsurface: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_surface_add_commit(
+        surface: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
 }

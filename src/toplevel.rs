@@ -35,9 +35,9 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
         unmap_listener: ptr::null_mut(),
         destroy_listener: ptr::null_mut(),
         fullscreen_listener: ptr::null_mut(),
-        corner_swapchain: ptr::null_mut(),
-        corner_swapchain_w: 0,
-        corner_swapchain_h: 0,
+        corner_masks: ptr::null_mut(),
+        subsurface_listener: ptr::null_mut(),
+        subsurface_watches: Vec::new(),
     }));
 
     // Listen for its lifecycle so Rust can keep the window list current. We keep
@@ -49,6 +49,71 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
     (*tl).destroy_listener = oxide_xdg_add_destroy(toplevel, handle_destroy, ud);
     (*tl).fullscreen_listener =
         oxide_xdg_add_request_fullscreen(toplevel, handle_request_fullscreen, ud);
+    // Corner-radius masking needs to re-mask a subsurface on its own commit,
+    // not just the root's (see shim/gles2_corner.c's module comment) —
+    // registered here, before the client could plausibly have added a
+    // subsurface yet (that needs a server roundtrip first).
+    (*tl).subsurface_listener =
+        oxide_surface_add_new_subsurface(oxide_xdg_toplevel_surface(toplevel), handle_new_subsurface, ud);
+}
+
+/// A client added a wl_subsurface to a surface this toplevel already watches
+/// (the root the first time, or recursively a subsurface of a subsurface).
+/// Tracks it for corner-radius masking: its own commit re-masks just that
+/// one scene buffer, and its own destroy frees that buffer's mask swapchain
+/// immediately.
+unsafe extern "C" fn handle_new_subsurface(userdata: *mut c_void, data: *mut c_void) {
+    let tl = userdata as *mut Toplevel;
+    let surface = oxide_subsurface_surface(data);
+    let watch = Box::into_raw(Box::new(SubsurfaceWatch {
+        tl,
+        surface,
+        commit_listener: ptr::null_mut(),
+        destroy_listener: ptr::null_mut(),
+        new_subsurface_listener: ptr::null_mut(),
+    }));
+    let wd = watch as *mut c_void;
+    (*watch).commit_listener = oxide_surface_add_commit(surface, handle_subsurface_commit, wd);
+    (*watch).destroy_listener = oxide_subsurface_add_destroy(data, handle_subsurface_destroy, wd);
+    (*watch).new_subsurface_listener =
+        oxide_surface_add_new_subsurface(surface, handle_new_subsurface, tl as *mut c_void);
+    (*tl).subsurface_watches.push(watch);
+}
+
+/// A tracked subsurface committed on its own (independent of its parent's
+/// commit, which only happens when the client desynchronized it) — re-mask
+/// just this one scene buffer rather than the whole tree.
+unsafe extern "C" fn handle_subsurface_commit(userdata: *mut c_void, _data: *mut c_void) {
+    let watch = userdata as *mut SubsurfaceWatch;
+    let tl = (*watch).tl;
+    let server = &*(*tl).server;
+    if server.config.corner_radius > 0 && !(*tl).fullscreen {
+        oxide_toplevel_apply_corner_radius(
+            server.renderer,
+            server.allocator,
+            server.corner_program,
+            (*tl).scene_tree,
+            (*tl).xdg_toplevel,
+            (*watch).surface,
+            server.config.corner_radius,
+            &mut (*tl).corner_masks,
+        );
+    }
+}
+
+/// A tracked subsurface was destroyed: drop its listeners and free its mask
+/// swapchain immediately, rather than leave it for the next full sweep.
+unsafe extern "C" fn handle_subsurface_destroy(userdata: *mut c_void, _data: *mut c_void) {
+    let watch = userdata as *mut SubsurfaceWatch;
+    let tl = (*watch).tl;
+    oxide_listener_remove((*watch).commit_listener);
+    oxide_listener_remove((*watch).destroy_listener);
+    oxide_listener_remove((*watch).new_subsurface_listener);
+    if !(*tl).corner_masks.is_null() {
+        oxide_corner_mask_pool_forget((*tl).corner_masks, (*watch).surface);
+    }
+    (*tl).subsurface_watches.retain(|&w| w != watch);
+    drop(Box::from_raw(watch));
 }
 
 /// Put a window into or out of fullscreen: full output box, painted above
@@ -254,11 +319,10 @@ pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
             server.allocator,
             server.corner_program,
             (*tl).scene_tree,
-            oxide_xdg_toplevel_surface((*tl).xdg_toplevel),
+            (*tl).xdg_toplevel,
+            ptr::null_mut(), // full sweep: every buffer under this tree
             server.config.corner_radius,
-            &mut (*tl).corner_swapchain,
-            &mut (*tl).corner_swapchain_w,
-            &mut (*tl).corner_swapchain_h,
+            &mut (*tl).corner_masks,
         );
     }
 }
@@ -435,7 +499,18 @@ unsafe extern "C" fn handle_destroy(userdata: *mut c_void, _data: *mut c_void) {
     oxide_listener_remove((*tl).unmap_listener);
     oxide_listener_remove((*tl).destroy_listener);
     oxide_listener_remove((*tl).fullscreen_listener);
-    oxide_swapchain_destroy((*tl).corner_swapchain);
+    oxide_listener_remove((*tl).subsurface_listener);
+    // Each tracked subsurface's own 3 listeners, freeing its box — done here
+    // rather than relying on each subsurface's own destroy to fire first
+    // (wlroots tears down a surface's subsurfaces along with it, in an order
+    // this code should not depend on).
+    for watch in (*tl).subsurface_watches.drain(..) {
+        oxide_listener_remove((*watch).commit_listener);
+        oxide_listener_remove((*watch).destroy_listener);
+        oxide_listener_remove((*watch).new_subsurface_listener);
+        drop(Box::from_raw(watch));
+    }
+    oxide_corner_mask_pool_destroy((*tl).corner_masks);
     remove_window(server, tl);
     drop(Box::from_raw(tl));
 }

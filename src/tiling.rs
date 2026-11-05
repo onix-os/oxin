@@ -361,9 +361,9 @@ pub(crate) mod tests {
             unmap_listener: ptr::null_mut(),
             destroy_listener: ptr::null_mut(),
             fullscreen_listener: ptr::null_mut(),
-            corner_swapchain: ptr::null_mut(),
-            corner_swapchain_w: 0,
-            corner_swapchain_h: 0,
+            corner_masks: ptr::null_mut(),
+            subsurface_listener: ptr::null_mut(),
+            subsurface_watches: Vec::new(),
         }))
     }
 

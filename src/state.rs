@@ -304,14 +304,32 @@ pub(crate) struct Toplevel {
     pub(crate) unmap_listener: *mut ShimListener,
     pub(crate) destroy_listener: *mut ShimListener,
     pub(crate) fullscreen_listener: *mut ShimListener,
-    /// Per-window GPU buffer chain for corner-radius masking (opaque —
-    /// `struct wlr_swapchain*`, see shim/gles2_corner.c); NULL until the
-    /// first masked commit. Recreated when the surface's buffer size
-    /// changes, so `corner_swapchain_w`/`_h` track what size it currently
-    /// matches.
-    pub(crate) corner_swapchain: *mut c_void,
-    pub(crate) corner_swapchain_w: i32,
-    pub(crate) corner_swapchain_h: i32,
+    /// Per-window pool of GPU buffer chains for corner-radius masking
+    /// (opaque — `struct oxide_corner_mask_pool*`, see shim/gles2_corner.c),
+    /// one entry per masked scene buffer (root surface, plus any
+    /// subsurface this window has). NULL until the first masked commit.
+    pub(crate) corner_masks: *mut c_void,
+    /// Listens for new wl_subsurfaces on this window's own root surface —
+    /// each one gets its own commit/destroy listeners (`SubsurfaceWatch`)
+    /// so corner-radius masking can re-mask it on its own commit, since a
+    /// subsurface commits independently of the root when desynchronized
+    /// (see shim/gles2_corner.c's module comment).
+    pub(crate) subsurface_listener: *mut ShimListener,
+    pub(crate) subsurface_watches: Vec<*mut SubsurfaceWatch>,
+}
+
+/// One subsurface this toplevel is watching for corner-radius masking: its
+/// own commit re-masks just that one scene buffer, and its own destroy frees
+/// that buffer's mask swapchain immediately rather than waiting for the next
+/// full sweep to notice it's gone. `new_subsurface_listener` is registered on
+/// `surface` itself (not `tl`'s root) — a subsurface can have subsurfaces of
+/// its own, which fire the same new_subsurface signal on their own parent.
+pub(crate) struct SubsurfaceWatch {
+    pub(crate) tl: *mut Toplevel,
+    pub(crate) surface: *mut c_void,
+    pub(crate) commit_listener: *mut ShimListener,
+    pub(crate) destroy_listener: *mut ShimListener,
+    pub(crate) new_subsurface_listener: *mut ShimListener,
 }
 
 /// One layer-shell surface (bar, panel, wallpaper — e.g. quickshell). Heap-
