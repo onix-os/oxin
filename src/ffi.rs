@@ -428,21 +428,19 @@ extern "C" {
     pub(crate) fn oxide_gles2_corner_program_create(
         renderer: *mut wlr::wlr_renderer,
     ) -> *mut c_void;
-    // Masks every scene buffer under `scene_tree` (root surface + any
-    // subsurfaces) against one shared rounded-rect test. `only` NULL masks
-    // everything found (a full sweep) and prunes any pool entry whose
-    // subsurface no longer exists; non-NULL (a `wlr_surface*`) masks just
-    // that one buffer, no pruning — for a single subsurface's own commit.
-    // `pool_inout` is the caller's per-Toplevel corner_masks field (opaque,
-    // NULL initially), updated in place. Best-effort: returns false and
-    // leaves affected buffers' previous content in place on any failure.
+    // Masks the toplevel's own scene buffers (root surface + subsurfaces, not
+    // popups) against one shared rounded-rect test. Cheap to call often —
+    // buffers clear of the corners, or already showing an up-to-date mask,
+    // are skipped — and a no-op while `scene_tree` is disabled. `pool_inout`
+    // is the caller's per-Toplevel corner_masks field (opaque, NULL
+    // initially), updated in place. Best-effort: returns false and leaves
+    // affected buffers' previous content in place on any failure.
     pub(crate) fn oxide_toplevel_apply_corner_radius(
         renderer: *mut wlr::wlr_renderer,
         allocator: *mut wlr::wlr_allocator,
         corner_program: *mut c_void,
         scene_tree: *mut wlr::wlr_scene_tree,
         xdg_toplevel: *mut wlr::wlr_xdg_toplevel,
-        only: *mut c_void,
         radius: i32,
         pool_inout: *mut *mut c_void,
     ) -> bool;
@@ -458,6 +456,14 @@ extern "C" {
         callback: ShimCallback,
         userdata: *mut c_void,
     ) -> *mut ShimListener;
+    // Calls `callback(userdata, subsurface)` for each subsurface `surface`
+    // already has (direct children only) — those whose new_subsurface fired
+    // before a listener was added.
+    pub(crate) fn oxide_surface_for_each_subsurface(
+        surface: *mut c_void,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    );
     pub(crate) fn oxide_subsurface_surface(subsurface: *mut c_void) -> *mut c_void;
     pub(crate) fn oxide_subsurface_add_destroy(
         subsurface: *mut c_void,

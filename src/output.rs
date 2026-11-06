@@ -215,6 +215,9 @@ pub(crate) unsafe extern "C" fn handle_session_active(userdata: *mut c_void, _da
                 (false, false) => server.tree_normal,
             };
             (*tl).scene_tree = oxide_scene_add_xdg_toplevel(tree, (*tl).xdg_toplevel);
+            // The fresh tree's wlroots listeners now sit behind ours; masking
+            // only works with ours last.
+            crate::toplevel::reorder_listeners_after_scene_rebuild(tl);
             // refresh() skips floating windows, so restore their position
             // here (the fresh node starts at 0,0).
             if (*tl).floating && !(*tl).fullscreen {

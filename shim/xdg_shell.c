@@ -213,6 +213,21 @@ struct oxide_listener *oxide_surface_add_new_subsurface(
     return signal_add(&surface->events.new_subsurface, callback, userdata);
 }
 
+// The subsurfaces `surface` already has: wlroots emits new_subsurface once per
+// subsurface, on the parent's first commit after it was created, so any added
+// before the listener above existed are only reachable this way. Same lists,
+// same order, as wlroots' own scene tree walks them (scene_surface_tree_create).
+void oxide_surface_for_each_subsurface(struct wlr_surface *surface,
+        oxide_callback callback, void *userdata) {
+    struct wlr_subsurface *subsurface;
+    wl_list_for_each(subsurface, &surface->current.subsurfaces_below, current.link) {
+        callback(userdata, subsurface);
+    }
+    wl_list_for_each(subsurface, &surface->current.subsurfaces_above, current.link) {
+        callback(userdata, subsurface);
+    }
+}
+
 // The wlr_surface behind a wlr_subsurface, as handed to a new_subsurface
 // callback's `data`.
 struct wlr_surface *oxide_subsurface_surface(void *subsurface) {

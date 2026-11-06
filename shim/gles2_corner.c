@@ -18,7 +18,9 @@
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/util/box.h>
 #include <wlr/util/log.h>
+#include <wlr/util/transform.h>
 
 #include "oxide_shim.h"
 
@@ -50,22 +52,35 @@ static const char *VERTEX_SRC =
 // The SDF is tested against the whole toplevel's own box (u_tile_size),
 // not this buffer's own size (u_size) — a window is masked buffer-by-buffer
 // (root surface, plus any subsurfaces it has), and every one of them must
-// agree on where the toplevel's four corners actually are. u_offset is this
-// buffer's own position within that shared box, so a subsurface sitting away
-// from every corner comes out with coverage 1.0 everywhere (untouched), and
-// one that does overlap a corner gets cut at the same edge the root would
-// be. For the root surface specifically, u_offset is always (0,0) and
-// u_tile_size == u_size, which collapses this back to exactly the original,
-// single-surface formula — a plain window must render pixel-identical to
-// before this buffer-by-buffer generalization.
+// agree on where the toplevel's four corners actually are. u_center is where
+// that shared box's center sits relative to this buffer's own center, so a
+// subsurface sitting away from every corner comes out with coverage 1.0
+// everywhere (untouched), and one that does overlap a corner gets cut at the
+// same edge the root would be. All three are in this buffer's own pixel
+// space (see mask_one_buffer). For a plain window's root surface — no shadow
+// margin, so the toplevel's box is exactly its own bounds — u_center is
+// (0,0) and u_tile_size == u_size, which collapses this back to the
+// original, single-surface formula.
+//
+// Precision matters here more than it looks. Where mediump is genuinely
+// half-float (Adreno; measured on NVIDIA's GLES too), positions past 1024
+// can only step in whole pixels, and the four arcs stop being mirror images
+// of each other: measured on a 1240x680 window, mediump left the bottom
+// corners up to 0.35 coverage off their mirrored top ones; highp, within
+// 0.004. So the program is built with highp — see build_variant_best — and
+// only falls back to mediump on a GPU without fragment highp. Positions are
+// also measured from the center, never from a buffer corner, so the
+// intermediate values reach only half the buffer's size — which on that
+// mediump fallback is the difference between a slightly lopsided arc and a
+// stair-stepped one (pairs of pixels sharing one coverage value).
 static const char *FRAGMENT_SRC_TEMPLATE =
     "%s"
-    "precision mediump float;\n"
+    "precision %s float;\n"
     "varying vec2 v_texcoord;\n"
     "uniform %s u_tex;\n"
     "uniform vec2 u_size;\n"
     "uniform vec2 u_tile_size;\n"
-    "uniform vec2 u_offset;\n"
+    "uniform vec2 u_center;\n"
     "uniform float u_radius;\n"
     // Textures without a real alpha channel (has_alpha == false — an
     // opaque XRGB-style buffer) can return driver-dependent garbage when
@@ -82,7 +97,7 @@ static const char *FRAGMENT_SRC_TEMPLATE =
     "void main() {\n"
     "    vec4 color = texture2D(u_tex, v_texcoord);\n"
     "    float src_alpha = mix(1.0, color.a, u_has_alpha);\n"
-    "    vec2 pixel_pos = v_texcoord * u_size + u_offset - u_tile_size * 0.5;\n"
+    "    vec2 pixel_pos = (v_texcoord - 0.5) * u_size - u_center;\n"
     "    float dist = rounded_box_sdf(pixel_pos, u_tile_size * 0.5, u_radius);\n"
     "    float coverage = 1.0 - smoothstep(-1.0, 1.0, dist);\n"
     "    gl_FragColor = vec4(color.rgb * coverage, src_alpha * coverage);\n"
@@ -95,7 +110,7 @@ struct oxide_corner_variant {
     GLint uniform_tex;
     GLint uniform_size;
     GLint uniform_tile_size;
-    GLint uniform_offset;
+    GLint uniform_center;
     GLint uniform_radius;
     GLint uniform_has_alpha;
 };
@@ -106,16 +121,21 @@ struct oxide_corner_program {
     GLuint quad_vbo;
 };
 
-static GLuint compile_shader(GLenum type, const char *src) {
+// `report`: log a failure as an error. Off only for an attempt with a
+// fallback behind it (build_variant_best's highp try), where failing is an
+// expected outcome on some GPUs rather than a problem.
+static GLuint compile_shader(GLenum type, const char *src, bool report) {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &src, NULL);
     glCompileShader(shader);
     GLint ok = GL_FALSE;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
     if (!ok) {
-        char log[512];
-        glGetShaderInfoLog(shader, sizeof(log), NULL, log);
-        wlr_log(WLR_ERROR, "0xin: corner-radius shader compile failed: %s", log);
+        if (report) {
+            char log[512];
+            glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+            wlr_log(WLR_ERROR, "0xin: corner-radius shader compile failed: %s", log);
+        }
         glDeleteShader(shader);
         return 0;
     }
@@ -126,13 +146,14 @@ static GLuint compile_shader(GLenum type, const char *src) {
 // locations, and cleans up the (no-longer-needed-after-link) shader objects.
 // Returns false (leaving `out` zeroed) on any failure.
 static bool build_variant(struct oxide_corner_variant *out, GLuint vertex,
-        const char *sampler_type, const char *extension_directive) {
+        const char *sampler_type, const char *extension_directive,
+        const char *precision, bool report) {
     memset(out, 0, sizeof(*out));
 
     char fragment_src[2048];
     snprintf(fragment_src, sizeof(fragment_src), FRAGMENT_SRC_TEMPLATE,
-            extension_directive, sampler_type);
-    GLuint fragment = compile_shader(GL_FRAGMENT_SHADER, fragment_src);
+            extension_directive, precision, sampler_type);
+    GLuint fragment = compile_shader(GL_FRAGMENT_SHADER, fragment_src, report);
     if (fragment == 0) {
         return false;
     }
@@ -146,9 +167,11 @@ static bool build_variant(struct oxide_corner_variant *out, GLuint vertex,
     GLint ok = GL_FALSE;
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
     if (!ok) {
-        char log[512];
-        glGetProgramInfoLog(program, sizeof(log), NULL, log);
-        wlr_log(WLR_ERROR, "0xin: corner-radius program link failed: %s", log);
+        if (report) {
+            char log[512];
+            glGetProgramInfoLog(program, sizeof(log), NULL, log);
+            wlr_log(WLR_ERROR, "0xin: corner-radius program link failed: %s", log);
+        }
         glDeleteProgram(program);
         return false;
     }
@@ -159,10 +182,28 @@ static bool build_variant(struct oxide_corner_variant *out, GLuint vertex,
     out->uniform_tex = glGetUniformLocation(program, "u_tex");
     out->uniform_size = glGetUniformLocation(program, "u_size");
     out->uniform_tile_size = glGetUniformLocation(program, "u_tile_size");
-    out->uniform_offset = glGetUniformLocation(program, "u_offset");
+    out->uniform_center = glGetUniformLocation(program, "u_center");
     out->uniform_radius = glGetUniformLocation(program, "u_radius");
     out->uniform_has_alpha = glGetUniformLocation(program, "u_has_alpha");
     return true;
+}
+
+// highp if the GPU has it in fragment shaders, mediump otherwise (see the
+// precision note on FRAGMENT_SRC_TEMPLATE). Asked by just trying: GLSL ES's
+// own way to ask, the GL_FRAGMENT_PRECISION_HIGH macro, is not defined by
+// NVIDIA's GLES even though highp compiles and works there — an #ifdef on it
+// silently got mediump. GLES2 does leave fragment highp optional, and some
+// GPUs genuinely lack it (Mali-400), hence the fallback.
+static bool build_variant_best(struct oxide_corner_variant *out, GLuint vertex,
+        const char *sampler_type, const char *extension_directive) {
+    if (build_variant(out, vertex, sampler_type, extension_directive, "highp",
+            false)) {
+        return true;
+    }
+    wlr_log(WLR_INFO, "0xin: corner-radius: no fragment highp for %s here — "
+            "using mediump (arcs may be slightly uneven)", sampler_type);
+    return build_variant(out, vertex, sampler_type, extension_directive,
+            "mediump", true);
 }
 
 // A unit quad in NDC (position) paired with 0..1 texture coordinates,
@@ -198,7 +239,7 @@ void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer) {
     }
 
     struct oxide_corner_program *p = calloc(1, sizeof(*p));
-    GLuint vertex = compile_shader(GL_VERTEX_SHADER, VERTEX_SRC);
+    GLuint vertex = compile_shader(GL_VERTEX_SHADER, VERTEX_SRC, true);
 
     // The two variants are built independently, and one is enough. Which one a
     // window needs depends on how its client's buffer was imported, so a driver
@@ -206,9 +247,9 @@ void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer) {
     // that actually hand over external textures — not on every window on the
     // screen, which is what requiring both variants used to do.
     bool have_2d = vertex != 0
-            && build_variant(&p->tex2d, vertex, "sampler2D", "");
+            && build_variant_best(&p->tex2d, vertex, "sampler2D", "");
     bool have_oes = vertex != 0
-            && build_variant(&p->tex_oes, vertex, "samplerExternalOES",
+            && build_variant_best(&p->tex_oes, vertex, "samplerExternalOES",
                     "#extension GL_OES_EGL_image_external : enable\n");
     bool ok = have_2d || have_oes;
     if (vertex != 0) {
@@ -256,31 +297,48 @@ void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer) {
 // has, each as its own wlr_scene_buffer node (wlr_scene_xdg_surface_create's
 // doc comment: it covers the root surface "and all of its sub-surfaces").
 // Earlier, masking matched only the one node backed by the root surface,
-// leaving any subsurface — e.g. a dropdown/overlay a client renders that way
-// — unmasked: square, opaque, painted right over the rounded corners. This
-// masks every buffer node found, each independently, each against the same
-// shared toplevel-sized rounded-rect test, so a client that happens to
-// overlap a corner with a subsurface gets cut there too.
+// leaving any subsurface — e.g. the content surface a client renders into —
+// unmasked: square, opaque, painted right over the rounded corners. This
+// masks every one of them, each independently, each against the same shared
+// toplevel-sized rounded-rect test, so wherever a subsurface reaches a corner
+// it gets cut exactly where the root would be.
 //
-// Popups never show up here: they get their own, separate scene tree
-// (handle_new_popup, shim/xdg_shell.c), never parented under a toplevel's
-// own tree — nothing here needs to special-case or exclude them.
+// The same tree also holds this window's popups: handle_new_popup
+// (shim/xdg_shell.c) parents each one under its parent's scene tree, which
+// for a first-level menu is this one. A popup is a separate window, not part
+// of this one's box — a menu reaching past the window's edge must not be cut
+// at it — so only buffers whose surface belongs to the toplevel's own
+// subsurface tree (wlr_surface_get_root_surface) are touched.
 //
 // Each masked buffer keeps its own swapchain, tracked by surface identity in
-// a small pool owned opaquely by the Rust side (one `void*` on `Toplevel`,
-// replacing the single corner_swapchain this used to be). A full sweep
-// (driven by the root surface's own commit — same trigger as before) masks
-// everything found and prunes any pool entry whose subsurface no longer
-// exists. A single-surface pass (driven by one subsurface's own commit,
-// wired up separately in src/toplevel.rs since a subsurface can be
-// desynchronized and commit independently of the root) re-masks just that
-// one node, cheaply, without touching the rest.
+// a small pool owned opaquely by the Rust side (one `void*` on `Toplevel`).
+// Every trigger — the root's commit, a subsurface's own commit (a
+// desynchronized subsurface commits independently of the root; wired up in
+// src/toplevel.rs), a config reload, the window being shown again — runs the
+// same sweep over the whole tree, and the sweep only does GPU work where it
+// is needed:
+//   - a buffer wholly inside the box and clear of every corner is left
+//     exactly as its client drew it: no copy, no GPU stall, and wlroots
+//     keeps its damage tracking and direct scanout;
+//   - a buffer still showing the mask this pool last put there, made from
+//     the same inputs, is already right — a surface can't change its content
+//     without committing, and on every commit wlroots puts the client's own
+//     buffer back in its place, so "still ours" means "still current";
+//   - everything else is masked.
+// Entries whose surface has left the tree are pruned at the end of a sweep.
 
 struct oxide_corner_mask {
     struct wlr_surface *surface; // identity key
     struct wlr_swapchain *swapchain;
     int w, h; // swapchain's current size, buffer pixels
-    bool seen; // scratch flag for the full-sweep prune pass
+    bool seen; // scratch flag for the prune pass
+    // The buffer this entry last put into the scene, and the tile-space
+    // inputs it was masked with — sweep_one_buffer's up-to-date check.
+    // `last` is only ever compared, never dereferenced, and is cleared
+    // whenever the swapchain that owns it is replaced: while that swapchain
+    // lives so does the buffer, so the address can't be reused by another.
+    struct wlr_buffer *last;
+    int last_offset_x, last_offset_y, last_tile_w, last_tile_h, last_radius;
 };
 
 struct oxide_corner_mask_pool {
@@ -289,13 +347,18 @@ struct oxide_corner_mask_pool {
     size_t cap;
 };
 
-static struct oxide_corner_mask *pool_find_or_create(
-        struct oxide_corner_mask_pool *pool, struct wlr_surface *surface) {
+static struct oxide_corner_mask *pool_find(struct oxide_corner_mask_pool *pool,
+        struct wlr_surface *surface) {
     for (size_t i = 0; i < pool->count; i++) {
         if (pool->masks[i].surface == surface) {
             return &pool->masks[i];
         }
     }
+    return NULL;
+}
+
+static struct oxide_corner_mask *pool_add(struct oxide_corner_mask_pool *pool,
+        struct wlr_surface *surface) {
     if (pool->count == pool->cap) {
         size_t new_cap = pool->cap == 0 ? 4 : pool->cap * 2;
         struct oxide_corner_mask *grown =
@@ -340,14 +403,18 @@ static void log_gl_errors(const char *where) {
 // Mask one buffer node's surface into `mask`'s swapchain and swap the result
 // into the scene graph in place of the client's own buffer — the only way to
 // get real per-pixel masking, since wlroots' render-pass API has no
-// clip/mask/shader hook. `tile_w`/`tile_h`/`offset_x`/`offset_y` are all in
-// *logical* units (same space `wlr_scene_node_for_each_buffer` reports
-// positions in, and the same space xdg geometry is expressed in); this
-// function converts them into this specific surface's own buffer-pixel space
-// before handing them to the shader, using that surface's own
-// buffer-to-logical ratio — not some single ratio assumed for the whole
-// toplevel — so a subsurface that happens to use a different buffer scale
-// than the root still gets a correctly-aligned test.
+// clip/mask/shader hook. `tile_w`/`tile_h`/`offset_x`/`offset_y`/`radius`
+// are all *logical* units in tile space (the toplevel's box, (0,0) at its
+// top-left — the space xdg geometry is expressed in); this function carries
+// them into this specific surface's own buffer-pixel space before handing
+// them to the shader, through that surface's own viewport and transform —
+// not some single ratio assumed for the whole toplevel — so a subsurface
+// that renders at a different scale than the root still lines up.
+//
+// The mask buffer is a same-sized drop-in for the client's, so everything
+// wlroots already set on the scene buffer from the surface's state — source
+// crop, destination size, transform — stays valid as it is, and is
+// deliberately left alone.
 static bool mask_one_buffer(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, struct oxide_corner_program *prog,
         struct wlr_scene_buffer *buffer, struct wlr_surface *surface,
@@ -376,12 +443,49 @@ static bool mask_one_buffer(struct wlr_renderer *renderer,
 
     int w = surface->current.buffer_width;
     int h = surface->current.buffer_height;
-    if (w <= 0 || h <= 0) {
+    int logical_w = surface->current.width;
+    int logical_h = surface->current.height;
+    if (w <= 0 || h <= 0 || logical_w <= 0 || logical_h <= 0) {
         return false;
     }
 
+    // Carry the toplevel's box into this buffer's pixel space, where the
+    // shader works. A buffer maps onto its surface's logical box through the
+    // viewport source crop and the buffer transform (wp_viewporter,
+    // wl_surface.set_buffer_transform), so the box takes the same route
+    // wlroots itself uses for the viewport (surface_reconfigure in wlroots'
+    // types/scene/surface.c): into transformed-buffer space alongside the
+    // source box, then back through the inverse transform. With no viewport
+    // and no transform this is plain "buffer pixels per logical pixel"
+    // scaling — and for a plain window (offset 0,0, box == its own size) it
+    // lands exactly on the buffer's own bounds, the original mask.
+    enum wl_output_transform transform = surface->current.transform;
+    struct wlr_fbox src, src_t;
+    wlr_surface_get_buffer_source_box(surface, &src);
+    wlr_fbox_transform(&src_t, &src, transform, w, h);
+    int transformed_w = w, transformed_h = h;
+    wlr_output_transform_coords(transform, &transformed_w, &transformed_h);
+    double scale_x = src_t.width / logical_w;
+    double scale_y = src_t.height / logical_h;
+    if (scale_x < 0.5 || scale_y < 0.5) {
+        // Stretched far past its own resolution — e.g. a single-pixel buffer
+        // used as a solid background. A mask at that resolution can't draw an
+        // arc (a 1x1 buffer is all in or all out); leave it as it is.
+        return false;
+    }
+    struct wlr_fbox tile_t = {
+        .x = src_t.x - offset_x * scale_x,
+        .y = src_t.y - offset_y * scale_y,
+        .width = tile_w * scale_x,
+        .height = tile_h * scale_y,
+    };
+    struct wlr_fbox tile_box;
+    wlr_fbox_transform(&tile_box, &tile_t, wlr_output_transform_invert(transform),
+            transformed_w, transformed_h);
+
     struct wlr_swapchain *swapchain = mask->swapchain;
     if (swapchain == NULL || mask->w != w || mask->h != h) {
+        mask->last = NULL; // owned by the swapchain about to be replaced
         if (swapchain != NULL) {
             wlr_swapchain_destroy(swapchain);
         }
@@ -492,20 +596,18 @@ static bool mask_one_buffer(struct wlr_renderer *renderer,
     glTexParameteri(attribs.target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glUniform1i(variant->uniform_tex, 0);
     glUniform2f(variant->uniform_size, (float)w, (float)h);
-    // `radius`/`tile_w`/`tile_h`/`offset_x`/`offset_y` all arrive in *logical*
-    // pixels, but u_size is this buffer's *physical* size and the shader
-    // compares everything in one space. Convert using this surface's own
-    // buffer-to-logical ratio, not some ratio assumed for the whole toplevel
-    // (the root and a subsurface are not guaranteed to share one) — matches
-    // the buffer actually being masked.
-    float buffer_scale = surface->current.width > 0
-            ? (float)w / (float)surface->current.width
-            : 1.0f;
-    glUniform2f(variant->uniform_tile_size,
-            (float)tile_w * buffer_scale, (float)tile_h * buffer_scale);
-    glUniform2f(variant->uniform_offset,
-            (float)offset_x * buffer_scale, (float)offset_y * buffer_scale);
-    glUniform1f(variant->uniform_radius, (float)radius * buffer_scale);
+    // The box, carried into buffer space above; the shader takes its center
+    // relative to this buffer's own center (see the precision note on the
+    // shader for why it never works from a corner). Computed in double here.
+    glUniform2f(variant->uniform_tile_size, (float)tile_box.width,
+            (float)tile_box.height);
+    glUniform2f(variant->uniform_center,
+            (float)(tile_box.x + tile_box.width / 2.0 - w / 2.0),
+            (float)(tile_box.y + tile_box.height / 2.0 - h / 2.0));
+    // The radius is a config value in logical pixels; the shader compares in
+    // buffer pixels. On a scaled output those differ — unconverted, at scale
+    // 3 a configured 40 would cut as about 13 logical pixels.
+    glUniform1f(variant->uniform_radius, (float)(radius * scale_x));
     glUniform1f(variant->uniform_has_alpha, attribs.has_alpha ? 1.0f : 0.0f);
 
     glBindBuffer(GL_ARRAY_BUFFER, prog->quad_vbo);
@@ -553,8 +655,6 @@ static bool mask_one_buffer(struct wlr_renderer *renderer,
     // surface's own four corners: a subsurface positioned away from every
     // real corner loses nothing and should report its opaque region
     // unchanged.
-    int logical_w = surface->current.width;
-    int logical_h = surface->current.height;
     int corner = radius;
     if (corner > tile_w / 2) {
         corner = tile_w / 2;
@@ -566,6 +666,10 @@ static bool mask_one_buffer(struct wlr_renderer *renderer,
     pixman_region32_init(&opaque);
     pixman_region32_copy(&opaque, &surface->opaque_region);
     pixman_region32_intersect_rect(&opaque, &opaque, 0, 0, logical_w, logical_h);
+    // Nothing outside the toplevel's box survives the mask at all (in this
+    // surface's local coordinates the box starts at -offset).
+    pixman_region32_intersect_rect(&opaque, &opaque, -offset_x, -offset_y,
+            tile_w, tile_h);
     if (corner > 0) {
         // The toplevel's four corner squares, in tile-space, translated into
         // this surface's own local coordinates (local (0,0) == tile-space
@@ -586,18 +690,18 @@ static bool mask_one_buffer(struct wlr_renderer *renderer,
     wlr_scene_buffer_set_opaque_region(buffer, &opaque);
     pixman_region32_fini(&opaque);
 
-    // Restate this buffer's own logical display size explicitly — our mask
-    // buffer is the surface's full physical size, but on a fractionally-
-    // scaled output that must still be painted at the surface's own logical
-    // size, not 1:1. This is per-surface, not the shared tile size: each
-    // buffer keeps displaying at whatever size/position it already had in
-    // the scene graph, only its pixels change. Also reset any leftover
-    // source crop from the client's own buffer/viewport state, since our
-    // mask buffer is a full, uncropped copy — a stale src_box would crop it
-    // incorrectly.
-    wlr_scene_buffer_set_dest_size(buffer, logical_w, logical_h);
-    wlr_scene_buffer_set_source_box(buffer, NULL);
-    wlr_buffer_unlock(mask_buffer);
+    // No destination size or source box here: wlr_scene_buffer_set_buffer
+    // touches neither, and the values wlroots set from the surface's own
+    // state (viewport crop included) describe our same-sized copy exactly as
+    // well as the client's original. Overriding them — this used to reset the
+    // source box to NULL — would throw away a client's viewport crop.
+    wlr_buffer_unlock(mask_buffer); // the scene holds its own lock now
+    mask->last = mask_buffer;
+    mask->last_offset_x = offset_x;
+    mask->last_offset_y = offset_y;
+    mask->last_tile_w = tile_w;
+    mask->last_tile_h = tile_h;
+    mask->last_radius = radius;
     return true;
 }
 
@@ -606,64 +710,107 @@ struct oxide_corner_sweep_ctx {
     struct wlr_allocator *allocator;
     struct oxide_corner_program *prog;
     struct oxide_corner_mask_pool *pool;
-    int tree_lx, tree_ly;
+    struct wlr_surface *root_surface; // the toplevel's own
+    int tree_lx, tree_ly; // the toplevel tree's layout position
     int tile_w, tile_h;
     int radius;
-    // NULL: mask every buffer found (a full sweep, driven by the root's own
-    // commit). Non-NULL: mask only the one buffer backed by this surface (a
-    // single subsurface's own commit) — see shim/gles2_corner.c's module
-    // comment for why that path exists at all.
-    struct wlr_surface *only;
+    int corner; // radius, clamped to half the box
 };
+
+static bool rects_intersect(int ax, int ay, int aw, int ah,
+        int bx, int by, int bw, int bh) {
+    return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+}
+
+// Whether a buffer at (x, y, w, h) in tile space needs masking: yes if any of
+// it lies outside the box (cut away) or within a rounded corner (cut along
+// the arc — the corner squares are grown by two pixels for the arc's
+// antialiasing). Anything else comes out of the shader as it went in, give
+// or take a one-pixel antialiasing fade where it touches a straight edge —
+// not worth a full copy and a GPU stall on every one of its commits.
+static bool buffer_needs_mask(const struct oxide_corner_sweep_ctx *ctx,
+        int x, int y, int w, int h) {
+    if (x < 0 || y < 0 || x + w > ctx->tile_w || y + h > ctx->tile_h) {
+        return true;
+    }
+    int c = ctx->corner + 2;
+    int right = ctx->tile_w - c;
+    int bottom = ctx->tile_h - c;
+    return rects_intersect(x, y, w, h, 0, 0, c, c)
+            || rects_intersect(x, y, w, h, right, 0, c, c)
+            || rects_intersect(x, y, w, h, 0, bottom, c, c)
+            || rects_intersect(x, y, w, h, right, bottom, c, c);
+}
 
 static void sweep_one_buffer(struct wlr_scene_buffer *buffer, int sx, int sy,
         void *userdata) {
+    // sx/sy are relative to the start node's *parent*, not layout coordinates
+    // (wlr_scene_node_for_each_buffer starts counting at 0,0) — positions are
+    // taken from wlr_scene_node_coords at both ends below instead, so the
+    // difference holds wherever the toplevel's tree sits.
+    (void)sx;
+    (void)sy;
     struct oxide_corner_sweep_ctx *ctx = userdata;
     struct wlr_scene_surface *scene_surface =
             wlr_scene_surface_try_from_buffer(buffer);
     if (scene_surface == NULL) {
         return;
     }
-    if (ctx->only != NULL && scene_surface->surface != ctx->only) {
+    struct wlr_surface *surface = scene_surface->surface;
+    if (wlr_surface_get_root_surface(surface) != ctx->root_surface) {
+        return; // a popup, or a popup's subsurface — see the module comment
+    }
+
+    int lx, ly;
+    wlr_scene_node_coords(&buffer->node, &lx, &ly);
+    int offset_x = lx - ctx->tree_lx;
+    int offset_y = ly - ctx->tree_ly;
+
+    struct oxide_corner_mask *mask = pool_find(ctx->pool, surface);
+    if (!buffer_needs_mask(ctx, offset_x, offset_y, surface->current.width,
+            surface->current.height)) {
+        if (mask != NULL) {
+            // It needed a mask before (it sat at a corner, or the box was
+            // smaller) and doesn't now. If the scene still shows that old
+            // cut, redraw it once from the current position — clear of every
+            // corner, that's an uncut copy — then stop tracking it: its next
+            // commit puts the client's own buffer back.
+            if (mask->last != NULL && buffer->buffer == mask->last) {
+                mask_one_buffer(ctx->renderer, ctx->allocator, ctx->prog,
+                        buffer, surface, offset_x, offset_y, ctx->tile_w,
+                        ctx->tile_h, ctx->radius, mask);
+            }
+            pool_forget(ctx->pool, surface);
+        }
         return;
     }
-    struct oxide_corner_mask *mask =
-            pool_find_or_create(ctx->pool, scene_surface->surface);
+
     if (mask == NULL) {
-        return; // OOM — leave this node as it was rather than crash
+        mask = pool_add(ctx->pool, surface);
+        if (mask == NULL) {
+            return; // OOM — leave this node as it was rather than crash
+        }
     }
     mask->seen = true;
-    int offset_x = sx - ctx->tree_lx;
-    int offset_y = sy - ctx->tree_ly;
-    mask_one_buffer(ctx->renderer, ctx->allocator, ctx->prog, buffer,
-            scene_surface->surface, offset_x, offset_y, ctx->tile_w,
-            ctx->tile_h, ctx->radius, mask);
+    bool up_to_date = mask->last != NULL && buffer->buffer == mask->last
+            && mask->last_offset_x == offset_x && mask->last_offset_y == offset_y
+            && mask->last_tile_w == ctx->tile_w && mask->last_tile_h == ctx->tile_h
+            && mask->last_radius == ctx->radius;
+    if (up_to_date) {
+        return;
+    }
+    mask_one_buffer(ctx->renderer, ctx->allocator, ctx->prog, buffer, surface,
+            offset_x, offset_y, ctx->tile_w, ctx->tile_h, ctx->radius, mask);
 }
 
 bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, void *corner_program,
         struct wlr_scene_tree *scene_tree, struct wlr_xdg_toplevel *xdg_toplevel,
-        struct wlr_surface *only, int radius, void **pool_inout) {
+        int radius, void **pool_inout) {
     if (corner_program == NULL) {
         return false;
     }
     struct oxide_corner_program *prog = corner_program;
-
-    struct oxide_corner_mask_pool *pool = *pool_inout;
-    if (pool == NULL) {
-        pool = calloc(1, sizeof(*pool));
-        if (pool == NULL) {
-            return false;
-        }
-        *pool_inout = pool;
-    }
-
-    bool full_sweep = only == NULL;
-    if (full_sweep) {
-        for (size_t i = 0; i < pool->count; i++) {
-            pool->masks[i].seen = false;
-        }
-    }
 
     // The toplevel's own outer box, logical units: geometry if the client
     // ever set one (the window-management-visible box, excluding any
@@ -687,38 +834,58 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
 
     int tree_lx = 0, tree_ly = 0;
     if (!wlr_scene_node_coords(&scene_tree->node, &tree_lx, &tree_ly)) {
-        // Tree (or an ancestor) is currently disabled — e.g. a hidden
-        // workspace. Nothing visible to mask right now.
+        // Hidden — a window on a workspace that isn't shown. None of it is
+        // drawn, and the sweep below would find no buffers at all, which the
+        // prune would take for every subsurface being gone. refresh()
+        // (src/tiling.rs) runs this again as the window is shown.
         return false;
     }
 
+    struct oxide_corner_mask_pool *pool = *pool_inout;
+    if (pool == NULL) {
+        pool = calloc(1, sizeof(*pool));
+        if (pool == NULL) {
+            return false;
+        }
+        *pool_inout = pool;
+    }
+    for (size_t i = 0; i < pool->count; i++) {
+        pool->masks[i].seen = false;
+    }
+
+    int corner = radius;
+    if (corner > tile_w / 2) {
+        corner = tile_w / 2;
+    }
+    if (corner > tile_h / 2) {
+        corner = tile_h / 2;
+    }
     struct oxide_corner_sweep_ctx ctx = {
         .renderer = renderer,
         .allocator = allocator,
         .prog = prog,
         .pool = pool,
+        .root_surface = xdg_surface->surface,
         .tree_lx = tree_lx,
         .tree_ly = tree_ly,
         .tile_w = tile_w,
         .tile_h = tile_h,
         .radius = radius,
-        .only = only,
+        .corner = corner,
     };
     wlr_scene_node_for_each_buffer(&scene_tree->node, sweep_one_buffer, &ctx);
 
-    if (full_sweep) {
-        // A subsurface that stopped existing since the last full sweep: free
-        // its swapchain and drop it from the pool rather than let it leak.
-        size_t write = 0;
-        for (size_t i = 0; i < pool->count; i++) {
-            if (pool->masks[i].seen) {
-                pool->masks[write++] = pool->masks[i];
-            } else {
-                wlr_swapchain_destroy(pool->masks[i].swapchain);
-            }
+    // A surface the sweep didn't reach — destroyed, unmapped, or no longer
+    // under this tree: free its swapchain rather than let it leak.
+    size_t write = 0;
+    for (size_t i = 0; i < pool->count; i++) {
+        if (pool->masks[i].seen) {
+            pool->masks[write++] = pool->masks[i];
+        } else {
+            wlr_swapchain_destroy(pool->masks[i].swapchain);
         }
-        pool->count = write;
     }
+    pool->count = write;
 
     return true;
 }

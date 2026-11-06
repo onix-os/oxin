@@ -49,22 +49,29 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
     (*tl).destroy_listener = oxide_xdg_add_destroy(toplevel, handle_destroy, ud);
     (*tl).fullscreen_listener =
         oxide_xdg_add_request_fullscreen(toplevel, handle_request_fullscreen, ud);
-    // Corner-radius masking needs to re-mask a subsurface on its own commit,
-    // not just the root's (see shim/gles2_corner.c's module comment) —
-    // registered here, before the client could plausibly have added a
-    // subsurface yet (that needs a server roundtrip first).
-    (*tl).subsurface_listener =
-        oxide_surface_add_new_subsurface(oxide_xdg_toplevel_surface(toplevel), handle_new_subsurface, ud);
+    // Corner-radius masking needs to re-mask on a subsurface's own commit,
+    // not just the root's (see shim/gles2_corner.c's module comment). Like
+    // the commit listener above, this goes after the scene tree's own
+    // listeners on the same signal — see reorder_listeners_after_scene_rebuild.
+    // A client may also have added subsurfaces before giving the surface
+    // this role; those are picked up by walking what's already there.
+    let root = oxide_xdg_toplevel_surface(toplevel);
+    (*tl).subsurface_listener = oxide_surface_add_new_subsurface(root, handle_new_subsurface, ud);
+    oxide_surface_for_each_subsurface(root, handle_new_subsurface, ud);
 }
 
 /// A client added a wl_subsurface to a surface this toplevel already watches
 /// (the root the first time, or recursively a subsurface of a subsurface).
-/// Tracks it for corner-radius masking: its own commit re-masks just that
-/// one scene buffer, and its own destroy frees that buffer's mask swapchain
-/// immediately.
+/// Tracks it for corner-radius masking: its own commit re-runs the masking
+/// sweep, and its own destroy frees its mask swapchain immediately.
 unsafe extern "C" fn handle_new_subsurface(userdata: *mut c_void, data: *mut c_void) {
     let tl = userdata as *mut Toplevel;
     let surface = oxide_subsurface_surface(data);
+    // Reachable twice — through new_subsurface and through the walk of
+    // already-present subsurfaces — so make the second arrival a no-op.
+    if (*tl).subsurface_watches.iter().any(|&w| (*w).surface == surface) {
+        return;
+    }
     let watch = Box::into_raw(Box::new(SubsurfaceWatch {
         tl,
         surface,
@@ -76,28 +83,50 @@ unsafe extern "C" fn handle_new_subsurface(userdata: *mut c_void, data: *mut c_v
     (*watch).commit_listener = oxide_surface_add_commit(surface, handle_subsurface_commit, wd);
     (*watch).destroy_listener = oxide_subsurface_add_destroy(data, handle_subsurface_destroy, wd);
     (*watch).new_subsurface_listener =
-        oxide_surface_add_new_subsurface(surface, handle_new_subsurface, tl as *mut c_void);
+        oxide_surface_add_new_subsurface(surface, handle_new_subsurface, userdata);
     (*tl).subsurface_watches.push(watch);
+    // Its own children that were added before the listener above existed
+    // (wlroots emits new_subsurface once per subsurface, on its parent's
+    // first commit after creation — a whole hierarchy built before one root
+    // commit announces the deeper levels before this one).
+    oxide_surface_for_each_subsurface(surface, handle_new_subsurface, userdata);
 }
 
-/// A tracked subsurface committed on its own (independent of its parent's
-/// commit, which only happens when the client desynchronized it) — re-mask
-/// just this one scene buffer rather than the whole tree.
+/// A tracked subsurface committed — on its own, if the client desynchronized
+/// it, so the root's commit can't be relied on to cover it. On every commit
+/// wlroots also resets that surface's scene buffer: back to the client's own
+/// unmasked buffer, at full opacity. Re-apply both; the masking sweep only
+/// redoes the buffers that actually need it.
 unsafe extern "C" fn handle_subsurface_commit(userdata: *mut c_void, _data: *mut c_void) {
     let watch = userdata as *mut SubsurfaceWatch;
     let tl = (*watch).tl;
-    let server = &*(*tl).server;
-    if server.config.corner_radius > 0 && !(*tl).fullscreen {
-        oxide_toplevel_apply_corner_radius(
-            server.renderer,
-            server.allocator,
-            server.corner_program,
-            (*tl).scene_tree,
-            (*tl).xdg_toplevel,
-            (*watch).surface,
-            server.config.corner_radius,
-            &mut (*tl).corner_masks,
-        );
+    apply_decorations(&*(*tl).server, tl);
+}
+
+/// Our commit and new_subsurface listeners must run *after* wlroots' own scene
+/// listeners on the same signals: wlroots' commit handler is what puts a
+/// surface's fresh client buffer into the scene, and masking has to replace
+/// it afterwards — run first, it would just be overwritten (a wl_signal runs
+/// its listeners in the order they were added). A new window gets that order
+/// for free, since handle_new_toplevel creates the scene tree before adding
+/// any listener. Rebuilding the scene tree (`handle_session_active`) adds
+/// wlroots' listeners again, behind ours — so call this right after, to move
+/// ours back to the end.
+pub(crate) unsafe fn reorder_listeners_after_scene_rebuild(tl: *mut Toplevel) {
+    let ud = tl as *mut c_void;
+    oxide_listener_remove((*tl).commit_listener);
+    (*tl).commit_listener = oxide_xdg_add_commit((*tl).xdg_toplevel, handle_commit, ud);
+    let root = oxide_xdg_toplevel_surface((*tl).xdg_toplevel);
+    oxide_listener_remove((*tl).subsurface_listener);
+    (*tl).subsurface_listener = oxide_surface_add_new_subsurface(root, handle_new_subsurface, ud);
+    for &watch in &(*tl).subsurface_watches {
+        let wd = watch as *mut c_void;
+        oxide_listener_remove((*watch).commit_listener);
+        (*watch).commit_listener =
+            oxide_surface_add_commit((*watch).surface, handle_subsurface_commit, wd);
+        oxide_listener_remove((*watch).new_subsurface_listener);
+        (*watch).new_subsurface_listener =
+            oxide_surface_add_new_subsurface((*watch).surface, handle_new_subsurface, ud);
     }
 }
 
@@ -305,9 +334,12 @@ unsafe extern "C" fn handle_request_fullscreen(userdata: *mut c_void, _data: *mu
 
 /// Apply the configured opacity and corner radius to `tl`'s current buffers.
 ///
-/// Run on every commit, because a new buffer or subsurface has neither, and
-/// for every window when a config reload changes either setting — an idle
-/// window would otherwise keep the old look until it next redraws.
+/// Run on every commit of the window's root surface or any of its
+/// subsurfaces, because a new buffer or subsurface has neither; for every
+/// window when a config reload changes either setting — an idle window would
+/// otherwise keep the old look until it next redraws; and as a window is
+/// shown (`refresh`), since commits made while it was hidden weren't masked.
+/// Cheap when nothing changed: masking skips buffers that are already right.
 pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
     oxide_scene_tree_set_opacity((*tl).scene_tree, server.config.window_opacity);
     // Fullscreen windows are excluded: rounding a window's edges against the
@@ -320,7 +352,6 @@ pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
             server.corner_program,
             (*tl).scene_tree,
             (*tl).xdg_toplevel,
-            ptr::null_mut(), // full sweep: every buffer under this tree
             server.config.corner_radius,
             &mut (*tl).corner_masks,
         );

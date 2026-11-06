@@ -25,6 +25,13 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
                     None => true,
                 };
             oxide_scene_tree_set_enabled((*tl).scene_tree, visible);
+            // Commits made while hidden left the client's own, unmasked
+            // buffers in the scene (masking skips hidden trees), and a
+            // rebuilt scene tree starts without opacity or masks — catch up
+            // as it's shown. Cheap when there's nothing to catch up on.
+            if visible {
+                crate::toplevel::apply_decorations(server, tl);
+            }
         }
     }
 

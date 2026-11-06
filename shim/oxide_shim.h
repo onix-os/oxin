@@ -203,6 +203,12 @@ struct oxide_listener *oxide_xdg_add_commit(struct wlr_xdg_toplevel *toplevel,
 // parent's own commits; see shim/gles2_corner.c's module comment.
 struct oxide_listener *oxide_surface_add_new_subsurface(
         struct wlr_surface *surface, oxide_callback callback, void *userdata);
+// Calls `callback(userdata, subsurface)` once for every wl_subsurface already
+// in `surface`'s current state — the ones whose new_subsurface signal fired
+// before anyone was listening (direct children only; recurse from the
+// callback, the same way new_subsurface itself is followed down).
+void oxide_surface_for_each_subsurface(struct wlr_surface *surface,
+        oxide_callback callback, void *userdata);
 // The wlr_surface behind a wlr_subsurface (an opaque pointer here — as handed
 // to a new_subsurface callback's `data`).
 struct wlr_surface *oxide_subsurface_surface(void *subsurface);
@@ -471,29 +477,27 @@ bool oxide_output_power_set_mode_event_is_on(
 // (see main.rs), so there is no paired destroy function.
 void *oxide_gles2_corner_program_create(struct wlr_renderer *renderer);
 
-// Masks every `wlr_scene_buffer` under `scene_tree` (the toplevel's root
-// surface, plus any subsurface it has — never a popup, which lives in its
-// own separate tree) against one shared rounded-rect test, sized from
+// Masks the `wlr_scene_buffer`s under `scene_tree` that belong to the
+// toplevel itself (its root surface and its subsurfaces — not its popups,
+// which share the tree) against one shared rounded-rect test, sized from
 // `xdg_toplevel`'s own geometry (its committed surface size as a fallback).
 // Each masked buffer gets its own swapchain, tracked by surface identity in
 // `*pool_inout` (an opaque `void*` — NULL initially; the caller owns
 // destroying it with `oxide_corner_mask_pool_destroy` below when the window
 // itself is destroyed).
 //
-// `only`: NULL masks every buffer found (a full sweep — call this on the
-// root surface's own commit) and prunes any pool entry whose subsurface no
-// longer exists. Non-NULL masks just the one buffer backed by that surface,
-// without pruning (call this on a single subsurface's own commit — a
-// subsurface can be desynchronized from its parent and commit
-// independently, so only re-masking it on the root's commit would leave it
-// stale).
+// Safe and cheap to call often: buffers clear of every corner are skipped,
+// and so are buffers still showing an up-to-date mask — call it on the root
+// surface's commit, on every subsurface's own commit (a desynchronized
+// subsurface commits independently of the root), and whenever the window is
+// shown again. A no-op while `scene_tree` is disabled.
 //
 // Returns false (no-op) on any failure — masking is best-effort, never
 // fatal.
 bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
         struct wlr_allocator *allocator, void *corner_program,
         struct wlr_scene_tree *scene_tree, struct wlr_xdg_toplevel *xdg_toplevel,
-        struct wlr_surface *only, int radius, void **pool_inout);
+        int radius, void **pool_inout);
 // A toplevel is about to lose one subsurface: free that surface's mask
 // swapchain immediately (a no-op if it was never masked or `pool_ptr` is
 // NULL) rather than wait for the next full sweep to notice it's gone.
