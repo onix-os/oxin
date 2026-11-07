@@ -33,6 +33,9 @@ const SETTINGS: &[&str] = &[
     "wallpaper",
     "window_opacity",
     "corner_radius",
+    "border_width",
+    "border_color_focused",
+    "border_color_unfocused",
     "float_size",
     "gesture_handle",
     "keyboard",
@@ -143,6 +146,21 @@ fn seed<'gc>(ctx: Context<'gc>, oxin: Table<'gc>, cfg: &Config) -> Result<(), Er
         "corner_radius".into_value(ctx),
         i64::from(cfg.corner_radius).into_value(ctx),
     )?;
+    oxin.set_raw(
+        &ctx,
+        "border_width".into_value(ctx),
+        i64::from(cfg.border_width).into_value(ctx),
+    )?;
+    for (name, (r, g, b)) in [
+        ("border_color_focused", cfg.border_color_focused),
+        ("border_color_unfocused", cfg.border_color_unfocused),
+    ] {
+        let color = Table::new(&ctx);
+        color.set(ctx, 1, f64::from(r))?;
+        color.set(ctx, 2, f64::from(g))?;
+        color.set(ctx, 3, f64::from(b))?;
+        oxin.set_raw(&ctx, name.into_value(ctx), color.into_value(ctx))?;
+    }
     let fs = Table::new(&ctx);
     fs.set(ctx, 1, i64::from(cfg.float_size.0))?;
     fs.set(ctx, 2, i64::from(cfg.float_size.1))?;
@@ -236,6 +254,19 @@ fn apply<'gc>(
                 return Err("oxin.corner_radius: must be between 0 and 200".into());
             }
             cfg.corner_radius = clamp_i32(r);
+        }
+        "border_width" => {
+            let w = want_integer(name, value)?;
+            if !(0..=50).contains(&w) {
+                return Err("oxin.border_width: must be between 0 and 50".into());
+            }
+            cfg.border_width = clamp_i32(w);
+        }
+        "border_color_focused" => {
+            cfg.border_color_focused = want_number_triple(ctx, name, value)?;
+        }
+        "border_color_unfocused" => {
+            cfg.border_color_unfocused = want_number_triple(ctx, name, value)?;
         }
         "float_size" => {
             let (w, h) = want_integer_pair(ctx, name, value)?;

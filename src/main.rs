@@ -55,7 +55,7 @@ use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::process::Command;
 use std::ptr;
-use toplevel::handle_new_toplevel;
+use toplevel::{handle_keyboard_focus_change, handle_new_toplevel};
 
 fn main() {
     // Answered before anything else is touched. A version query must not need a
@@ -236,6 +236,7 @@ fn main() {
             grab_y: 0,
             grab_w: 0,
             grab_h: 0,
+            focused_tl: std::ptr::null_mut(),
         };
         // The VM and its registry are `main` locals, not `Server` fields:
         // `Server`'s address is handed to the C shim and every callback
@@ -254,6 +255,10 @@ fn main() {
         oxide_backend_add_new_input(backend, handle_new_input, server_ptr);
         // Keep Rust's focused-window bookkeeping in sync with click-to-focus.
         oxide_cursor_set_focus_callback(cursor, handle_click_focus, server_ptr);
+        // Border colors follow keyboard focus, whichever way it moves. Never
+        // removed: the seat lives as long as the process (wl_display_destroy
+        // is skipped at exit, see the end of main).
+        oxide_seat_add_keyboard_focus_change(seat, handle_keyboard_focus_change, server_ptr);
         // Touch double-tap on a window: solo it (or whatever `double-tap =`
         // is configured to) — see src/input.rs::handle_double_tap.
         oxide_cursor_set_double_tap_callback(cursor, handle_double_tap, server_ptr);

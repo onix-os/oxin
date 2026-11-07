@@ -124,6 +124,12 @@ pub(crate) struct Server {
     pub(crate) grab_y: i32,
     pub(crate) grab_w: i32,
     pub(crate) grab_h: i32,
+    /// The window drawn with the focused border color: the one holding
+    /// keyboard focus, tracked from the seat's own focus-change signal
+    /// (`toplevel::handle_keyboard_focus_change`), so every route focus can
+    /// take is covered. Null when focus is on no window (nothing, a layer
+    /// surface, the lock screen). Cleared when that window is destroyed.
+    pub(crate) focused_tl: *mut Toplevel,
 }
 
 /// One workspace: an independent list of windows, its focused index, and the
@@ -316,6 +322,9 @@ pub(crate) struct Toplevel {
     /// (see shim/gles2_corner.c's module comment).
     pub(crate) subsurface_listener: *mut ShimListener,
     pub(crate) subsurface_watches: Vec<*mut SubsurfaceWatch>,
+    /// The window border (opaque — `struct oxide_border*`, see
+    /// shim/border.c). NULL until a border is first shown.
+    pub(crate) border: *mut c_void,
 }
 
 /// One subsurface this toplevel is watching for corner-radius masking: its

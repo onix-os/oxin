@@ -170,31 +170,44 @@ static const struct wlr_buffer_impl pixel_buffer_impl = {
     .end_data_ptr_access = pixel_buffer_end_data_ptr_access,
 };
 
-void *oxide_scene_add_wallpaper(struct wlr_scene_tree *tree, int x, int y,
-        int buffer_width, int buffer_height, int dest_width, int dest_height,
-        const uint8_t *pixels, size_t stride) {
-    if (buffer_width <= 0 || buffer_height <= 0 || dest_width <= 0
-            || dest_height <= 0 || pixels == NULL
-            || stride < (size_t)buffer_width * 4) {
+struct wlr_buffer *oxide_pixel_buffer_create(int width, int height,
+        size_t stride, uint8_t **pixels) {
+    if (width <= 0 || height <= 0 || stride < (size_t)width * 4) {
         return NULL;
     }
     struct oxide_pixel_buffer *buffer = calloc(1, sizeof(*buffer));
+    if (buffer == NULL) {
+        return NULL;
+    }
     buffer->stride = stride;
-    size_t size = stride * (size_t)buffer_height;
-    buffer->pixels = malloc(size);
+    buffer->pixels = calloc((size_t)height, stride);
     if (buffer->pixels == NULL) {
         free(buffer);
         return NULL;
     }
-    memcpy(buffer->pixels, pixels, size);
-    wlr_buffer_init(&buffer->base, &pixel_buffer_impl,
-            buffer_width, buffer_height);
+    wlr_buffer_init(&buffer->base, &pixel_buffer_impl, width, height);
+    *pixels = buffer->pixels;
+    return &buffer->base;
+}
 
-    struct wlr_scene_buffer *scene_buffer =
-            wlr_scene_buffer_create(tree, &buffer->base);
+void *oxide_scene_add_wallpaper(struct wlr_scene_tree *tree, int x, int y,
+        int buffer_width, int buffer_height, int dest_width, int dest_height,
+        const uint8_t *pixels, size_t stride) {
+    if (dest_width <= 0 || dest_height <= 0 || pixels == NULL) {
+        return NULL;
+    }
+    uint8_t *copy;
+    struct wlr_buffer *buffer = oxide_pixel_buffer_create(buffer_width,
+            buffer_height, stride, &copy);
+    if (buffer == NULL) {
+        return NULL;
+    }
+    memcpy(copy, pixels, stride * (size_t)buffer_height);
+
+    struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_create(tree, buffer);
     // The scene took its own lock. Drop the producer reference so destroying
     // the node releases the final lock and frees our copied pixels.
-    wlr_buffer_drop(&buffer->base);
+    wlr_buffer_drop(buffer);
     if (scene_buffer == NULL) {
         return NULL;
     }

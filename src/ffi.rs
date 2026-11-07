@@ -447,6 +447,28 @@ extern "C" {
     pub(crate) fn oxide_corner_mask_pool_forget(pool: *mut c_void, surface: *mut c_void);
     pub(crate) fn oxide_corner_mask_pool_destroy(pool: *mut c_void);
 
+    // Window borders (shim/border.c): a frame just outside the window box,
+    // following its rounded corners. Lazily built in `*border_inout`.
+    pub(crate) fn oxide_toplevel_update_border(
+        scene_tree: *mut wlr::wlr_scene_tree,
+        xdg_toplevel: *mut wlr::wlr_xdg_toplevel,
+        width: i32,
+        radius: i32,
+        r: f32,
+        g: f32,
+        b: f32,
+        border_inout: *mut *mut c_void,
+    );
+    pub(crate) fn oxide_border_destroy(border: *mut c_void);
+    /// Fires on every keyboard focus change, whatever moved it; `data` is
+    /// the wlroots event (`oxide_keyboard_focus_change_new_surface`).
+    pub(crate) fn oxide_seat_add_keyboard_focus_change(
+        seat: *mut wlr::wlr_seat,
+        callback: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut ShimListener;
+    pub(crate) fn oxide_keyboard_focus_change_new_surface(event: *mut c_void) -> *mut c_void;
+
     // Subsurface tracking for corner-radius masking (see gles2_corner.c's
     // module comment): a subsurface can commit independently of its parent,
     // so masking needs its own listener per subsurface rather than relying

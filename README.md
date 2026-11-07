@@ -241,6 +241,9 @@ oxin.background     = { 0.0, 0.6, 0.6 }
 oxin.wallpaper      = "~/Pictures/wallpaper.jpg"
 oxin.window_opacity = 1.0
 oxin.corner_radius  = 0
+oxin.border_width   = 0
+oxin.border_color_focused   = { 0.35, 0.65, 1.0 }
+oxin.border_color_unfocused = { 0.25, 0.25, 0.25 }
 
 -- Explicit position for a named output (connector name, as logged:
 -- "output <name> online..."). Unlisted outputs keep auto-placement.
@@ -421,6 +424,16 @@ wlroots picks a renderer on its own, and on a Vulkan or pixman session
 `corner_radius` has no effect and says so once in the log. `WLR_RENDERER=gles2`
 forces it. See [Stage 26](docs/phases/stage-26-rounded-window-corners.md) for
 the full tradeoffs.
+
+`border_width` (pixels, `0` = none, the default) draws a frame around
+tiled and floating windows: `border_color_focused` on the window that has
+keyboard focus, `border_color_unfocused` on every other one. It follows the
+rounded corners when `corner_radius` is in effect, and is square otherwise
+(including when the renderer isn't GLES2). A tiled window gives up the
+border's width on each side of its tile, so `gap` stays the space between two
+borders. Fullscreen windows have no border. The border is drawn by the scene
+graph rather than a shader, so it works on every renderer and costs nothing
+per frame. It only changes when a window resizes or focus moves.
 
 0xin also implements `wlr-output-power-management-unstable-v1`, so a client
 can request a real DPMS power-off/on per output — independent of, and

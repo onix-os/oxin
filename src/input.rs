@@ -6,8 +6,8 @@ use crate::ffi::{
     oxide_xdg_toplevel_surface,
 };
 use crate::keybindings::{dispatch_action, handle_keybinding};
-use crate::state::{GrabMode, Server, Toplevel};
-use crate::toplevel::{clamp_floating, set_solo};
+use crate::state::{GrabMode, Server};
+use crate::toplevel::{clamp_floating, set_solo, toplevel_from_surface};
 use crate::wlr;
 use std::os::raw::c_void;
 use std::ptr;
@@ -105,18 +105,6 @@ pub(crate) unsafe extern "C" fn handle_click_focus(userdata: *mut c_void, data: 
             return;
         }
     }
-}
-
-/// The toplevel whose root surface is `surface`, if we track one.
-unsafe fn toplevel_from_surface(server: &Server, surface: *mut c_void) -> Option<*mut Toplevel> {
-    for ws in server.workspaces.values() {
-        for &tl in &ws.windows {
-            if oxide_xdg_toplevel_surface((*tl).xdg_toplevel) == surface {
-                return Some(tl);
-            }
-        }
-    }
-    None
 }
 
 /// Called by the shim when a completed touch double-tap is recognized on a

@@ -4,8 +4,8 @@ use crate::ffi::*;
 use crate::keybindings::focus_index;
 use crate::state::*;
 use crate::tiling::{
-    active_output, active_workspace, predict_tile_rect, refresh, tree_track, tree_untrack,
-    workspace_of,
+    active_output, active_workspace, inset_for_border, predict_tile_rect, refresh, tree_track,
+    tree_untrack, workspace_of,
 };
 use crate::wlr;
 use std::ffi::CStr;
@@ -38,6 +38,7 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
         corner_masks: ptr::null_mut(),
         subsurface_listener: ptr::null_mut(),
         subsurface_watches: Vec::new(),
+        border: ptr::null_mut(),
     }));
 
     // Listen for its lifecycle so Rust can keep the window list current. We keep
@@ -69,7 +70,11 @@ unsafe extern "C" fn handle_new_subsurface(userdata: *mut c_void, data: *mut c_v
     let surface = oxide_subsurface_surface(data);
     // Reachable twice — through new_subsurface and through the walk of
     // already-present subsurfaces — so make the second arrival a no-op.
-    if (*tl).subsurface_watches.iter().any(|&w| (*w).surface == surface) {
+    if (*tl)
+        .subsurface_watches
+        .iter()
+        .any(|&w| (*w).surface == surface)
+    {
         return;
     }
     let watch = Box::into_raw(Box::new(SubsurfaceWatch {
@@ -270,9 +275,11 @@ unsafe fn place_floating(server: &Server, tl: *mut Toplevel, w: i32, h: i32) {
         return;
     }
     let o = &server.outputs[active_output(server)];
-    let (w, h) = (w.min(o.uw), h.min(o.uh));
-    let x = (o.ux + (o.uw - w) / 2).max(o.ux);
-    let y = (o.uy + (o.uh - h) / 2).max(o.uy);
+    // The border goes outside the window, and it has to fit as well.
+    let bw = server.config.border_width;
+    let (w, h) = (w.min(o.uw - 2 * bw).max(1), h.min(o.uh - 2 * bw).max(1));
+    let x = (o.ux + (o.uw - w) / 2).max(o.ux + bw);
+    let y = (o.uy + (o.uh - h) / 2).max(o.uy + bw);
     oxide_scene_tree_set_position((*tl).scene_tree, x, y);
     wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
     oxide_scene_tree_set_clip((*tl).scene_tree, 0, 0);
@@ -295,9 +302,12 @@ pub(crate) unsafe fn clamp_floating(
     let Some(o) = server.outputs.iter().find(|o| o.workspace == ws_idx) else {
         return (x, y);
     };
+    // Border included: it sits outside the window's own rect.
+    let bw = server.config.border_width;
+    let (left, top) = (o.ux + bw, o.uy + bw);
     (
-        x.clamp(o.ux, (o.ux + o.uw - (*tl).w).max(o.ux)),
-        y.clamp(o.uy, (o.uy + o.uh - (*tl).h).max(o.uy)),
+        x.clamp(left, (o.ux + o.uw - bw - (*tl).w).max(left)),
+        y.clamp(top, (o.uy + o.uh - bw - (*tl).h).max(top)),
     )
 }
 
@@ -332,14 +342,16 @@ unsafe extern "C" fn handle_request_fullscreen(userdata: *mut c_void, _data: *mu
     set_fullscreen(server, tl, want);
 }
 
-/// Apply the configured opacity and corner radius to `tl`'s current buffers.
+/// Apply the configured opacity, corner radius and border to `tl`.
 ///
 /// Run on every commit of the window's root surface or any of its
-/// subsurfaces, because a new buffer or subsurface has neither; for every
-/// window when a config reload changes either setting — an idle window would
-/// otherwise keep the old look until it next redraws; and as a window is
-/// shown (`refresh`), since commits made while it was hidden weren't masked.
-/// Cheap when nothing changed: masking skips buffers that are already right.
+/// subsurfaces, because a new buffer or subsurface has neither opacity nor
+/// mask, and a new size moves the border; for every window when a config
+/// reload changes any of them — an idle window would otherwise keep the old
+/// look until it next redraws; and as a window is shown (`refresh`), since
+/// commits made while it was hidden weren't masked. Cheap when nothing
+/// changed: masking skips buffers that are already right, and the border
+/// only redraws its corners when their size or color changes.
 pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
     oxide_scene_tree_set_opacity((*tl).scene_tree, server.config.window_opacity);
     // Fullscreen windows are excluded: rounding a window's edges against the
@@ -356,6 +368,81 @@ pub(crate) unsafe fn apply_decorations(server: &Server, tl: *mut Toplevel) {
             &mut (*tl).corner_masks,
         );
     }
+    apply_border(server, tl);
+}
+
+/// Show `tl`'s border at its current size, in the focused or unfocused
+/// color — or hide it: no border configured, fullscreen, or unmapped.
+pub(crate) unsafe fn apply_border(server: &Server, tl: *mut Toplevel) {
+    let cfg = &server.config;
+    let width = if (*tl).fullscreen {
+        0
+    } else {
+        cfg.border_width
+    };
+    if width == 0 && (*tl).border.is_null() {
+        return; // never had one, so nothing to hide either
+    }
+    // Rounded only when the window's own corners are: masking needs the
+    // GLES2 program, and a round border around square corners leaves gaps.
+    let radius = if server.corner_program.is_null() {
+        0
+    } else {
+        cfg.corner_radius
+    };
+    let (r, g, b) = if server.focused_tl == tl {
+        cfg.border_color_focused
+    } else {
+        cfg.border_color_unfocused
+    };
+    oxide_toplevel_update_border(
+        (*tl).scene_tree,
+        (*tl).xdg_toplevel,
+        width,
+        radius,
+        r,
+        g,
+        b,
+        &mut (*tl).border,
+    );
+}
+
+/// The seat's keyboard focus moved — by a keybinding, a click, a tap, a
+/// workspace switch, a lock screen, a layer surface taking the keyboard;
+/// this signal sees all of them. Repaint the borders of the window that lost
+/// focus and the one that gained it.
+pub(crate) unsafe extern "C" fn handle_keyboard_focus_change(
+    userdata: *mut c_void,
+    data: *mut c_void,
+) {
+    let server = &mut *(userdata as *mut Server);
+    let surface = oxide_keyboard_focus_change_new_surface(data);
+    let now = if surface.is_null() {
+        ptr::null_mut()
+    } else {
+        toplevel_from_surface(server, surface).unwrap_or(ptr::null_mut())
+    };
+    let before = std::mem::replace(&mut server.focused_tl, now);
+    if before == now {
+        return;
+    }
+    for tl in [before, now] {
+        if !tl.is_null() {
+            apply_border(server, tl);
+        }
+    }
+}
+
+/// The toplevel whose root surface is `surface`, if we track one.
+pub(crate) unsafe fn toplevel_from_surface(
+    server: &Server,
+    surface: *mut c_void,
+) -> Option<*mut Toplevel> {
+    server
+        .workspaces
+        .values()
+        .flat_map(|ws| ws.windows.iter().copied())
+        .find(|&tl| oxide_xdg_toplevel_surface((*tl).xdg_toplevel) == surface)
 }
 
 /// Every surface commit; only the client's very first one matters here. That
@@ -396,7 +483,8 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
     if !server.outputs.is_empty() {
         let o = &server.outputs[active_output(server)];
         let ws = &server.workspaces[o.workspace];
-        (_, _, w, h) = predict_tile_rect(ws, o.ux, o.uy, o.uw, o.uh, server.config.gap);
+        let tile = predict_tile_rect(ws, o.ux, o.uy, o.uw, o.uh, server.config.gap);
+        (_, _, w, h) = inset_for_border(tile, server.config.border_width);
     }
     // Tiled state makes the size binding: without it this configure has
     // floating semantics, and clients with a remembered size (Firefox) may
@@ -517,6 +605,9 @@ unsafe extern "C" fn handle_unmap(userdata: *mut c_void, _data: *mut c_void) {
         );
     }
     remove_window(server, tl);
+    // Unmapped now, so this hides it: the window's own surfaces hide
+    // themselves, but nothing hides the border's tree for us.
+    apply_border(server, tl);
 }
 
 /// A window was destroyed: unregister its listeners, drop it from the layout,
@@ -542,6 +633,15 @@ unsafe extern "C" fn handle_destroy(userdata: *mut c_void, _data: *mut c_void) {
         drop(Box::from_raw(watch));
     }
     oxide_corner_mask_pool_destroy((*tl).corner_masks);
+    oxide_border_destroy((*tl).border);
+    (*tl).border = ptr::null_mut();
+    // Before remove_window: the focus it hands on to the next window would
+    // otherwise repaint this one's border as it goes. Not done at unmap — a
+    // window that unmaps and maps again can keep keyboard focus throughout,
+    // and wlroots reports no change for that.
+    if server.focused_tl == tl {
+        server.focused_tl = ptr::null_mut();
+    }
     remove_window(server, tl);
     drop(Box::from_raw(tl));
 }

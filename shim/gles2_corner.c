@@ -821,14 +821,11 @@ bool oxide_toplevel_apply_corner_radius(struct wlr_renderer *renderer,
     // own committed size only when geometry was never set, matching the
     // xdg-shell spec's own default ("if never set, the value is the full
     // bounds of the surface").
+    // oxide_xdg_toplevel_window_box picks between the two; the window
+    // border (shim/border.c) goes around the same box.
     struct wlr_xdg_surface *xdg_surface = xdg_toplevel->base;
-    int tile_w = xdg_surface->geometry.width;
-    int tile_h = xdg_surface->geometry.height;
-    if (tile_w <= 0 || tile_h <= 0) {
-        tile_w = xdg_surface->surface->current.width;
-        tile_h = xdg_surface->surface->current.height;
-    }
-    if (tile_w <= 0 || tile_h <= 0) {
+    int tile_w, tile_h;
+    if (!oxide_xdg_toplevel_window_box(xdg_toplevel, &tile_w, &tile_h)) {
         return false;
     }
 

@@ -36,6 +36,7 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
     }
 
     let gap = server.config.gap;
+    let bw = server.config.border_width;
     for o in &server.outputs {
         let ws = &server.workspaces[o.workspace];
         if ws.windows.is_empty() {
@@ -78,7 +79,8 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
             // this workspace. Give the solo target the usable area (not the
             // full output box — solo isn't meant to be true fullscreen) and
             // skip the normal tiled placement entirely for this output.
-            place(solo_tl, o.ux, o.uy, o.uw, o.uh);
+            let (x, y, w, h) = inset_for_border((o.ux, o.uy, o.uw, o.uh), bw);
+            place(solo_tl, x, y, w, h);
             continue;
         }
 
@@ -87,10 +89,27 @@ pub(crate) unsafe fn refresh(server: &mut Server) {
             Some(t) => tree_rects(t, o.ux, o.uy, o.uw, o.uh, gap),
             None => Vec::new(),
         };
-        for (&tl, &(x, y, w, h)) in tiled.iter().zip(&rects) {
+        for (&tl, &tile) in tiled.iter().zip(&rects) {
+            let (x, y, w, h) = inset_for_border(tile, bw);
             place(tl, x, y, w, h);
         }
     }
+}
+
+/// The window's own rect within a tile: the border takes `border_width` on
+/// every side, so it never reaches into the gap or past the screen edge, and
+/// `gap` stays the space between two borders. Fullscreen windows have no
+/// border and get no inset.
+pub(crate) fn inset_for_border(
+    (x, y, w, h): (i32, i32, i32, i32),
+    border_width: i32,
+) -> (i32, i32, i32, i32) {
+    (
+        x + border_width,
+        y + border_width,
+        (w - 2 * border_width).max(1),
+        (h - 2 * border_width).max(1),
+    )
 }
 
 /// The windows of a workspace that are tiled — neither fullscreen nor
@@ -309,6 +328,14 @@ pub(crate) mod tests {
         server_with(windows)
     }
 
+    #[test]
+    fn a_border_is_taken_out_of_the_tile_not_the_gap() {
+        assert_eq!(inset_for_border((10, 20, 300, 200), 0), (10, 20, 300, 200));
+        assert_eq!(inset_for_border((10, 20, 300, 200), 3), (13, 23, 294, 194));
+        // A tile too small for its border still leaves a window to draw.
+        assert_eq!(inset_for_border((0, 0, 4, 4), 3), (3, 3, 1, 1));
+    }
+
     // The bug this test guards against: at 4+ windows the spiral produces one
     // window (W2) whose only positive-overlap neighbor above it is W1, but the
     // old center-distance heuristic picked W0 instead (W0 spans the full
@@ -371,6 +398,7 @@ pub(crate) mod tests {
             corner_masks: ptr::null_mut(),
             subsurface_listener: ptr::null_mut(),
             subsurface_watches: Vec::new(),
+            border: ptr::null_mut(),
         }))
     }
 
@@ -437,6 +465,7 @@ pub(crate) mod tests {
             grab_y: 0,
             grab_w: 0,
             grab_h: 0,
+            focused_tl: ptr::null_mut(),
         }
     }
 

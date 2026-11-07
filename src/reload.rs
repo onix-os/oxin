@@ -87,6 +87,9 @@ unsafe fn apply(server: &mut Server, old: &Config) {
     // next redraws.
     if server.config.window_opacity != old.window_opacity
         || server.config.corner_radius != old.corner_radius
+        || server.config.border_width != old.border_width
+        || server.config.border_color_focused != old.border_color_focused
+        || server.config.border_color_unfocused != old.border_color_unfocused
     {
         let windows: Vec<_> = server
             .workspaces
@@ -129,6 +132,7 @@ unsafe fn apply(server: &mut Server, old: &Config) {
         );
     }
 
-    // Gaps, and the keyboard handle's final position.
+    // Gaps, border width (tiles give it room), and the keyboard handle's
+    // final position.
     tiling::refresh(server);
 }

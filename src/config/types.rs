@@ -180,6 +180,14 @@ pub struct Config {
     /// Corner radius applied to tiled/floating application windows, in
     /// logical pixels (0 = disabled, the default — no masking cost).
     pub corner_radius: i32,
+    /// Width of the frame drawn around tiled/floating windows, in logical
+    /// pixels (0 = none, the default). A tiled window gives up that much of
+    /// its tile on each side, so `gap` stays the space between borders.
+    pub border_width: i32,
+    /// Border color of the window holding keyboard focus, and of every other
+    /// window (r, g, b in 0..1).
+    pub border_color_focused: (f32, f32, f32),
+    pub border_color_unfocused: (f32, f32, f32),
     pub binds: Vec<Bind>,
     pub hold_binds: Vec<HoldBind>,
     /// Per-output explicit position/scale (`monitor =` lines); empty means
@@ -211,6 +219,9 @@ impl Default for Config {
             wallpaper: None,
             window_opacity: 1.0,
             corner_radius: 0,
+            border_width: 0,
+            border_color_focused: (0.35, 0.65, 1.0),
+            border_color_unfocused: (0.25, 0.25, 0.25),
             binds: Vec::new(),
             hold_binds: Vec::new(),
             monitors: Vec::new(),

@@ -145,6 +145,13 @@ void oxide_scene_rect_set_position(struct wlr_scene_rect *rect, int x, int y);
 // Recolour a rect in place (a background whose colour a config reload changed).
 void oxide_scene_rect_set_color(struct wlr_scene_rect *rect, float r, float g,
         float b, float a);
+// A CPU-memory wlr_buffer of `width` x `height` pixels, zero-filled, its
+// pixels at `*pixels` (`stride` bytes per row, at least width * 4): RGBA8888
+// in memory order (DRM_FORMAT_ABGR8888), premultiplied alpha. The caller
+// holds the one reference — wlr_buffer_drop it once something else (a scene
+// buffer) has taken its own lock. NULL on bad sizes or allocation failure.
+struct wlr_buffer *oxide_pixel_buffer_create(int width, int height,
+        size_t stride, uint8_t **pixels);
 // Copy an RGBA8888 pixel image into an owned wlroots buffer and add it to the
 // scene. The buffer may be a different size from its logical destination.
 void *oxide_scene_add_wallpaper(struct wlr_scene_tree *tree, int x, int y,
@@ -241,6 +248,21 @@ const char *oxide_xdg_toplevel_title(struct wlr_xdg_toplevel *toplevel);
 bool oxide_xdg_toplevel_fixed_size(struct wlr_xdg_toplevel *toplevel);
 void oxide_xdg_toplevel_geometry(struct wlr_xdg_toplevel *toplevel,
         int *width, int *height);
+// The window's own box, in logical pixels: its xdg geometry, or its root
+// surface's committed size if the client never set one (the xdg-shell
+// default). In the toplevel's scene tree this box starts at (0,0) —
+// wlr_scene_xdg_surface_create offsets the surfaces by -geometry.x/y to put
+// it there. The box corner-radius masking rounds and the border goes
+// around. False while there is nothing committed yet.
+bool oxide_xdg_toplevel_window_box(struct wlr_xdg_toplevel *toplevel,
+        int *width, int *height);
+// The seat's keyboard focus moved, by any route — a keybinding, a click, a
+// workspace switch, a lock screen, a layer surface asking for the keyboard.
+// The callback's data is the wlroots event; read it with the getter below.
+struct oxide_listener *oxide_seat_add_keyboard_focus_change(
+        struct wlr_seat *seat, oxide_callback callback, void *userdata);
+// The surface that now has keyboard focus (NULL for none).
+struct wlr_surface *oxide_keyboard_focus_change_new_surface(void *event);
 
 // Unsubscribe and free a listener returned by one of the add helpers.
 void oxide_listener_remove(struct oxide_listener *listener);
@@ -505,5 +527,19 @@ void oxide_corner_mask_pool_forget(void *pool_ptr, struct wlr_surface *surface);
 // Free a per-toplevel mask pool (a no-op if NULL — the window was never
 // masked). Call on window destroy.
 void oxide_corner_mask_pool_destroy(void *pool_ptr);
+
+// Window border (shim/border.c): a `width`-pixel frame in color r,g,b just
+// outside `xdg_toplevel`'s window box, its corners rounded by `radius` to
+// follow the window's own (pass 0 when the window's corners aren't masked).
+// Hidden when `width` is 0 or the window is unmapped. Built lazily in
+// `*border_inout` (an opaque `void*`, NULL initially; free it with
+// oxide_border_destroy on window destroy) and cheap to call again when
+// nothing changed. Call whenever the window commits, is shown, or changes
+// focus.
+void oxide_toplevel_update_border(struct wlr_scene_tree *scene_tree,
+        struct wlr_xdg_toplevel *xdg_toplevel, int width, int radius,
+        float r, float g, float b, void **border_inout);
+// Free a window's border and its scene nodes (a no-op if NULL).
+void oxide_border_destroy(void *border_ptr);
 
 #endif // OXIN_SHIM_H

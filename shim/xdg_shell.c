@@ -309,6 +309,33 @@ void oxide_xdg_toplevel_geometry(struct wlr_xdg_toplevel *toplevel,
     *height = toplevel->base->geometry.height;
 }
 
+bool oxide_xdg_toplevel_window_box(struct wlr_xdg_toplevel *toplevel,
+        int *width, int *height) {
+    struct wlr_xdg_surface *xdg_surface = toplevel->base;
+    int w = xdg_surface->geometry.width;
+    int h = xdg_surface->geometry.height;
+    if (w <= 0 || h <= 0) {
+        w = xdg_surface->surface->current.width;
+        h = xdg_surface->surface->current.height;
+    }
+    if (w <= 0 || h <= 0) {
+        return false;
+    }
+    *width = w;
+    *height = h;
+    return true;
+}
+
+struct oxide_listener *oxide_seat_add_keyboard_focus_change(
+        struct wlr_seat *seat, oxide_callback callback, void *userdata) {
+    return signal_add(&seat->keyboard_state.events.focus_change, callback,
+            userdata);
+}
+
+struct wlr_surface *oxide_keyboard_focus_change_new_surface(void *event) {
+    return ((struct wlr_seat_keyboard_focus_change_event *)event)->new_surface;
+}
+
 struct oxide_listener *oxide_xdg_add_map(struct wlr_xdg_toplevel *toplevel,
         oxide_callback callback, void *userdata) {
     return signal_add(&toplevel->base->surface->events.map, callback, userdata);
@@ -352,6 +379,11 @@ static void set_buffer_opacity(struct wlr_scene_buffer *buffer,
         int sx, int sy, void *userdata) {
     (void)sx;
     (void)sy;
+    // Client surfaces only: the window border's corner pieces are buffers
+    // in this tree too, and they stay as opaque as its edge rects.
+    if (wlr_scene_surface_try_from_buffer(buffer) == NULL) {
+        return;
+    }
     float opacity = *(float *)userdata;
     wlr_scene_buffer_set_opacity(buffer, opacity);
 }

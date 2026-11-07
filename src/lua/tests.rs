@@ -353,6 +353,9 @@ mod settings {
                 oxin.wallpaper      = "~/pics/286257.jpg"
                 oxin.window_opacity = 0.95
                 oxin.corner_radius  = 40
+                oxin.border_width   = 3
+                oxin.border_color_focused   = { 0.9, 0.5, 0.1 }
+                oxin.border_color_unfocused = { 0.1, 0.1, 0.1 }
                 oxin.float_size     = { 70, 55 }
                 oxin.gesture_handle = "hidden"
                 oxin.keyboard = {
@@ -371,6 +374,9 @@ mod settings {
         assert_eq!(cfg.wallpaper.as_deref(), Some("~/pics/286257.jpg"));
         assert_eq!(cfg.window_opacity, 0.95);
         assert_eq!(cfg.corner_radius, 40);
+        assert_eq!(cfg.border_width, 3);
+        assert_eq!(cfg.border_color_focused, (0.9, 0.5, 0.1));
+        assert_eq!(cfg.border_color_unfocused, (0.1, 0.1, 0.1));
         assert_eq!(cfg.float_size, (70, 55));
         assert!(!cfg.gesture_handle_visible);
         assert_eq!(
@@ -388,6 +394,7 @@ mod settings {
         assert_eq!(cfg.modifier, defaults.modifier);
         assert_eq!(cfg.background, defaults.background);
         assert_eq!(cfg.corner_radius, defaults.corner_radius);
+        assert_eq!(cfg.border_width, 0, "no border unless asked for");
     }
 
     #[test]
@@ -420,6 +427,9 @@ mod settings {
     fn out_of_range_values_are_refused() {
         assert!(load("oxin.window_opacity = 1.5").is_err());
         assert!(load("oxin.corner_radius = 9000").is_err());
+        assert!(load("oxin.border_width = -1").is_err());
+        assert!(load("oxin.border_width = 51").is_err());
+        assert!(load("oxin.border_color_focused = { 1, 0 }").is_err());
         assert!(load("oxin.gap = -1").is_err());
         assert!(load("oxin.float_size = { 0, 60 }").is_err());
     }
