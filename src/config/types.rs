@@ -67,6 +67,10 @@ pub enum Action {
     KeyboardShow,
     KeyboardHide,
     KeyboardToggle,
+    /// Toggle the named scratchpad (`oxin.scratchpads[name]`): spawn it if
+    /// it isn't running, show it if hidden, focus it if shown but unfocused
+    /// (bringing it over from another workspace), hide it if focused.
+    Scratchpad(String),
     /// Re-read `init.lua` and its plugins and apply them to the running
     /// session (Stage 31). A config that fails to load leaves the current one
     /// in place.
@@ -161,6 +165,42 @@ pub struct MonitorConfig {
     pub scale: f32,
 }
 
+/// Where a scratchpad appears when shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScratchpadPosition {
+    /// Centered on the focused output's usable area.
+    Center,
+    /// Attached to the top of the usable area, centered horizontally: a
+    /// drop-down.
+    Top,
+}
+
+/// One `oxin.scratchpads[name]` entry: a floating window a key hides and
+/// shows, its program running throughout.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScratchpadConfig {
+    pub name: String,
+    /// Started when the toggle finds no window for this scratchpad.
+    pub cmd: String,
+    /// How its window is recognised; `cmd` has to give it this app_id
+    /// (`kitty --class`, `foot --app-id`). Defaults to `name`.
+    pub app_id: String,
+    pub position: ScratchpadPosition,
+    /// Percentages of the usable area. `None`: `float_size` when centered,
+    /// full width × 40% as a drop-down.
+    pub size: Option<(i32, i32)>,
+}
+
+impl ScratchpadConfig {
+    /// The size it is shown at, in percentages of the usable area.
+    pub fn size_percent(&self, float_size: (i32, i32)) -> (i32, i32) {
+        self.size.unwrap_or(match self.position {
+            ScratchpadPosition::Center => float_size,
+            ScratchpadPosition::Top => (100, 40),
+        })
+    }
+}
+
 /// Parsed compositor configuration.
 #[derive(Debug, PartialEq)]
 pub struct Config {
@@ -198,6 +238,8 @@ pub struct Config {
     /// to `float =` rule windows; dialogs and fixed-size windows keep their
     /// natural size instead.
     pub float_size: (i32, i32),
+    /// `oxin.scratchpads`, keyed (and kept unique) by name.
+    pub scratchpads: Vec<ScratchpadConfig>,
     pub gestures: Vec<GestureBind>,
     /// Commands implementing the optional virtual-keyboard controller.
     pub virtual_keyboard_show: Option<String>,
@@ -226,6 +268,7 @@ impl Default for Config {
             hold_binds: Vec::new(),
             monitors: Vec::new(),
             float_size: (60, 60),
+            scratchpads: Vec::new(),
             gestures: Vec::new(),
             virtual_keyboard_show: None,
             virtual_keyboard_hide: None,
@@ -236,6 +279,15 @@ impl Default for Config {
 }
 
 impl Config {
+    /// The scratchpad a window with this app_id belongs to, if any.
+    pub fn scratchpad_for_app_id(&self, app_id: &str) -> Option<&ScratchpadConfig> {
+        self.scratchpads.iter().find(|s| s.app_id == app_id)
+    }
+
+    pub fn scratchpad(&self, name: &str) -> Option<&ScratchpadConfig> {
+        self.scratchpads.iter().find(|s| s.name == name)
+    }
+
     /// Bitmask of the gesture triggers the config actually binds, handed to
     /// the C touch recognizer so it only reports the ones we care about.
     pub fn gesture_mask(&self) -> u32 {

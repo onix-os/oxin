@@ -312,8 +312,8 @@ fn apply<'gc>(
                 }
             }
         }
-        "keys" | "hold" | "gestures" | "monitors" | "action" | "on" | "spawn" | "workspace"
-        | "workspaces" => {
+        "keys" | "hold" | "gestures" | "monitors" | "scratchpads" | "action" | "on" | "spawn"
+        | "workspace" | "workspaces" => {
             return Err(format!(
                 "oxin.{name} is a table you index, not a value you assign — \
                  e.g. `oxin.keys[\"MOD+Return\"] = ...`, not `oxin.keys = {{ ... }}`"
@@ -401,7 +401,7 @@ pub(crate) fn err<'gc>(ctx: Context<'gc>, at: &Option<String>, message: String) 
     Error::from_value(ctx.intern(text.as_bytes()).into_value(ctx))
 }
 
-fn want_string(name: &str, value: Value<'_>) -> Result<String, String> {
+pub(super) fn want_string(name: &str, value: Value<'_>) -> Result<String, String> {
     match value {
         Value::String(s) => Ok(String::from_utf8_lossy(s.as_bytes()).into_owned()),
         other => Err(format!(
@@ -426,7 +426,7 @@ fn want_number(name: &str, value: Value<'_>) -> Result<f64, String> {
         .ok_or_else(|| format!("oxin.{name}: expected a number, got {}", value.type_name()))
 }
 
-fn want_table<'gc>(name: &str, value: Value<'gc>) -> Result<Table<'gc>, String> {
+pub(super) fn want_table<'gc>(name: &str, value: Value<'gc>) -> Result<Table<'gc>, String> {
     match value {
         Value::Table(t) => Ok(t),
         other => Err(format!(
@@ -453,7 +453,7 @@ fn want_number_triple<'gc>(
     Ok((out[0], out[1], out[2]))
 }
 
-fn want_integer_pair<'gc>(
+pub(super) fn want_integer_pair<'gc>(
     ctx: Context<'gc>,
     name: &str,
     value: Value<'gc>,

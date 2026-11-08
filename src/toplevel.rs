@@ -1,5 +1,6 @@
 //! xdg-shell application windows: creation, map/unmap/destroy, removal.
 
+use crate::config::ScratchpadPosition;
 use crate::ffi::*;
 use crate::keybindings::focus_index;
 use crate::state::*;
@@ -30,6 +31,7 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
         h: 0,
         fullscreen: false,
         floating: false,
+        scratchpad: None,
         commit_listener: ptr::null_mut(),
         map_listener: ptr::null_mut(),
         unmap_listener: ptr::null_mut(),
@@ -271,6 +273,18 @@ pub(crate) unsafe fn set_floating(server: &mut Server, tl: *mut Toplevel, on: bo
 /// (no tiled states); the position clamp is what guarantees the top-left
 /// corner stays reachable either way.
 unsafe fn place_floating(server: &Server, tl: *mut Toplevel, w: i32, h: i32) {
+    place_floating_at(server, tl, w, h, ScratchpadPosition::Center);
+}
+
+/// `place_floating`, or with `ScratchpadPosition::Top` against the top edge
+/// of the usable area instead of its middle (a drop-down).
+pub(crate) unsafe fn place_floating_at(
+    server: &Server,
+    tl: *mut Toplevel,
+    w: i32,
+    h: i32,
+    at: ScratchpadPosition,
+) {
     if server.outputs.is_empty() {
         return;
     }
@@ -279,7 +293,10 @@ unsafe fn place_floating(server: &Server, tl: *mut Toplevel, w: i32, h: i32) {
     let bw = server.config.border_width;
     let (w, h) = (w.min(o.uw - 2 * bw).max(1), h.min(o.uh - 2 * bw).max(1));
     let x = (o.ux + (o.uw - w) / 2).max(o.ux + bw);
-    let y = (o.uy + (o.uh - h) / 2).max(o.uy + bw);
+    let y = match at {
+        ScratchpadPosition::Center => (o.uy + (o.uh - h) / 2).max(o.uy + bw),
+        ScratchpadPosition::Top => o.uy + bw,
+    };
     oxide_scene_tree_set_position((*tl).scene_tree, x, y);
     wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
     oxide_scene_tree_set_clip((*tl).scene_tree, 0, 0);
@@ -471,7 +488,18 @@ unsafe extern "C" fn handle_commit(userdata: *mut c_void, _data: *mut c_void) {
     // windows, whose natural size is the point) or the configured default
     // floating size (`float =` rule windows: ordinary apps told to float).
     // This is why detection happens here and not on map: the very first
-    // configure already differs.
+    // configure already differs. A scratchpad floats at its own configured
+    // size.
+    if let Some(spec) = crate::scratchpad::claim(server, tl) {
+        (*tl).floating = true;
+        let (w, h) = crate::scratchpad::size(server, &spec);
+        wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, w, h);
+        println!(
+            "0xin: new window — scratchpad {}, initial configure {w}x{h}",
+            spec.name
+        );
+        return;
+    }
     if floats_naturally(tl) {
         (*tl).floating = true;
         wlr::wlr_xdg_toplevel_set_size((*tl).xdg_toplevel, 0, 0);
@@ -505,12 +533,24 @@ unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
     if server.outputs.is_empty() {
         return; // no monitor to place it on yet
     }
+    // Claimed again for clients that set their app_id after the initial
+    // commit. A scratchpad opens per its spec, and window rules don't apply
+    // to it: it is already configured.
+    let scratchpad = crate::scratchpad::claim(server, tl);
+    if let Some(spec) = &scratchpad {
+        server
+            .scratchpad_spawning
+            .retain(|(name, _)| *name != spec.name);
+        (*tl).floating = true;
+        oxide_scene_tree_reparent((*tl).scene_tree, server.tree_floating);
+        crate::scratchpad::place(server, tl, spec);
+    }
     // Backstop for clients that set their dialog parent (or committed their
     // fixed size) after the initial commit — complete by map time.
     if !(*tl).floating && floats_naturally(tl) {
         (*tl).floating = true;
     }
-    if (*tl).floating {
+    if (*tl).floating && scratchpad.is_none() {
         // Center it at the natural size the client just committed, above
         // the tiled windows.
         oxide_scene_tree_reparent((*tl).scene_tree, server.tree_floating);
@@ -523,7 +563,11 @@ unsafe extern "C" fn handle_map(userdata: *mut c_void, _data: *mut c_void) {
     // Ask the config what to do with this window, before it is placed. Ahead
     // of `refresh` on purpose: a rule that sends it to another workspace would
     // otherwise show up as a visible tile-then-move.
-    if let Some(rule) = crate::lua::run_window(server, &window_record(tl, a)) {
+    let rule = match scratchpad {
+        Some(_) => None,
+        None => crate::lua::run_window(server, &window_record(tl, a)),
+    };
+    if let Some(rule) = rule {
         if let Some(float) = rule.float {
             (*tl).floating = float;
             if float {
@@ -654,21 +698,9 @@ unsafe fn remove_window(server: &mut Server, tl: *mut Toplevel) {
         server.grab = GrabMode::None;
         server.grab_tl = ptr::null_mut();
     }
-    for ws in server.workspaces.values_mut() {
-        if let Some(pos) = ws.windows.iter().position(|&w| w == tl) {
-            if !(*tl).floating && !(*tl).fullscreen {
-                tree_untrack(ws, tl);
-            }
-            if ws.solo == Some(tl) {
-                ws.solo = None;
-            }
-            ws.windows.remove(pos);
-            if ws.focused >= ws.windows.len() && !ws.windows.is_empty() {
-                ws.focused = ws.windows.len() - 1;
-            }
-            break;
-        }
-    }
+    crate::workspaces::detach(server, tl);
+    // A hidden scratchpad is on no workspace; it can still go away.
+    server.scratchpad_hidden.retain(|&w| w != tl);
     refresh(server);
     if !server.outputs.is_empty() {
         let a = active_workspace(server);

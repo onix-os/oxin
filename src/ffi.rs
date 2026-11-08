@@ -215,6 +215,7 @@ extern "C" {
         tree: *mut wlr::wlr_scene_tree,
         new_parent: *mut wlr::wlr_scene_tree,
     );
+    pub(crate) fn oxide_scene_tree_raise_to_top(tree: *mut wlr::wlr_scene_tree);
     pub(crate) fn oxide_scene_tree_set_position(tree: *mut wlr::wlr_scene_tree, x: i32, y: i32);
     pub(crate) fn oxide_scene_tree_set_clip(
         tree: *mut wlr::wlr_scene_tree,

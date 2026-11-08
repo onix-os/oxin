@@ -419,6 +419,10 @@ void oxide_scene_tree_reparent(struct wlr_scene_tree *tree,
     wlr_scene_node_reparent(&tree->node, new_parent);
 }
 
+void oxide_scene_tree_raise_to_top(struct wlr_scene_tree *tree) {
+    wlr_scene_node_raise_to_top(&tree->node);
+}
+
 void oxide_focus_toplevel(struct wlr_seat *seat,
         struct wlr_xdg_toplevel *toplevel) {
     struct wlr_surface *surface = toplevel->base->surface;

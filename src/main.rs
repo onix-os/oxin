@@ -31,6 +31,7 @@ mod lua;
 mod output;
 mod output_power;
 mod reload;
+mod scratchpad;
 mod session_lock;
 mod state;
 mod tiling;
@@ -237,6 +238,8 @@ fn main() {
             grab_w: 0,
             grab_h: 0,
             focused_tl: std::ptr::null_mut(),
+            scratchpad_hidden: Vec::new(),
+            scratchpad_spawning: Vec::new(),
         };
         // The VM and its registry are `main` locals, not `Server` fields:
         // `Server`'s address is handed to the C shim and every callback

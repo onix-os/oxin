@@ -310,7 +310,38 @@ oxin.on.window(function(w)
   if w.app_id == "pavucontrol" then return { float = true } end
   if w.app_id == "firefox"     then return { workspace = 2 } end
 end)
+
+-- A terminal one key hides and brings back, running whatever it runs.
+oxin.scratchpads["term"] = { cmd = "kitty --class term -e ~/bin/mytool" }
+oxin.keys["MOD+grave"]   = oxin.action.scratchpad("term")
 ```
+
+### Scratchpads
+
+A scratchpad is a floating window that one key hides and brings back, with its
+program running the whole time — a terminal, or a tool of your own running in one.
+
+```lua
+oxin.scratchpads["term"] = {
+  cmd      = "kitty --class term -e ~/bin/mytool",  -- required
+  app_id   = "term",       -- optional, defaults to the name
+  position = "center",     -- "center" (default) or "top" (a drop-down)
+  size     = { 60, 60 },   -- % of the usable area
+}
+oxin.keys["MOD+grave"] = oxin.action.scratchpad("term")
+```
+
+The first press runs `cmd`. After that, a press hides the scratchpad when it has
+focus, shows it again when hidden, focuses it when it is shown but something else
+has focus, and brings it over when it is on another workspace or monitor. While
+shown it is an ordinary floating window on the workspace you showed it on. Its
+window is recognised by app_id, so `cmd` has to set one (`kitty --class`,
+`foot --app-id`); a dialog it opens, or a second window with the same app_id, is
+an ordinary window. Without a `size`, a centered scratchpad uses `float_size` and
+a drop-down is full width and 40% high. Closing it (`Mod+Q`, or its program
+exiting) ends it, and the next press starts a fresh one. Any number can be
+defined, and gestures can toggle them too; `0xinctl scratchpad term` does the
+same from a script or a bar.
 
 ### Gestures
 
@@ -365,6 +396,13 @@ wallpaper without restarting:
 
 Runtime changes last until 0xin exits. Set `wallpaper =` in the config to make
 the selection persistent across sessions.
+
+Toggle a [scratchpad](#scratchpads) — from a bar button or a script — exactly as
+its key does:
+
+```sh
+0xinctl scratchpad term
+```
 
 Re-read the config without waiting for a save (see [Live reload](#live-reload)):
 

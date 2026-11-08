@@ -111,6 +111,12 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
             Err(error) => format!("error {}\n", error.trim_end()),
         };
     }
+    if let Some(name) = request.strip_prefix("scratchpad ") {
+        return match crate::scratchpad::toggle(server, name.trim()) {
+            Ok(()) => "ok\n".into(),
+            Err(error) => format!("error {error}\n"),
+        };
+    }
     if let Some(argument) = request.strip_prefix("rotate ") {
         return match parse_rotate(argument) {
             Some((name, transform)) => match crate::output::rotate(server, name, transform) {
@@ -122,8 +128,8 @@ unsafe fn dispatch(server: &mut Server, request: &str) -> String {
     }
     let Some(argument) = request.strip_prefix("wallpaper ") else {
         return "error expected `quit`, `config-error`, `reload`, `wallpaper PATH`, \
-                `wallpaper clear`, `rotate NAME normal|90|180|270`, or \
-                `headless-output add WxH|remove NAME`\n"
+                `wallpaper clear`, `rotate NAME normal|90|180|270`, `scratchpad NAME`, \
+                or `headless-output add WxH|remove NAME`\n"
             .into();
     };
     let result = if argument == "clear" {

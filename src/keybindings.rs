@@ -272,6 +272,11 @@ pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
         // routed from somewhere that has not learned to yet (a gesture, say).
         Action::Lua(id) => crate::lua::run_bind(server, id),
         Action::Spawn(cmd) => spawn(&cmd),
+        Action::Scratchpad(name) => {
+            if let Err(error) = crate::scratchpad::toggle(server, &name) {
+                eprintln!("0xin: scratchpad: {error}");
+            }
+        }
         Action::Close => close_focused(server),
         Action::Quit => wlr::wl_display_terminate(server.display),
         Action::FocusNext if n > 0 => {

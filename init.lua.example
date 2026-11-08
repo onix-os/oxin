@@ -57,6 +57,25 @@ oxin.gesture_handle = "visible"         -- visible | hidden
 -- oxin.monitors["HDMI-A-1"] = { x = 1920, y = 0, scale = 1.0 }
 
 -- ---------------------------------------------------------------------------
+-- Scratchpads
+-- ---------------------------------------------------------------------------
+-- A floating window one key hides and brings back, its program running the
+-- whole time. The first press starts `cmd`; later presses hide it, show it
+-- again, or (shown but not focused, or on another workspace) bring it to you.
+-- Its window is recognised by app_id, so `cmd` has to set it: kitty --class,
+-- foot --app-id. Closing it (Mod+Q, or the program exiting) ends it; the next
+-- press starts a fresh one.
+--
+-- oxin.scratchpads["term"] = {
+--   cmd      = "kitty --class term",  -- a shell; add `-e ~/bin/tool` to run your own
+--   app_id   = "term",                -- optional: defaults to the name
+--   position = "center",              -- "center" (default) or "top" (a drop-down)
+--   size     = { 60, 60 },            -- % of the usable area; default float_size
+--                                     -- centered, { 100, 40 } as a drop-down
+-- }
+-- oxin.keys["MOD+grave"] = oxin.action.scratchpad("term")
+
+-- ---------------------------------------------------------------------------
 -- Keys
 -- ---------------------------------------------------------------------------
 -- Keyed by chord, so binding the same chord twice replaces rather than stacks,

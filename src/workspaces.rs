@@ -324,20 +324,10 @@ pub(crate) unsafe fn move_focused_window(server: &mut Server, id: usize, follow:
     }
     ensure(server, id, here);
 
-    let src = &mut server.workspaces[from];
+    let src = &server.workspaces[from];
     let tl = src.windows[src.focused];
     let tiled = !(*tl).floating && !(*tl).fullscreen;
-    if tiled {
-        tree_untrack(src, tl);
-    }
-    if src.solo == Some(tl) {
-        src.solo = None;
-    }
-    src.windows.remove(src.focused);
-    let len = src.windows.len();
-    if src.focused >= len && len > 0 {
-        src.focused = len - 1;
-    }
+    detach(server, tl);
 
     let dst = &mut server.workspaces[id];
     dst.windows.push(tl);
@@ -357,6 +347,32 @@ pub(crate) unsafe fn move_focused_window(server: &mut Server, id: usize, follow:
         refresh(server);
         focus_windows_of(server, from);
     }
+}
+
+/// Take `tl` out of whichever workspace holds it: its leaf in the split tree,
+/// solo, and its place in the window list, keeping that workspace's
+/// `focused` on the window it was on (or the nearest one, if that was `tl`).
+/// Returns the workspace it was on, or `None` if it was on none. Re-tiling
+/// and focus are left to the caller, since each wants something different
+/// next.
+pub(crate) unsafe fn detach(server: &mut Server, tl: *mut Toplevel) -> Option<usize> {
+    let id = crate::tiling::workspace_of(server, tl)?;
+    let ws = &mut server.workspaces[id];
+    let pos = ws.windows.iter().position(|&w| w == tl)?;
+    // While `tl` is still listed: tiled_position finds its leaf from there.
+    if !(*tl).floating && !(*tl).fullscreen {
+        tree_untrack(ws, tl);
+    }
+    if ws.solo == Some(tl) {
+        ws.solo = None;
+    }
+    ws.windows.remove(pos);
+    if pos < ws.focused {
+        ws.focused -= 1;
+    } else if ws.focused >= ws.windows.len() && !ws.windows.is_empty() {
+        ws.focused = ws.windows.len() - 1;
+    }
+    Some(id)
 }
 
 #[cfg(test)]
@@ -579,6 +595,39 @@ mod tests {
 
             move_to_output(&mut s, 1, 0, true);
             assert_eq!(((*tl).x, (*tl).y), (200, 300));
+        }
+    }
+
+    #[test]
+    fn detaching_a_window_keeps_focus_on_the_window_that_had_it() {
+        unsafe {
+            let (a, b, c) = (
+                toplevel_at(0, 0, 10, 10),
+                toplevel_at(0, 0, 10, 10),
+                toplevel_at(0, 0, 10, 10),
+            );
+            let mut s = server_with(vec![a, b, c]);
+            // b tiled, holding the only leaf; a and c floating.
+            (*a).floating = true;
+            (*c).floating = true;
+            tree_track(&mut s.workspaces[0], b);
+            s.workspaces[0].focused = 2; // c
+
+            // One before the focused window: the index follows c.
+            assert_eq!(detach(&mut s, a), Some(0));
+            assert_eq!(s.workspaces[0].windows, vec![b, c]);
+            assert_eq!(s.workspaces[0].focused, 1);
+
+            // The focused one itself: focus falls to its neighbour.
+            assert_eq!(detach(&mut s, c), Some(0));
+            assert_eq!(s.workspaces[0].focused, 0);
+
+            // A tiled one gives its leaf back.
+            assert_eq!(detach(&mut s, b), Some(0));
+            assert!(s.workspaces[0].tree.is_none());
+
+            // On no workspace (a hidden scratchpad): nothing to do.
+            assert_eq!(detach(&mut s, a), None);
         }
     }
 }

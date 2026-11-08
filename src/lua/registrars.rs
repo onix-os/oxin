@@ -1,5 +1,5 @@
 //! The keyed registrars: `oxin.keys`, `oxin.hold`, `oxin.gestures`,
-//! `oxin.monitors`.
+//! `oxin.monitors`, `oxin.scratchpads`.
 //!
 //! Each is a table you assign into, keyed by the thing it is about — a chord,
 //! a gesture name, a connector name. Keyed rather than append-only because
@@ -18,13 +18,17 @@
 use luna::{Callback, CallbackReturn, Context, Error, IntoValue, Table, Value};
 
 use crate::config::names::{keysym_from_name, parse_mods};
-use crate::config::{Bind, GestureBind, GestureTrigger, HoldBind, MonitorConfig, MOD_MASK};
+use crate::config::{
+    Bind, GestureBind, GestureTrigger, HoldBind, MonitorConfig, ScratchpadConfig,
+    ScratchpadPosition, MOD_MASK,
+};
 
 use super::action::unwrap as unwrap_action;
 use super::host::with_staged;
 use super::staging::Staged;
 
-/// Install `keys`, `hold`, `gestures` and `monitors` onto the module.
+/// Install `keys`, `hold`, `gestures`, `monitors` and `scratchpads` onto the
+/// module.
 pub(crate) fn install<'gc>(ctx: Context<'gc>, oxin: Table<'gc>) -> Result<(), Error<'gc>> {
     oxin.set_raw(&ctx, "keys".into_value(ctx), proxy(ctx, Kind::Keys)?)?;
     oxin.set_raw(&ctx, "hold".into_value(ctx), proxy(ctx, Kind::Hold)?)?;
@@ -38,6 +42,11 @@ pub(crate) fn install<'gc>(ctx: Context<'gc>, oxin: Table<'gc>) -> Result<(), Er
         "monitors".into_value(ctx),
         proxy(ctx, Kind::Monitors)?,
     )?;
+    oxin.set_raw(
+        &ctx,
+        "scratchpads".into_value(ctx),
+        proxy(ctx, Kind::Scratchpads)?,
+    )?;
     Ok(())
 }
 
@@ -47,6 +56,7 @@ enum Kind {
     Hold,
     Gestures,
     Monitors,
+    Scratchpads,
 }
 
 impl Kind {
@@ -56,6 +66,7 @@ impl Kind {
             Kind::Hold => "oxin.hold",
             Kind::Gestures => "oxin.gestures",
             Kind::Monitors => "oxin.monitors",
+            Kind::Scratchpads => "oxin.scratchpads",
         }
     }
 }
@@ -211,8 +222,93 @@ fn assign<'gc>(
                 ))
             }
         },
+        Kind::Scratchpads => match value {
+            Value::Nil => staged.config.scratchpads.retain(|s| s.name != name),
+            Value::Table(t) => {
+                let entry = scratchpad(ctx, name, t)?;
+                match staged
+                    .config
+                    .scratchpads
+                    .iter_mut()
+                    .find(|s| s.name == name)
+                {
+                    Some(existing) => *existing = entry,
+                    None => staged.config.scratchpads.push(entry),
+                }
+            }
+            other => {
+                return Err(format!(
+                    "oxin.scratchpads takes {{ cmd = ..., app_id = ..., position = ..., \
+                     size = ... }}, got {}",
+                    other.type_name()
+                ))
+            }
+        },
     }
     Ok(())
+}
+
+/// Read one `oxin.scratchpads[name] = { ... }` entry.
+fn scratchpad<'gc>(
+    ctx: Context<'gc>,
+    name: &str,
+    t: Table<'gc>,
+) -> Result<ScratchpadConfig, String> {
+    use super::module::{want_integer_pair, want_string};
+    let field = |member: &str| format!("scratchpads[{name:?}].{member}");
+    for (k, _) in t.iter(ctx) {
+        let k = want_string("scratchpads", k)?;
+        if !matches!(k.as_str(), "cmd" | "app_id" | "position" | "size") {
+            return Err(format!(
+                "oxin.scratchpads[{name:?}] has no {k:?}; it takes cmd, app_id, position and size"
+            ));
+        }
+    }
+    let cmd = match t.get_value(ctx, "cmd") {
+        Value::Nil => {
+            return Err(format!(
+                "oxin.scratchpads[{name:?}]: cmd is required — the command that starts it"
+            ))
+        }
+        v => want_string(&field("cmd"), v)?,
+    };
+    let app_id = match t.get_value(ctx, "app_id") {
+        Value::Nil => name.to_owned(),
+        v => want_string(&field("app_id"), v)?,
+    };
+    let position = match t.get_value(ctx, "position") {
+        Value::Nil => ScratchpadPosition::Center,
+        v => match want_string(&field("position"), v)?.as_str() {
+            "center" => ScratchpadPosition::Center,
+            "top" => ScratchpadPosition::Top,
+            other => {
+                return Err(format!(
+                    "oxin.{}: expected \"center\" or \"top\", got {other:?}",
+                    field("position")
+                ))
+            }
+        },
+    };
+    let size = match t.get_value(ctx, "size") {
+        Value::Nil => None,
+        v => {
+            let (w, h) = want_integer_pair(ctx, &field("size"), v)?;
+            if !(1..=100).contains(&w) || !(1..=100).contains(&h) {
+                return Err(format!(
+                    "oxin.{}: both values are percentages, between 1 and 100",
+                    field("size")
+                ));
+            }
+            Some((w as i32, h as i32))
+        }
+    };
+    Ok(ScratchpadConfig {
+        name: name.to_owned(),
+        cmd,
+        app_id,
+        position,
+        size,
+    })
 }
 
 /// Turn the right-hand side of a binding into an `Action`.

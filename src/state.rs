@@ -130,6 +130,15 @@ pub(crate) struct Server {
     /// take is covered. Null when focus is on no window (nothing, a layer
     /// surface, the lock screen). Cleared when that window is destroyed.
     pub(crate) focused_tl: *mut Toplevel,
+    /// Scratchpad windows currently hidden (`crate::scratchpad`). A hidden
+    /// scratchpad belongs to no workspace — so tiling, focus and workspace
+    /// listings never see it — and its scene tree is disabled. Anything
+    /// that has to reach *every* window (destroy, the VT-switch scene
+    /// rebuild) looks here too.
+    pub(crate) scratchpad_hidden: Vec<*mut Toplevel>,
+    /// Scratchpads spawned whose window has not mapped yet, and when: a
+    /// second toggle in that time would otherwise start a second copy.
+    pub(crate) scratchpad_spawning: Vec<(String, std::time::Instant)>,
 }
 
 /// One workspace: an independent list of windows, its focused index, and the
@@ -303,6 +312,9 @@ pub(crate) struct Toplevel {
     /// scene tree parented under `Server.tree_floating`, skipped by the
     /// spiral). Fullscreen wins while both are set.
     pub(crate) floating: bool,
+    /// The `oxin.scratchpads` entry this window is, matched by app_id when
+    /// it first commits (or maps). `None` for ordinary windows.
+    pub(crate) scratchpad: Option<String>,
     // Listeners we registered; removed+freed on destroy so wlroots doesn't
     // assert on a non-empty destroy list.
     pub(crate) commit_listener: *mut ShimListener,

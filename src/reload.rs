@@ -132,6 +132,9 @@ unsafe fn apply(server: &mut Server, old: &Config) {
         );
     }
 
+    // A scratchpad that is no longer defined could never be toggled again.
+    crate::scratchpad::forget_undefined(server);
+
     // Gaps, border width (tiles give it room), and the keyboard handle's
     // final position.
     tiling::refresh(server);

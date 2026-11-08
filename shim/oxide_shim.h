@@ -293,6 +293,8 @@ void oxide_scene_tree_set_opacity(struct wlr_scene_tree *tree, float opacity);
 // Move a window's scene tree between layer trees (normal <-> fullscreen).
 void oxide_scene_tree_reparent(struct wlr_scene_tree *tree,
         struct wlr_scene_tree *new_parent);
+// Paint a window's scene tree above its siblings in the same layer tree.
+void oxide_scene_tree_raise_to_top(struct wlr_scene_tree *tree);
 // Destroy a window's scene tree (to rebuild it on VT resume).
 void oxide_scene_tree_destroy(struct wlr_scene_tree *tree);
 void oxide_focus_toplevel(struct wlr_seat *seat,

@@ -961,6 +961,87 @@ mod registrars {
     }
 
     #[test]
+    fn scratchpads_are_keyed_by_name_with_defaults_for_what_is_left_out() {
+        use crate::config::{ScratchpadConfig, ScratchpadPosition};
+        let cfg = load(
+            r#"
+                oxin.scratchpads["term"] = { cmd = "kitty --class term" }
+                oxin.scratchpads["tool"] = {
+                  cmd = "kitty --class mytool -e ~/bin/tool",
+                  app_id = "mytool",
+                  position = "top",
+                  size = { 100, 35 },
+                }
+                oxin.scratchpads["gone"] = { cmd = "foot" }
+                oxin.scratchpads["gone"] = nil
+                oxin.scratchpads["term"] = { cmd = "foot --app-id term" }
+                oxin.keys["MOD+grave"] = oxin.action.scratchpad("term")
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.scratchpads,
+            vec![
+                // Replaced in place, not appended; app_id is the name.
+                ScratchpadConfig {
+                    name: "term".into(),
+                    cmd: "foot --app-id term".into(),
+                    app_id: "term".into(),
+                    position: ScratchpadPosition::Center,
+                    size: None,
+                },
+                ScratchpadConfig {
+                    name: "tool".into(),
+                    cmd: "kitty --class mytool -e ~/bin/tool".into(),
+                    app_id: "mytool".into(),
+                    position: ScratchpadPosition::Top,
+                    size: Some((100, 35)),
+                },
+            ]
+        );
+        assert_eq!(
+            bind_for(&cfg, MOD_LOGO, "grave"),
+            Some(&Action::Scratchpad("term".into()))
+        );
+        // Unsized: float_size centered, a wide strip as a drop-down.
+        assert_eq!(cfg.scratchpads[0].size_percent((60, 50)), (60, 50));
+        let top = ScratchpadConfig {
+            size: None,
+            ..cfg.scratchpads[1].clone()
+        };
+        assert_eq!(top.size_percent((60, 50)), (100, 40));
+    }
+
+    #[test]
+    fn a_scratchpad_entry_is_checked_where_it_is_written() {
+        for (src, expect) in [
+            (r#"oxin.scratchpads.t = {}"#, "cmd is required"),
+            (r#"oxin.scratchpads.t = { cmd = 1 }"#, "expected a string"),
+            (
+                r#"oxin.scratchpads.t = { cmd = "x", position = "left" }"#,
+                "\"center\" or \"top\"",
+            ),
+            (
+                r#"oxin.scratchpads.t = { cmd = "x", size = { 0, 50 } }"#,
+                "between 1 and 100",
+            ),
+            (
+                r#"oxin.scratchpads.t = { cmd = "x", size = 50 }"#,
+                "expected a table",
+            ),
+            (
+                r#"oxin.scratchpads.t = { cmd = "x", sise = {1, 1} }"#,
+                "has no \"sise\"",
+            ),
+            (r#"oxin.scratchpads.t = "kitty""#, "oxin.scratchpads takes"),
+            (r#"oxin.scratchpads = {}"#, "index"),
+        ] {
+            let err = load(src).unwrap_err();
+            assert!(err.contains(expect), "{src}: {err}");
+        }
+    }
+
+    #[test]
     fn a_registrar_cannot_be_assigned_over() {
         let err = load("oxin.keys = {}").unwrap_err();
         assert!(err.contains("index"), "{err}");
@@ -1057,6 +1138,7 @@ fn the_module_exposes_its_functions_and_namespaces() {
         "hold",
         "gestures",
         "monitors",
+        "scratchpads",
         "action",
         "on",
         "spawn",

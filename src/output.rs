@@ -202,28 +202,39 @@ pub(crate) unsafe extern "C" fn handle_session_active(userdata: *mut c_void, _da
     // recreated on a VT switch, the original scene nodes stop presenting their
     // surfaces (the client still has a valid buffer — confirmed — but the node
     // never draws it). Recreating the node, exactly like a freshly-mapped
-    // window, makes it present the surface's current buffer again.
-    for ws in server.workspaces.values_mut() {
-        for &tl in &ws.windows {
-            oxide_scene_tree_destroy((*tl).scene_tree);
-            // Rebuild into the layer matching the window's state, so a
-            // fullscreen window comes back above the bars (and a floating
-            // one above the tiles), not under them.
-            let tree = match ((*tl).fullscreen, (*tl).floating) {
-                (true, _) => server.tree_fullscreen,
-                (false, true) => server.tree_floating,
-                (false, false) => server.tree_normal,
-            };
-            (*tl).scene_tree = oxide_scene_add_xdg_toplevel(tree, (*tl).xdg_toplevel);
-            // The fresh tree's wlroots listeners now sit behind ours; masking
-            // only works with ours last.
-            crate::toplevel::reorder_listeners_after_scene_rebuild(tl);
-            // refresh() skips floating windows, so restore their position
-            // here (the fresh node starts at 0,0).
-            if (*tl).floating && !(*tl).fullscreen {
-                oxide_scene_tree_set_position((*tl).scene_tree, (*tl).x, (*tl).y);
-            }
+    // window, makes it present the surface's current buffer again. Hidden
+    // scratchpads too: they are on no workspace, but their trees went stale
+    // all the same.
+    let windows: Vec<*mut Toplevel> = server
+        .workspaces
+        .values()
+        .flat_map(|ws| ws.windows.iter().copied())
+        .chain(server.scratchpad_hidden.iter().copied())
+        .collect();
+    for tl in windows {
+        oxide_scene_tree_destroy((*tl).scene_tree);
+        // Rebuild into the layer matching the window's state, so a
+        // fullscreen window comes back above the bars (and a floating
+        // one above the tiles), not under them.
+        let tree = match ((*tl).fullscreen, (*tl).floating) {
+            (true, _) => server.tree_fullscreen,
+            (false, true) => server.tree_floating,
+            (false, false) => server.tree_normal,
+        };
+        (*tl).scene_tree = oxide_scene_add_xdg_toplevel(tree, (*tl).xdg_toplevel);
+        // The fresh tree's wlroots listeners now sit behind ours; masking
+        // only works with ours last.
+        crate::toplevel::reorder_listeners_after_scene_rebuild(tl);
+        // refresh() skips floating windows, so restore their position
+        // here (the fresh node starts at 0,0).
+        if (*tl).floating && !(*tl).fullscreen {
+            oxide_scene_tree_set_position((*tl).scene_tree, (*tl).x, (*tl).y);
         }
+    }
+    // A fresh tree starts enabled, and refresh() below only shows and hides
+    // windows on a workspace.
+    for &tl in &server.scratchpad_hidden {
+        oxide_scene_tree_set_enabled((*tl).scene_tree, false);
     }
 
     // Re-tile (enable + position + size the fresh nodes) and arm a few forced

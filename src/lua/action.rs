@@ -33,6 +33,7 @@ const PLAIN: &[(&str, Action)] = &[
 /// The ones that take an argument, for the error message.
 const WITH_ARG: &[&str] = &[
     "spawn",
+    "scratchpad",
     "focus",
     "move",
     "resize",
@@ -68,6 +69,20 @@ pub(crate) fn build<'gc>(ctx: Context<'gc>) -> Result<Table<'gc>, Error<'gc>> {
             let cmd: luna::String = stack.consume(ctx)?;
             let cmd = String::from_utf8_lossy(cmd.as_bytes()).into_owned();
             stack.replace(ctx, wrap(ctx, Action::Spawn(cmd)));
+            Ok(CallbackReturn::Return)
+        }),
+    );
+
+    // By name, not by table: the entry it toggles lives in
+    // `oxin.scratchpads`, so it can be defined after the binding, or replaced
+    // by a plugin, and the binding follows.
+    action.set_field(
+        ctx,
+        "scratchpad",
+        Callback::from_fn(&ctx, |ctx, _, mut stack| {
+            let name: luna::String = stack.consume(ctx)?;
+            let name = String::from_utf8_lossy(name.as_bytes()).into_owned();
+            stack.replace(ctx, wrap(ctx, Action::Scratchpad(name)));
             Ok(CallbackReturn::Return)
         }),
     );
