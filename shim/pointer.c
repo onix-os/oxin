@@ -321,7 +321,7 @@ void oxide_handle_new_input(struct wlr_seat *seat, struct wlr_cursor *cursor,
         void *key_userdata) {
     switch (device->type) {
     case WLR_INPUT_DEVICE_KEYBOARD:
-        seat_add_keyboard(seat, device, key_callback, key_userdata);
+        seat_add_keyboard(seat, device, key_callback, key_userdata, false);
         break;
     case WLR_INPUT_DEVICE_POINTER:
         wlr_cursor_attach_input_device(cursor, device);

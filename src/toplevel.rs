@@ -32,6 +32,7 @@ pub(crate) unsafe extern "C" fn handle_new_toplevel(userdata: *mut c_void, data:
         fullscreen: false,
         floating: false,
         scratchpad: None,
+        pass_keys: false,
         commit_listener: ptr::null_mut(),
         map_listener: ptr::null_mut(),
         unmap_listener: ptr::null_mut(),
@@ -440,6 +441,8 @@ pub(crate) unsafe extern "C" fn handle_keyboard_focus_change(
         toplevel_from_surface(server, surface).unwrap_or(ptr::null_mut())
     };
     let before = std::mem::replace(&mut server.focused_tl, now);
+    // Whether keys pass through follows the focused surface.
+    crate::keybindings::report_pass_keys(server);
     if before == now {
         return;
     }

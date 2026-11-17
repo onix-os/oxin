@@ -193,7 +193,7 @@ void handle_cursor_frame(void *userdata, void *data);
 // oxide_handle_new_input (pointer.c) for real hardware keyboards.
 void seat_add_keyboard(struct wlr_seat *seat,
         struct wlr_input_device *device, oxide_key_callback key_callback,
-        void *key_userdata);
+        void *key_userdata, bool is_virtual);
 
 // --- touch_gestures.c ------------------------------------------------------
 

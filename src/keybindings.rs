@@ -148,6 +148,7 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
     keysym: u32,
     modifiers: u32,
     pressed: bool,
+    is_virtual: bool,
 ) -> bool {
     let server = &mut *(userdata as *mut Server);
     let mods = modifiers & MOD_MASK;
@@ -157,6 +158,14 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
     if server.locked {
         return false;
     }
+    // An on-screen keyboard only types. A remote-desktop server's keys drive
+    // the compositor too, once the config says so.
+    if is_virtual && !server.config.virtual_keyboard_binds {
+        return false;
+    }
+    // A remote desktop or VM window that has every key: the only chord still
+    // ours is the one that gives them back.
+    let passing = pass_keys_active(server);
 
     if server.held_keysym == keysym && server.held_modifiers == mods {
         if !pressed {
@@ -183,6 +192,7 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
         .hold_binds
         .iter()
         .find(|binding| binding.mods == mods && binding.keysym == keysym)
+        .filter(|binding| bind_allowed(&binding.action, passing))
         .cloned()
     {
         if pressed {
@@ -206,18 +216,18 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
 
     // Ordinary bindings act only on press, but consume their release too so a
     // client never receives a release for a press handled by the compositor.
-    let is_regular_bind = server
-        .config
-        .binds
-        .iter()
-        .any(|binding| binding.mods == mods && binding.keysym == keysym);
+    let is_regular_bind = server.config.binds.iter().any(|binding| {
+        binding.mods == mods && binding.keysym == keysym && bind_allowed(&binding.action, passing)
+    });
     if !pressed {
         return is_regular_bind;
     }
 
     // VT switching (Ctrl+Alt+F1..F12). Handled before config binds and always
-    // consumed; the shim no-ops it when there's no session (nested).
-    if mods == MOD_CTRL | MOD_ALT && (KEY_F1..=KEY_F12).contains(&keysym) {
+    // consumed — even while keys pass through, as the way out of last resort
+    // — but only from real hardware. The shim no-ops it when there's no
+    // session (nested).
+    if !is_virtual && mods == MOD_CTRL | MOD_ALT && (KEY_F1..=KEY_F12).contains(&keysym) {
         oxide_session_change_vt(server.session, keysym - KEY_F1 + 1);
         return true;
     }
@@ -228,12 +238,67 @@ pub(crate) unsafe extern "C" fn handle_keybinding(
         .config
         .binds
         .iter()
-        .find(|b| b.mods == mods && b.keysym == keysym)
+        .find(|b| b.mods == mods && b.keysym == keysym && bind_allowed(&b.action, passing))
         .map(|b| b.action.clone());
     let Some(action) = action else { return false };
 
     dispatch_action(server, action);
     true
+}
+
+/// Whether a binding to `action` may run. While keys pass through to the
+/// focused window (`passing`), only the toggle that ends it may — any other
+/// chord belongs to the remote desktop.
+fn bind_allowed(action: &Action, passing: bool) -> bool {
+    !passing || matches!(action, Action::PassKeys)
+}
+
+/// Whether every key goes to the focused window: it asked for them
+/// (keyboard-shortcuts-inhibit, granted), or `pass_keys` was pressed in it.
+pub(crate) unsafe fn pass_keys_active(server: &Server) -> bool {
+    let flagged = !server.focused_tl.is_null() && (*server.focused_tl).pass_keys;
+    let asked = !server.shortcuts_inhibit.is_null()
+        && oxide_shortcuts_inhibited(server.shortcuts_inhibit, server.seat);
+    flagged || asked
+}
+
+/// `oxin.action.pass_keys`: flip whether the focused window gets every key.
+/// A window that asked has its request granted or withdrawn (and is told);
+/// any other window is flagged.
+unsafe fn toggle_pass_keys(server: &mut Server) {
+    let tl = server.focused_tl;
+    if tl.is_null() {
+        eprintln!("0xin: pass_keys: no window has keyboard focus");
+        return;
+    }
+    let on = !pass_keys_active(server);
+    // Cleared either way, so a flag and a request can never disagree.
+    (*tl).pass_keys = false;
+    if !oxide_shortcuts_inhibit_set(server.shortcuts_inhibit, server.seat, on) {
+        (*tl).pass_keys = on;
+    }
+    report_pass_keys(server);
+}
+
+/// Log and publish (`passkeys>>on|off` on the event socket, for a bar) when
+/// whether keys pass through to the focused window has changed.
+pub(crate) unsafe fn report_pass_keys(server: &mut Server) {
+    let on = pass_keys_active(server);
+    if on == server.pass_keys_reported {
+        return;
+    }
+    server.pass_keys_reported = on;
+    let state = if on { "on" } else { "off" };
+    println!("0xin: keys pass through to the focused window: {state}");
+    crate::events::emit(server, "passkeys", state);
+}
+
+/// A client started or stopped asking for every key.
+pub(crate) unsafe extern "C" fn handle_shortcuts_inhibit_changed(
+    userdata: *mut c_void,
+    _data: *mut c_void,
+) {
+    report_pass_keys(&mut *(userdata as *mut Server));
 }
 
 unsafe extern "C" fn handle_hold_timer(userdata: *mut c_void, source: *mut c_void) {
@@ -367,9 +432,30 @@ pub(crate) unsafe fn dispatch_action(server: &mut Server, action: Action) {
         Action::KeyboardShow => set_keyboard_visible(server, true),
         Action::KeyboardHide => set_keyboard_visible(server, false),
         Action::KeyboardToggle => set_keyboard_visible(server, !server.keyboard_visible),
+        Action::PassKeys => toggle_pass_keys(server),
         Action::Reload => {
             // The failure was already reported loudly; nothing to add here.
             let _ = crate::reload::reload(server);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn while_keys_pass_through_only_the_way_out_is_still_a_binding() {
+        assert!(bind_allowed(&Action::Close, false));
+        assert!(bind_allowed(&Action::PassKeys, false));
+        assert!(
+            !bind_allowed(&Action::Close, true),
+            "Super+Q belongs to the remote"
+        );
+        assert!(
+            !bind_allowed(&Action::Lua(0), true),
+            "so does a Lua binding"
+        );
+        assert!(bind_allowed(&Action::PassKeys, true));
     }
 }

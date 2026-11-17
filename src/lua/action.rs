@@ -28,6 +28,7 @@ const PLAIN: &[(&str, Action)] = &[
     ("keyboard_hide", Action::KeyboardHide),
     ("keyboard_toggle", Action::KeyboardToggle),
     ("reload", Action::Reload),
+    ("pass_keys", Action::PassKeys),
 ];
 
 /// The ones that take an argument, for the error message.

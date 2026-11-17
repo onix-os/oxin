@@ -40,6 +40,14 @@ oxin.float_size = { 60, 60 }            -- default float size, % of usable area
 -- Touch: whether the bottom gesture target draws a visible pill.
 oxin.gesture_handle = "visible"         -- visible | hidden
 
+-- Remote desktops and VM windows. A viewer that grabs the keyboard (Remmina,
+-- FreeRDP's SDL client) gets every key while focused, Super and 0xin chords
+-- included, until `pass_keys` (Ctrl+Alt+Escape by default) takes them back.
+oxin.shortcuts_inhibit = true           -- false: wait for a pass_keys press
+-- Whether keys from virtual keyboards (an on-screen keyboard, a remote-desktop
+-- server's input) may trigger bindings, not only type.
+oxin.virtual_keyboard_binds = false
+
 -- An optional virtual-keyboard controller, if you run one.
 -- oxin.keyboard = {
 --   show   = "pkill -USR2 -x my-osk",
@@ -119,6 +127,11 @@ for i = 1, 9 do
   oxin.keys["MOD+" .. i]       = oxin.action.workspace(i)
   oxin.keys["MOD+SHIFT+" .. i] = oxin.action.move_to_workspace(i)
 end
+
+-- Every key to the focused window (a remote desktop, a VM), or back to 0xin.
+-- Not on MOD: the remote already saw Super go down, and a lone Super tap
+-- opens the Windows Start menu.
+oxin.keys["CTRL+ALT+Escape"] = oxin.action.pass_keys
 
 -- Assigning nil removes a binding, including a built-in one.
 -- oxin.keys["MOD+f"] = nil

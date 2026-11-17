@@ -137,6 +137,7 @@ fn main() {
         "shim/gles2_corner.c",
         "shim/border.c",
         "shim/config_watch.c",
+        "shim/shortcuts_inhibit.c",
     ];
     let mut shim = cc::Build::new();
     shim.files(shim_files);
@@ -192,6 +193,7 @@ fn main() {
         .allowlist_function("wlr_compositor_create")
         .allowlist_function("wlr_subcompositor_create")
         .allowlist_function("wlr_data_device_manager_create")
+        .allowlist_function("wlr_primary_selection_v1_device_manager_create")
         .allowlist_function("wlr_xdg_shell_create")
         .allowlist_function("wlr_xdg_toplevel_set_size")
         .allowlist_function("wlr_xdg_toplevel_set_fullscreen")

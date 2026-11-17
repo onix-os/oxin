@@ -139,6 +139,12 @@ pub(crate) struct Server {
     /// Scratchpads spawned whose window has not mapped yet, and when: a
     /// second toggle in that time would otherwise start a second copy.
     pub(crate) scratchpad_spawning: Vec<(String, std::time::Instant)>,
+    /// keyboard-shortcuts-inhibit-v1 (opaque — `struct
+    /// oxide_shortcuts_inhibit*`, see shim/shortcuts_inhibit.c).
+    pub(crate) shortcuts_inhibit: *mut c_void,
+    /// Whether keys passing through to the focused window was last reported
+    /// as on (`keybindings::report_pass_keys`), so only changes are.
+    pub(crate) pass_keys_reported: bool,
 }
 
 /// One workspace: an independent list of windows, its focused index, and the
@@ -315,6 +321,10 @@ pub(crate) struct Toplevel {
     /// The `oxin.scratchpads` entry this window is, matched by app_id when
     /// it first commits (or maps). `None` for ordinary windows.
     pub(crate) scratchpad: Option<String>,
+    /// Set by `oxin.action.pass_keys` for a window that never asked for all
+    /// keys itself (no keyboard-shortcuts-inhibit request): while it has
+    /// focus, every key goes to it except the `pass_keys` toggle.
+    pub(crate) pass_keys: bool,
     // Listeners we registered; removed+freed on destroy so wlroots doesn't
     // assert on a non-empty destroy list.
     pub(crate) commit_listener: *mut ShimListener,

@@ -71,6 +71,11 @@ pub enum Action {
     /// it isn't running, show it if hidden, focus it if shown but unfocused
     /// (bringing it over from another workspace), hide it if focused.
     Scratchpad(String),
+    /// Toggle whether every key goes to the focused window (a remote desktop,
+    /// a VM): on for a window that asked for all keys
+    /// (keyboard-shortcuts-inhibit), or for any window this is pressed in.
+    /// While it is on, binds to this are the only ones that still work.
+    PassKeys,
     /// Re-read `init.lua` and its plugins and apply them to the running
     /// session (Stage 31). A config that fails to load leaves the current one
     /// in place.
@@ -249,6 +254,14 @@ pub struct Config {
     /// Whether bottom keyboard gestures get a visible compositor-owned pill.
     /// The touch target remains active when this visual hint is disabled.
     pub gesture_handle_visible: bool,
+    /// Whether a window that asks for every key (keyboard-shortcuts-inhibit,
+    /// e.g. a remote-desktop viewer grabbing the keyboard) gets it straight
+    /// away. Off, it only does once `Action::PassKeys` is pressed in it.
+    pub shortcuts_inhibit: bool,
+    /// Whether keys from a client's virtual keyboard may trigger bindings —
+    /// wanted for a remote-desktop server, so the remote user can drive the
+    /// tiling; off by default so an on-screen keyboard only types.
+    pub virtual_keyboard_binds: bool,
 }
 
 impl Default for Config {
@@ -274,6 +287,8 @@ impl Default for Config {
             virtual_keyboard_hide: None,
             virtual_keyboard_height: 300,
             gesture_handle_visible: true,
+            shortcuts_inhibit: true,
+            virtual_keyboard_binds: false,
         }
     }
 }

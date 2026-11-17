@@ -391,6 +391,7 @@ pub(crate) mod tests {
             fullscreen: false,
             floating: false,
             scratchpad: None,
+            pass_keys: false,
             commit_listener: ptr::null_mut(),
             map_listener: ptr::null_mut(),
             unmap_listener: ptr::null_mut(),
@@ -469,6 +470,8 @@ pub(crate) mod tests {
             focused_tl: ptr::null_mut(),
             scratchpad_hidden: Vec::new(),
             scratchpad_spawning: Vec::new(),
+            shortcuts_inhibit: std::ptr::null_mut(),
+            pass_keys_reported: false,
         }
     }
 

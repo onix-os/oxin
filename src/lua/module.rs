@@ -39,6 +39,8 @@ const SETTINGS: &[&str] = &[
     "float_size",
     "gesture_handle",
     "keyboard",
+    "shortcuts_inhibit",
+    "virtual_keyboard_binds",
 ];
 
 /// Build the `oxin` module table, seeded from `defaults` so a config can read
@@ -184,6 +186,12 @@ fn seed<'gc>(ctx: Context<'gc>, oxin: Table<'gc>, cfg: &Config) -> Result<(), Er
     }
     kb.set(ctx, "height", i64::from(cfg.virtual_keyboard_height))?;
     oxin.set_raw(&ctx, "keyboard".into_value(ctx), kb.into_value(ctx))?;
+    for (name, on) in [
+        ("shortcuts_inhibit", cfg.shortcuts_inhibit),
+        ("virtual_keyboard_binds", cfg.virtual_keyboard_binds),
+    ] {
+        oxin.set_raw(&ctx, name.into_value(ctx), on.into_value(ctx))?;
+    }
     Ok(())
 }
 
@@ -312,6 +320,8 @@ fn apply<'gc>(
                 }
             }
         }
+        "shortcuts_inhibit" => cfg.shortcuts_inhibit = want_boolean(name, value)?,
+        "virtual_keyboard_binds" => cfg.virtual_keyboard_binds = want_boolean(name, value)?,
         "keys" | "hold" | "gestures" | "monitors" | "scratchpads" | "action" | "on" | "spawn"
         | "workspace" | "workspaces" => {
             return Err(format!(
@@ -418,6 +428,16 @@ fn want_integer(name: &str, value: Value<'_>) -> Result<i64, String> {
             value.type_name()
         )
     })
+}
+
+fn want_boolean(name: &str, value: Value<'_>) -> Result<bool, String> {
+    match value {
+        Value::Boolean(b) => Ok(b),
+        other => Err(format!(
+            "oxin.{name}: expected true or false, got {}",
+            other.type_name()
+        )),
+    }
 }
 
 fn want_number(name: &str, value: Value<'_>) -> Result<f64, String> {

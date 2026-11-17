@@ -39,9 +39,11 @@ struct oxide_listener;
 typedef void (*oxide_callback)(void *userdata, void *data);
 
 // Key callback: returns true if the keysym was consumed as a binding (and so
-// must NOT be forwarded to the focused client).
+// must NOT be forwarded to the focused client). `is_virtual`: the key came
+// from a client's virtual keyboard (an on-screen keyboard, a remote-desktop
+// server), not from hardware.
 typedef bool (*oxide_key_callback)(void *userdata, uint32_t keysym,
-        uint32_t modifiers, bool pressed);
+        uint32_t modifiers, bool pressed, bool is_virtual);
 
 // Pointer-grab callbacks (Mod+drag move/resize of floating windows).
 // Button: called on press (with the clicked root surface, held modifiers and
@@ -86,9 +88,27 @@ bool oxide_inotify_drain(int fd);
 void oxide_reset_child_signals(void);
 
 // Publish virtual-keyboard-unstable-v1 and attach each client-created virtual
-// keyboard to `seat`. Virtual keys bypass compositor keybindings.
+// keyboard to `seat`. Its keys are offered to `key_callback` like hardware
+// ones, flagged `is_virtual`; Rust decides whether they may trigger binds.
 void oxide_virtual_keyboard_setup(struct wl_display *display,
+        struct wlr_seat *seat, oxide_key_callback key_callback,
+        void *key_userdata);
+
+// keyboard-shortcuts-inhibit-v1 (shim/shortcuts_inhibit.c). `changed` runs
+// whenever a client starts or stops asking for all keys; Rust re-checks what
+// the focused window gets.
+struct oxide_shortcuts_inhibit;
+struct oxide_shortcuts_inhibit *oxide_shortcuts_inhibit_setup(
+        struct wl_display *display, oxide_callback changed, void *userdata);
+// Whether a new request is granted straight away (`oxin.shortcuts_inhibit`).
+void oxide_shortcuts_inhibit_set_grant(struct oxide_shortcuts_inhibit *ctx,
+        bool grant);
+// Whether the surface with keyboard focus has a granted request.
+bool oxide_shortcuts_inhibited(struct oxide_shortcuts_inhibit *ctx,
         struct wlr_seat *seat);
+// Grant or withdraw the focused surface's request; false when it made none.
+bool oxide_shortcuts_inhibit_set(struct oxide_shortcuts_inhibit *ctx,
+        struct wlr_seat *seat, bool active);
 // Publish text-input-v3 and report whether the focused client has enabled a
 // text field. The callback data is 1 for visible and 0 for hidden.
 void oxide_text_input_setup(struct wl_display *display, struct wlr_seat *seat,

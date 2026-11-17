@@ -9,8 +9,9 @@ use std::os::raw::{c_char, c_void};
 /// Type of the callbacks our C shim invokes: (userdata, signal-data).
 pub(crate) type ShimCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 
-/// Keybinding callback: (userdata, keysym, modifiers, pressed) -> consumed?
-pub(crate) type KeyCallback = unsafe extern "C" fn(*mut c_void, u32, u32, bool) -> bool;
+/// Keybinding callback: (userdata, keysym, modifiers, pressed, is_virtual)
+/// -> consumed?
+pub(crate) type KeyCallback = unsafe extern "C" fn(*mut c_void, u32, u32, bool, bool) -> bool;
 
 /// Pointer-grab button callback: (userdata, clicked root wlr_surface — NULL
 /// on release, button, modifiers, pressed, cursor x, cursor y) -> did a grab
@@ -58,7 +59,24 @@ extern "C" {
     pub(crate) fn oxide_virtual_keyboard_setup(
         display: *mut wlr::wl_display,
         seat: *mut wlr::wlr_seat,
+        key_callback: KeyCallback,
+        key_userdata: *mut c_void,
     );
+    /// keyboard-shortcuts-inhibit-v1; `changed` runs when a client starts or
+    /// stops asking for all keys. Returns the shim's context.
+    pub(crate) fn oxide_shortcuts_inhibit_setup(
+        display: *mut wlr::wl_display,
+        changed: ShimCallback,
+        userdata: *mut c_void,
+    ) -> *mut c_void;
+    pub(crate) fn oxide_shortcuts_inhibit_set_grant(ctx: *mut c_void, grant: bool);
+    pub(crate) fn oxide_shortcuts_inhibited(ctx: *mut c_void, seat: *mut wlr::wlr_seat) -> bool;
+    /// Grant or withdraw the focused surface's request; false if it made none.
+    pub(crate) fn oxide_shortcuts_inhibit_set(
+        ctx: *mut c_void,
+        seat: *mut wlr::wlr_seat,
+        active: bool,
+    ) -> bool;
     pub(crate) fn oxide_text_input_setup(
         display: *mut wlr::wl_display,
         seat: *mut wlr::wlr_seat,

@@ -113,6 +113,13 @@ unsafe fn apply(server: &mut Server, old: &Config) {
 
     output::apply_config(server);
 
+    // Applies to requests made from now on; one already granted or refused
+    // stays as it is (`pass_keys` changes it).
+    crate::ffi::oxide_shortcuts_inhibit_set_grant(
+        server.shortcuts_inhibit,
+        server.config.shortcuts_inhibit,
+    );
+
     // Only field writes in the shim. Never reached while locked (refused
     // above), so this cannot re-enable gestures under a lock screen.
     oxide_cursor_set_gestures(

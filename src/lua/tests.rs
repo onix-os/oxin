@@ -418,6 +418,31 @@ mod settings {
     }
 
     #[test]
+    fn remote_desktop_switches_are_booleans_with_safe_defaults() {
+        let cfg = load("").expect("loads");
+        assert!(
+            cfg.shortcuts_inhibit,
+            "a window that asks for every key gets it"
+        );
+        assert!(
+            !cfg.virtual_keyboard_binds,
+            "an on-screen keyboard only types"
+        );
+        let cfg = load(
+            r#"
+                oxin.shortcuts_inhibit = false
+                oxin.virtual_keyboard_binds = true
+                assert(oxin.shortcuts_inhibit == false and oxin.virtual_keyboard_binds)
+            "#,
+        )
+        .expect("loads");
+        assert!(!cfg.shortcuts_inhibit);
+        assert!(cfg.virtual_keyboard_binds);
+        let err = load("oxin.shortcuts_inhibit = 1").expect_err("a number is not a switch");
+        assert!(err.contains("true or false"), "{err}");
+    }
+
+    #[test]
     fn a_wrong_type_says_what_it_wanted() {
         let err = load("oxin.gap = 'wide'").expect_err("gap is a number");
         assert!(err.contains("whole number"), "{err}");
@@ -612,7 +637,9 @@ mod registrars {
     use std::path::Path;
 
     use crate::config::names::keysym_from_name;
-    use crate::config::{Action, Config, Direction, GestureTrigger, MOD_ALT, MOD_LOGO, MOD_SHIFT};
+    use crate::config::{
+        Action, Config, Direction, GestureTrigger, MOD_ALT, MOD_CTRL, MOD_LOGO, MOD_SHIFT,
+    };
     use crate::lua::{config, vm};
 
     fn load(source: &str) -> Result<Config, String> {
@@ -785,6 +812,21 @@ mod registrars {
     fn reload_is_a_bindable_action() {
         let cfg = load(r#"oxin.keys["MOD+F5"] = oxin.action.reload"#).unwrap();
         assert_eq!(bind_for(&cfg, cfg.modifier, "F5"), Some(&Action::Reload));
+    }
+
+    #[test]
+    fn pass_keys_is_bound_by_default_and_rebindable() {
+        let cfg = load("").unwrap();
+        assert_eq!(
+            bind_for(&cfg, MOD_CTRL | MOD_ALT, "Escape"),
+            Some(&Action::PassKeys),
+            "a built-in way back out of a remote desktop"
+        );
+        let cfg = load(r#"oxin.keys["MOD+Pause"] = oxin.action.pass_keys"#).unwrap();
+        assert_eq!(
+            bind_for(&cfg, cfg.modifier, "Pause"),
+            Some(&Action::PassKeys)
+        );
     }
 
     #[test]

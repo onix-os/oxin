@@ -45,7 +45,9 @@ use input::{
     handle_click_focus, handle_double_tap, handle_gesture, handle_grab_button, handle_grab_motion,
     handle_new_input,
 };
-use keybindings::handle_text_input_visibility;
+use keybindings::{
+    handle_keybinding, handle_shortcuts_inhibit_changed, handle_text_input_visibility,
+};
 use layer_shell::handle_new_layer_surface;
 use lua::link::LuaLink;
 use output::{handle_new_output, handle_session_active};
@@ -123,6 +125,10 @@ fn main() {
         wlr::wlr_compositor_create(display, 6, renderer);
         wlr::wlr_subcompositor_create(display);
         wlr::wlr_data_device_manager_create(display);
+        // Middle-click paste. The seat already confirms a client's request
+        // to own the primary selection (shim/keyboard_seat.c); without this
+        // global no client could make one.
+        wlr::wlr_primary_selection_v1_device_manager_create(display);
         // Fractional-scale clients use a viewport to submit integer-sized
         // buffers for a non-integer logical output scale (2.4 on the FP5).
         // The scene graph applies viewport source/destination state and sends
@@ -136,9 +142,6 @@ fn main() {
 
         // Create the seat (wl_seat global). We wire input devices into it below.
         let seat = oxide_seat_create(display, c"seat0".as_ptr());
-        // Manual on-screen keyboards (e.g. wvkbd) create a virtual keyboard
-        // for this seat; the shim forwards all of its keys to seat focus.
-        oxide_virtual_keyboard_setup(display, seat);
 
         // The scene graph holds everything that gets drawn; the output layout
         // arranges outputs in space. Attaching them lets the scene keep each
@@ -240,6 +243,8 @@ fn main() {
             focused_tl: std::ptr::null_mut(),
             scratchpad_hidden: Vec::new(),
             scratchpad_spawning: Vec::new(),
+            shortcuts_inhibit: std::ptr::null_mut(),
+            pass_keys_reported: false,
         };
         // The VM and its registry are `main` locals, not `Server` fields:
         // `Server`'s address is handed to the C shim and every callback
@@ -254,6 +259,19 @@ fn main() {
         // Focused clients use the standard text-input-v3 protocol to request
         // whichever OSK the profile configured (wvkbd today, replaceable later).
         oxide_text_input_setup(display, seat, handle_text_input_visibility, server_ptr);
+        // On-screen keyboards (e.g. wvkbd) and remote-desktop servers create
+        // virtual keyboards for this seat. Their keys go to seat focus, and
+        // trigger bindings only with `oxin.virtual_keyboard_binds`.
+        oxide_virtual_keyboard_setup(display, seat, handle_keybinding, server_ptr);
+        // keyboard-shortcuts-inhibit-v1: a remote-desktop viewer or VM window
+        // asks for every key while focused (`oxin.action.pass_keys` is the
+        // way back out).
+        server.shortcuts_inhibit =
+            oxide_shortcuts_inhibit_setup(display, handle_shortcuts_inhibit_changed, server_ptr);
+        oxide_shortcuts_inhibit_set_grant(
+            server.shortcuts_inhibit,
+            server.config.shortcuts_inhibit,
+        );
         oxide_backend_add_new_output(backend, handle_new_output, server_ptr);
         oxide_backend_add_new_input(backend, handle_new_input, server_ptr);
         // Keep Rust's focused-window bookkeeping in sync with click-to-focus.

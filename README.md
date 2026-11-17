@@ -42,6 +42,10 @@ automatically to fill the screen instead of floating and overlapping.
   decoration, so clients don't draw their own title bar/border: bare, borderless windows.
 - **Screenshots/screen recording** (`wlr-screencopy-unstable-v1` + `xdg-output`) — tools
   like `grim` and `wf-recorder` capture 0xin's real composited output directly.
+- **Remote desktops get the keyboard** (`keyboard-shortcuts-inhibit-unstable-v1`) — an
+  RDP/VNC viewer or VM window that grabs the keyboard (Remmina, FreeRDP's SDL client)
+  gets Super and every 0xin chord while focused; `Ctrl+Alt+Escape` gives them back.
+  Middle-click paste (`primary-selection-unstable-v1`) works between apps.
 - **Real display power-off** (`wlr-output-power-management-unstable-v1`) — a client
   (e.g. [Patin](https://github.com/termworks/patin)'s `patin-lock`) can request an
   actual DPMS on/off per output, distinct from the opaque lock cover below.
@@ -218,6 +222,7 @@ main session. More detail and verification recipes are in
 | `Mod + right-drag`  | Resize a floating window            |
 | `Mod + 1…9`         | Switch to workspace 1–9             |
 | `Mod + Shift + 1…9` | Move focused window to workspace 1–9 |
+| `Ctrl + Alt + Escape` | Pass every key to the focused window, or take them back ([remote desktops](#remote-desktop)) |
 | `Ctrl + Alt + F1…F12` | Switch virtual terminal           |
 
 ## Configuration
@@ -314,6 +319,10 @@ end)
 -- A terminal one key hides and brings back, running whatever it runs.
 oxin.scratchpads["term"] = { cmd = "kitty --class term -e ~/bin/mytool" }
 oxin.keys["MOD+grave"]   = oxin.action.scratchpad("term")
+
+-- A remote desktop or VM window can have every key; see "Remote desktop".
+oxin.shortcuts_inhibit      = true    -- grant it when the window asks (default)
+oxin.virtual_keyboard_binds = false   -- virtual keyboards only type (default)
 ```
 
 ### Scratchpads
@@ -342,6 +351,40 @@ a drop-down is full width and 40% high. Closing it (`Mod+Q`, or its program
 exiting) ends it, and the next press starts a fresh one. Any number can be
 defined, and gestures can toggle them too; `0xinctl scratchpad term` does the
 same from a script or a bar.
+
+### Remote desktop
+
+The remote machine doesn't matter: Windows, an Ubuntu desktop (GNOME's built-in
+Remote Desktop), an X11 box running xrdp, or another Wayland desktop all speak the
+same RDP. What matters is that the viewer runs in 0xin and gets the keyboard.
+[Remmina](https://remmina.org) and FreeRDP's SDL client (`sdl-freerdp`) are native
+Wayland apps and run as they are.
+
+While a viewer has focus, Super and your 0xin chords should reach the remote
+machine rather than 0xin. A viewer that grabs the keyboard asks for exactly that
+(`keyboard-shortcuts-inhibit`), and 0xin grants it: every key goes to that window
+for as long as it has focus. One chord stays 0xin's, the way back out:
+
+```lua
+oxin.keys["CTRL+ALT+Escape"] = oxin.action.pass_keys  -- the default
+```
+
+`pass_keys` takes the keys back from a window that has them (the viewer is told,
+so a "keyboard grabbed" indicator stays right), gives them again on the next
+press, and also works on a window that never asked — a viewer without a keyboard
+grab, say. It is not on `Mod` by default because the remote machine already saw
+Super go down; Windows would open its Start menu each time you leave. Each change
+is published on the event socket as `passkeys>>on` / `passkeys>>off`
+(`0xinctl events`), so a bar can show it, and `Ctrl+Alt+F1…F12` still switches
+virtual terminals whatever has the keys.
+
+`oxin.shortcuts_inhibit = false` makes a window's request wait for a `pass_keys`
+press instead of being granted straight away.
+
+Keys from a virtual keyboard (an on-screen keyboard, or the server side of a
+remote-desktop connection into this machine) only type by default. With
+`oxin.virtual_keyboard_binds = true` they trigger bindings too, so a remote user
+can drive the tiling.
 
 ### Gestures
 

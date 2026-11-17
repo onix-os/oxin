@@ -97,6 +97,14 @@ pub(crate) fn default_binds(modifier: u32) -> Vec<Bind> {
             action: Action::ToggleFloating,
         },
     ];
+    // The way back out of a remote desktop that has every key. Not on MOD:
+    // the remote already saw Super go down, and a lone Super tap (this key
+    // being the compositor's) would open the Windows Start menu on it.
+    binds.push(Bind {
+        mods: MOD_CTRL | MOD_ALT,
+        keysym: key("Escape"),
+        action: Action::PassKeys,
+    });
     // 1–9, and 0 for workspace 10, as in Hyprland's example config. More
     // exist on demand; these are only the ones with a key.
     for i in 0..10usize {

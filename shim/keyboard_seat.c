@@ -62,6 +62,7 @@ struct oxide_keyboard {
     struct wlr_keyboard *keyboard;
     oxide_key_callback key_callback;
     void *key_userdata;
+    bool is_virtual;
     struct oxide_listener *key_listener;
     struct oxide_listener *mod_listener;
     struct oxide_listener *destroy_listener;
@@ -87,7 +88,8 @@ static void handle_key(void *userdata, void *data) {
         uint32_t modifiers = wlr_keyboard_get_modifiers(kb->keyboard);
         for (int i = 0; i < nsyms; i++) {
             bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
-            if (kb->key_callback(kb->key_userdata, syms[i], modifiers, pressed)) {
+            if (kb->key_callback(kb->key_userdata, syms[i], modifiers, pressed,
+                    kb->is_virtual)) {
                 handled = true;
             }
         }
@@ -125,7 +127,7 @@ static void handle_keyboard_destroy(void *userdata, void *data) {
 
 void seat_add_keyboard(struct wlr_seat *seat,
         struct wlr_input_device *device, oxide_key_callback key_callback,
-        void *key_userdata) {
+        void *key_userdata, bool is_virtual) {
     struct wlr_keyboard *keyboard = wlr_keyboard_from_input_device(device);
 
     // Compile scancodes -> keysyms with the default (locale/us) layout.
@@ -142,6 +144,7 @@ void seat_add_keyboard(struct wlr_seat *seat,
     kb->keyboard = keyboard;
     kb->key_callback = key_callback;
     kb->key_userdata = key_userdata;
+    kb->is_virtual = is_virtual;
     kb->key_listener = signal_add(&keyboard->events.key, handle_key, kb);
     kb->mod_listener = signal_add(&keyboard->events.modifiers, handle_modifiers, kb);
     // Device-level destroy, so we clean up when the keyboard is removed.
@@ -151,21 +154,35 @@ void seat_add_keyboard(struct wlr_seat *seat,
     wlr_log(WLR_INFO, "0xin: keyboard attached");
 }
 
+struct virtual_keyboard_setup {
+    struct wlr_seat *seat;
+    oxide_key_callback key_callback;
+    void *key_userdata;
+};
+
 static void handle_new_virtual_keyboard(void *userdata, void *data) {
-    struct wlr_seat *seat = userdata;
+    struct virtual_keyboard_setup *setup = userdata;
     struct wlr_virtual_keyboard_v1 *virtual_keyboard = data;
-    // Virtual keys are client input, never compositor keybindings. Passing no
-    // key callback makes seat_add_keyboard forward every key to seat focus.
-    seat_add_keyboard(seat, &virtual_keyboard->keyboard.base, NULL, NULL);
+    // Offered to Rust flagged as virtual: by default they never trigger a
+    // binding (an on-screen keyboard types, it doesn't drive the compositor),
+    // but a remote-desktop server's keys may, with oxin.virtual_keyboard_binds.
+    seat_add_keyboard(setup->seat, &virtual_keyboard->keyboard.base,
+            setup->key_callback, setup->key_userdata, true);
     wlr_log(WLR_INFO, "0xin: virtual keyboard attached");
 }
 
 void oxide_virtual_keyboard_setup(struct wl_display *display,
-        struct wlr_seat *seat) {
+        struct wlr_seat *seat, oxide_key_callback key_callback,
+        void *key_userdata) {
     struct wlr_virtual_keyboard_manager_v1 *manager =
             wlr_virtual_keyboard_manager_v1_create(display);
+    // Lives as long as the display, like the manager.
+    struct virtual_keyboard_setup *setup = calloc(1, sizeof(*setup));
+    setup->seat = seat;
+    setup->key_callback = key_callback;
+    setup->key_userdata = key_userdata;
     signal_add(&manager->events.new_virtual_keyboard,
-            handle_new_virtual_keyboard, seat);
+            handle_new_virtual_keyboard, setup);
 }
 
 struct oxide_listener *oxide_backend_add_new_input(
