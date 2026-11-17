@@ -98,6 +98,12 @@ fn main() {
         let mut session: *mut wlr::wlr_session = ptr::null_mut();
         let backend = wlr::wlr_backend_autocreate(event_loop, &mut session);
         assert!(!backend.is_null(), "failed to create wlr_backend");
+        // A headless backend next to the real one, with no outputs until
+        // `0xinctl headless-output add` asks: a virtual monitor that only a
+        // remote viewer sees. Added before the renderer, like sway does.
+        if oxide_headless_ensure(backend, event_loop) {
+            eprintln!("0xin: headless backend ready for virtual outputs");
+        }
 
         let renderer = wlr::wlr_renderer_autocreate(backend);
         assert!(!renderer.is_null(), "failed to create wlr_renderer");
@@ -336,6 +342,11 @@ fn main() {
         // our own composited output. wlroots does all the work internally
         // once the global exists — no signals to hook on our side.
         wlr::wlr_screencopy_manager_v1_create(display);
+
+        // For programs that drive the session from outside — a remote-desktop
+        // server, a clipboard manager, wl-clipboard: a virtual pointer, the
+        // clipboard without focus (data-control), and ext-image-copy-capture.
+        oxide_remote_access_setup(display, cursor);
 
         // xdg-output: without this, screenshot tools can't learn each
         // output's logical position/size (grim fails with a 0x0 capture) —

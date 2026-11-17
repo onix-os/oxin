@@ -46,6 +46,10 @@ automatically to fill the screen instead of floating and overlapping.
   RDP/VNC viewer or VM window that grabs the keyboard (Remmina, FreeRDP's SDL client)
   gets Super and every 0xin chord while focused; `Ctrl+Alt+Escape` gives them back.
   Middle-click paste (`primary-selection-unstable-v1`) works between apps.
+- **Reachable from elsewhere** — the protocols a remote-desktop server, clipboard manager
+  or wl-clipboard needs (`wlr-virtual-pointer`, `wlr`/`ext-data-control`,
+  `ext-image-copy-capture`), plus virtual monitors that only a remote viewer sees
+  (`0xinctl headless-output add`), on real hardware too.
 - **Real display power-off** (`wlr-output-power-management-unstable-v1`) — a client
   (e.g. [Patin](https://github.com/termworks/patin)'s `patin-lock`) can request an
   actual DPMS on/off per output, distinct from the opaque lock cover below.
@@ -385,6 +389,34 @@ Keys from a virtual keyboard (an on-screen keyboard, or the server side of a
 remote-desktop connection into this machine) only type by default. With
 `oxin.virtual_keyboard_binds = true` they trigger bindings too, so a remote user
 can drive the tiling.
+
+#### Reaching this machine
+
+0xin speaks the standard protocols a remote-desktop server is built on: screen
+capture (`ext-image-copy-capture`, and the older `wlr-screencopy`), a virtual
+pointer and keyboard for the remote user's input, and `data-control` for keeping
+the clipboard in sync — the same ones that let `wl-copy`/`wl-paste` and clipboard
+managers work without a window of their own. Until 0xin's own RDP server lands,
+[wayvnc](https://github.com/any1/wayvnc) works as it is:
+
+```sh
+wayvnc 0.0.0.0 5900        # then connect with any VNC viewer (Remmina does VNC too)
+```
+
+wayvnc has no password unless you give it a config file; on anything but a
+trusted network, set one up (see `man wayvnc`) or tunnel it over SSH.
+
+A remote viewer can also get a monitor of its own — one that exists only for the
+connection, next to whatever is plugged in:
+
+```sh
+0xinctl headless-output add 1920x1080   # appears as HEADLESS-1, with its own workspace
+wayvnc --output=HEADLESS-1 0.0.0.0 5900
+0xinctl headless-output remove HEADLESS-1
+```
+
+It is placed like any monitor (`oxin.monitors["HEADLESS-1"] = { … }` to pin it), so
+the pointer can wander onto it from your screen.
 
 ### Gestures
 

@@ -144,6 +144,17 @@ const char *oxide_output_name(struct wlr_output *output);
 bool oxide_headless_add_output(struct wlr_backend *backend, int width,
         int height);
 bool oxide_headless_remove_output(struct wlr_output *output);
+// Give the backend a headless child if it has none, so headless outputs can
+// be added next to real (DRM) or nested ones: a virtual monitor that only a
+// remote viewer sees. Before the renderer is made. True if one was added.
+bool oxide_headless_ensure(struct wlr_backend *backend,
+        struct wl_event_loop *loop);
+
+// What a program driving this session from outside needs (remote_access.c):
+// wlr-virtual-pointer (plugged into `cursor`), wlr and ext data-control, and
+// ext-image-copy-capture with its output capture source.
+void oxide_remote_access_setup(struct wl_display *display,
+        struct wlr_cursor *cursor);
 // Create an ordered child tree directly under the scene root. Rust calls this
 // once per z-layer at startup (bg_fallback, layer_bg, layer_bottom, normal,
 // layer_top, layer_overlay); creation order is paint order (later = on top).

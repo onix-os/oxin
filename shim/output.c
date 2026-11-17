@@ -11,6 +11,7 @@
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/util/log.h>
 
 #include "oxide_shim_internal.h"
 
@@ -286,6 +287,25 @@ bool oxide_headless_add_output(struct wlr_backend *backend, int width,
         return false;
     }
     return wlr_headless_add_output(headless, width, height) != NULL;
+}
+
+bool oxide_headless_ensure(struct wlr_backend *backend,
+        struct wl_event_loop *loop) {
+    if (!wlr_backend_is_multi(backend)) {
+        return false;
+    }
+    struct wlr_backend *headless = NULL;
+    wlr_multi_for_each_backend(backend, find_headless, &headless);
+    if (headless != NULL) {
+        return false; // WLR_BACKENDS=headless already brought one
+    }
+    headless = wlr_headless_backend_create(loop);
+    if (headless == NULL || !wlr_multi_backend_add(backend, headless)) {
+        wlr_log(WLR_ERROR, "0xin: could not add a headless backend; "
+                "`0xinctl headless-output add` will not work");
+        return false;
+    }
+    return true;
 }
 
 bool oxide_headless_remove_output(struct wlr_output *output) {

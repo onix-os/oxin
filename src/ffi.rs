@@ -108,6 +108,16 @@ extern "C" {
         height: i32,
     ) -> bool;
     pub(crate) fn oxide_headless_remove_output(output: *mut wlr::wlr_output) -> bool;
+    /// Add a headless child to the backend if it has none (true if added).
+    pub(crate) fn oxide_headless_ensure(
+        backend: *mut wlr::wlr_backend,
+        loop_: *mut wlr::wl_event_loop,
+    ) -> bool;
+    /// wlr-virtual-pointer, wlr/ext data-control and ext-image-copy-capture.
+    pub(crate) fn oxide_remote_access_setup(
+        display: *mut wlr::wl_display,
+        cursor: *mut wlr::wlr_cursor,
+    );
     pub(crate) fn oxide_scene_add_layer_tree(
         scene: *mut wlr::wlr_scene,
     ) -> *mut wlr::wlr_scene_tree;

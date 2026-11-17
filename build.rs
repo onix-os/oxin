@@ -101,6 +101,20 @@ fn main() {
         output_power_xml.display()
     );
 
+    // And ext-image-copy-capture-v1, from wayland-protocols' staging set:
+    // wlroots' wlr_ext_image_copy_capture_v1.h #includes its generated
+    // header too. Only the shim sees it (shim/remote_access.c), not bindgen.
+    let image_copy_xml =
+        format!("{protocols_dir}/staging/ext-image-copy-capture/ext-image-copy-capture-v1.xml");
+    let image_copy_header = out_dir.join("ext-image-copy-capture-v1-protocol.h");
+    let status = Command::new("wayland-scanner")
+        .arg("server-header")
+        .arg(&image_copy_xml)
+        .arg(&image_copy_header)
+        .status()
+        .expect("failed to run wayland-scanner");
+    assert!(status.success(), "wayland-scanner failed on {image_copy_xml}");
+
     // Include dirs shared by the shim build (cc) and bindgen (clang): the
     // library headers plus OUT_DIR for our generated protocol header.
     let mut include_paths: Vec<PathBuf> = wlroots
@@ -138,6 +152,7 @@ fn main() {
         "shim/border.c",
         "shim/config_watch.c",
         "shim/shortcuts_inhibit.c",
+        "shim/remote_access.c",
     ];
     let mut shim = cc::Build::new();
     shim.files(shim_files);

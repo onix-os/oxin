@@ -187,7 +187,7 @@ unsafe fn headless_output(server: &mut Server, argument: &str) -> Result<(), Str
             .filter(|&(w, h)| w > 0 && h > 0)
             .ok_or("expected `headless-output add WIDTHxHEIGHT`")?;
         if !oxide_headless_add_output(server.backend, w, h) {
-            return Err("no headless backend (start with WLR_BACKENDS=headless)".into());
+            return Err("no headless backend (it failed to start; see the 0xin log)".into());
         }
         return Ok(());
     }
